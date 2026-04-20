@@ -1,0 +1,8 @@
+{
+  "name": "memory",
+  "version": "0.0.1",
+  "description": "Persistent RAG memory across Claude Code sessions. Stub — real implementation lands in v0.1.0 (SQLite + sqlite-vss + sentence-transformers, MCP server).",
+  "author": "kirin",
+  "homepage": "https://github.com/kirin/claude-workbench",
+  "license": "MIT"
+}

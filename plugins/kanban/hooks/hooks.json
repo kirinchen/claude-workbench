@@ -1,4 +1,24 @@
 {
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/kanban-session-check.sh"
+        }
+      ]
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/kanban-session-check.sh --lightweight"
+        }
+      ]
+    }
+  ],
   "PreToolUse": [
     {
       "matcher": "Edit|Write|MultiEdit",

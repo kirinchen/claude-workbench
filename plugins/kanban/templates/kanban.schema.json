@@ -121,7 +121,21 @@
         },
         "custom": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "properties": {
+            "blocked_reason": {
+              "type": ["string", "null"],
+              "description": "Required non-empty when column == BLOCKED."
+            },
+            "needs_user_input": {
+              "type": "boolean",
+              "description": "Flag for the notify plugin: when true, user attention is needed for this task."
+            },
+            "estimated_hours": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
         }
       },
       "allOf": [

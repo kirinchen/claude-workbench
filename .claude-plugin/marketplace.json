@@ -1,5 +1,5 @@
 {
-  "name": "claude-kanban",
+  "name": "claude-workbench",
   "owner": {
     "name": "Kirin"
   },
@@ -8,9 +8,33 @@
       "name": "kanban",
       "source": "./plugins/kanban",
       "version": "0.1.0",
-      "description": "Kanban-driven workflow for Claude Code",
+      "description": "Kanban workflow for Claude Code — task lifecycle through kanban.json",
       "category": "productivity",
-      "keywords": ["kanban", "tasks", "workflow", "automation"]
+      "keywords": ["kanban", "tasks", "workflow"]
+    },
+    {
+      "name": "notify",
+      "source": "./plugins/notify",
+      "version": "0.0.1",
+      "description": "Push notifications when Claude needs your attention (stub — v0.1.0 coming)",
+      "category": "productivity",
+      "keywords": ["notifications", "pushover", "alerts"]
+    },
+    {
+      "name": "memory",
+      "source": "./plugins/memory",
+      "version": "0.0.1",
+      "description": "Persistent RAG memory across sessions (stub — v0.1.0 coming)",
+      "category": "productivity",
+      "keywords": ["memory", "rag", "sqlite", "embeddings"]
+    },
+    {
+      "name": "workbench",
+      "source": "./plugins/workbench",
+      "version": "0.0.1",
+      "description": "★ Complete bundle — kanban + notify + memory (meta, stub)",
+      "category": "productivity",
+      "keywords": ["bundle", "meta"]
     }
   ]
 }
