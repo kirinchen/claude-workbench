@@ -1,0 +1,16 @@
+{
+  "name": "claude-kanban",
+  "owner": {
+    "name": "Kirin"
+  },
+  "plugins": [
+    {
+      "name": "kanban",
+      "source": "./plugins/kanban",
+      "version": "0.1.0",
+      "description": "Kanban-driven workflow for Claude Code",
+      "category": "productivity",
+      "keywords": ["kanban", "tasks", "workflow", "automation"]
+    }
+  ]
+}

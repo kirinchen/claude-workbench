@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kirin/claude-kanban/schema/kanban.schema.json",
+  "title": "Kanban",
+  "description": "Schema for kanban.json — the single source of truth for claude-kanban workflow.",
+  "type": "object",
+  "required": ["schema_version", "meta", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema version. Bump on breaking changes."
+    },
+    "meta": {
+      "type": "object",
+      "required": ["priorities", "columns", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "priorities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Priority enum, ordered highest → lowest (e.g. [P0, P1, P2, P3])."
+        },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "User-defined categories."
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["TODO", "DOING", "DONE", "BLOCKED"]
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "description": "Fixed columns: TODO, DOING, DONE, BLOCKED."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/task" }
+    }
+  },
+  "definitions": {
+    "task": {
+      "type": "object",
+      "required": ["id", "title", "column", "priority", "created", "updated"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^task-[0-9]{3,}$",
+          "description": "Format: task-NNN (≥3 digits)."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "column": {
+          "type": "string",
+          "enum": ["TODO", "DOING", "DONE", "BLOCKED"]
+        },
+        "priority": {
+          "type": "string"
+        },
+        "category": {
+          "type": ["string", "null"]
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "depends": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^task-[0-9]{3,}$"
+          }
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "started": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "completed": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "assignee": {
+          "type": ["string", "null"]
+        },
+        "description": {
+          "type": "string"
+        },
+        "comments": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/comment" }
+        },
+        "custom": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "column": { "const": "DOING" } } },
+          "then": { "required": ["started"], "properties": { "started": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "column": { "const": "DONE" } } },
+          "then": { "required": ["started", "completed"], "properties": { "started": { "type": "string" }, "completed": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "column": { "const": "BLOCKED" } } },
+          "then": {
+            "properties": {
+              "custom": {
+                "type": "object",
+                "required": ["blocked_reason"],
+                "properties": {
+                  "blocked_reason": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "required": ["custom"]
+          }
+        }
+      ]
+    },
+    "comment": {
+      "type": "object",
+      "required": ["author", "ts", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "author": { "type": "string" },
+        "ts": { "type": "string", "format": "date-time" },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}

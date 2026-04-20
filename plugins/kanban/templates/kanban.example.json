@@ -1,0 +1,83 @@
+{
+  "$schema": "./kanban.schema.json",
+  "schema_version": 1,
+  "meta": {
+    "priorities": ["P0", "P1", "P2", "P3"],
+    "categories": ["infra", "feature", "bug", "docs"],
+    "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+    "created_at": "__CREATED_AT__",
+    "updated_at": "__UPDATED_AT__"
+  },
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "Set up project skeleton",
+      "column": "DONE",
+      "priority": "P0",
+      "category": "infra",
+      "tags": ["bootstrap"],
+      "depends": [],
+      "created": "__CREATED_AT__",
+      "updated": "__UPDATED_AT__",
+      "started": "__CREATED_AT__",
+      "completed": "__UPDATED_AT__",
+      "assignee": "kirin",
+      "description": "Initial repo layout, README, license.",
+      "comments": [],
+      "custom": {}
+    },
+    {
+      "id": "task-002",
+      "title": "Write first feature spec",
+      "column": "DOING",
+      "priority": "P1",
+      "category": "docs",
+      "tags": ["spec"],
+      "depends": ["task-001"],
+      "created": "__CREATED_AT__",
+      "updated": "__UPDATED_AT__",
+      "started": "__UPDATED_AT__",
+      "completed": null,
+      "assignee": "claude-code",
+      "description": "Draft the spec for the first feature, including user stories and acceptance criteria.",
+      "comments": [],
+      "custom": {}
+    },
+    {
+      "id": "task-003",
+      "title": "Wire up CI pipeline",
+      "column": "TODO",
+      "priority": "P2",
+      "category": "infra",
+      "tags": ["ci", "github-actions"],
+      "depends": ["task-001"],
+      "created": "__CREATED_AT__",
+      "updated": "__UPDATED_AT__",
+      "started": null,
+      "completed": null,
+      "assignee": "claude-code",
+      "description": "Add GitHub Actions workflow: lint, test, build.",
+      "comments": [],
+      "custom": {}
+    },
+    {
+      "id": "task-004",
+      "title": "Investigate flaky test on macOS",
+      "column": "BLOCKED",
+      "priority": "P1",
+      "category": "bug",
+      "tags": ["ci", "flaky"],
+      "depends": [],
+      "created": "__CREATED_AT__",
+      "updated": "__UPDATED_AT__",
+      "started": null,
+      "completed": null,
+      "assignee": "kirin",
+      "description": "Test `test_timezone` fails intermittently on macOS runners only.",
+      "comments": [],
+      "custom": {
+        "blocked_reason": "Need access to macOS runner logs from ops team."
+      }
+    }
+  ]
+}
