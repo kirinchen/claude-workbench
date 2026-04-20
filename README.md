@@ -2,7 +2,7 @@
 
 A family of Claude Code plugins that turn the CLI into a persistent, event-driven AI workspace. Install one, two, or all three — each plugin is useful on its own, and they reinforce each other when combined.
 
-> **Status**: v0.1.0 (Draft). `kanban` is ready; `notify` and `memory` are stubs pending v0.1.0. See [`SPEC_InClude3.md`](./SPEC_InClude3.md) for the full design.
+> **Status**: v0.1.0 (Draft). `kanban` is ready; `notify` and `memory` are stubs pending v0.1.0. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
 
 ## The three plugins
 
@@ -76,7 +76,7 @@ Capability detection (§6.5 in SPEC): each plugin checks for sibling CLIs (`work
 
 ## Roadmap
 
-Per [`SPEC_InClude3.md §11`](./SPEC_InClude3.md):
+Per [`SPEC.md §13`](./SPEC.md):
 
 - **Phase 0** ✓ — skeleton, marketplace, schema
 - **Phase 1** ✓ — `kanban` v0.1.0 (this release)
@@ -90,8 +90,8 @@ Per [`SPEC_InClude3.md §11`](./SPEC_InClude3.md):
 
 ```
 claude-workbench/
-├── SPEC_InClude3.md                    # current design doc (workbench)
-├── SPEC.md                             # legacy design doc (kanban-only)
+├── SPEC.md                             # design doc (workbench family)
+├── current_state.md                    # implementation snapshot
 ├── .claude-plugin/marketplace.json     # 4 plugin entries
 ├── plugins/
 │   ├── kanban/                         # v0.1.0 (ready)
@@ -116,7 +116,8 @@ MIT — see [`LICENSE`](./LICENSE) (to be added).
 
 ## Further reading
 
-- [`SPEC_InClude3.md`](./SPEC_InClude3.md) — current full spec
+- [`SPEC.md`](./SPEC.md) — full spec
+- [`current_state.md`](./current_state.md) — implementation snapshot
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Model Context Protocol](https://modelcontextprotocol.io)

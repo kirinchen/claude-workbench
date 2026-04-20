@@ -29,12 +29,28 @@
       "keywords": ["memory", "rag", "sqlite", "embeddings"]
     },
     {
+      "name": "docsync",
+      "source": "./plugins/docsync",
+      "version": "0.0.1",
+      "description": "Keep code and documentation in sync (stub — v0.1.0 coming in Phase 7)",
+      "category": "developer-tools",
+      "keywords": ["docs", "drift", "sync"]
+    },
+    {
       "name": "workbench",
       "source": "./plugins/workbench",
       "version": "0.0.1",
-      "description": "★ Complete bundle — kanban + notify + memory (meta, stub)",
+      "description": "★ Core bundle — kanban + notify + memory (meta, stub)",
       "category": "productivity",
       "keywords": ["bundle", "meta"]
+    },
+    {
+      "name": "workbench-dev",
+      "source": "./plugins/workbench-dev",
+      "version": "0.0.1",
+      "description": "★ Developer bundle — workbench + docsync (meta, stub)",
+      "category": "developer-tools",
+      "keywords": ["bundle", "meta", "dev"]
     }
   ]
 }

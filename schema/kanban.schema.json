@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/kirin/claude-kanban/schema/kanban.schema.json",
+  "$id": "https://github.com/kirin/claude-workbench/schema/kanban.schema.json",
   "title": "Kanban",
-  "description": "Schema for kanban.json — the single source of truth for claude-kanban workflow.",
+  "description": "Schema for kanban.json — the single source of truth for the claude-workbench kanban plugin.",
   "type": "object",
   "required": ["schema_version", "meta", "tasks"],
   "additionalProperties": false,

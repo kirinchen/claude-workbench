@@ -1,0 +1,30 @@
+# Claude Code local (session-specific permissions, not for sharing)
+.claude/settings.local.json
+
+# Runtime logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node (future viewer work)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~

@@ -2,7 +2,7 @@
 
 Part of the [claude-workbench](../../README.md) family.
 
-**Status**: Not yet implemented. See [`SPEC_InClude3.md §4`](../../SPEC_InClude3.md) for the design.
+**Status**: Not yet implemented. See [`SPEC.md §4`](../../SPEC.md) for the design.
 
 Planned in v0.1.0:
 - Pushover provider

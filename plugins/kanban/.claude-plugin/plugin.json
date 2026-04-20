@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "description": "Kanban-driven workflow for Claude Code. Manages task lifecycle through kanban.json.",
   "author": "kirin",
-  "homepage": "https://github.com/kirin/claude-kanban",
+  "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT"
 }

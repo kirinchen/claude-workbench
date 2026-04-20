@@ -23,4 +23,4 @@ This is a **meta-plugin** — it has no commands, skills, or hooks of its own. I
 
 Prefer installing plugins individually until v0.1.0 of all three lands. Today the bundle is useful mainly as a roadmap marker.
 
-See [`SPEC_InClude3.md §7`](../../SPEC_InClude3.md) for the design.
+See [`SPEC.md §9`](../../SPEC.md) for the design.
