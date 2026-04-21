@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kirin/claude-workbench/schema/docsync.schema.json",
+  "title": "docsync config",
+  "description": "Schema for .claude/docsync.yaml — see SPEC §6 of claude-workbench.",
+  "type": "object",
+  "required": ["schema_version", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "bootstrap_docs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/rule" }
+    },
+    "skip_conditions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "bug_fix_only",
+          "internal_refactor",
+          "test_only",
+          "comment_formatting_only"
+        ]
+      }
+    },
+    "enforcement": {
+      "type": "string",
+      "enum": ["silent", "warn", "block"],
+      "default": "warn"
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kanban": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "block_done_if_pending": { "type": "boolean", "default": false }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summarize_doc_changes": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "rule": {
+      "type": "object",
+      "required": ["id", "pattern", "docs"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Glob pattern relative to project root; supports '**' recursion."
+        },
+        "docs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/docEntry" }
+        }
+      }
+    },
+    "docEntry": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "section": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "required_if": {
+          "type": "string",
+          "enum": [
+            "architecture_changed",
+            "api_changed",
+            "params_changed",
+            "schema_changed"
+          ]
+        }
+      }
+    }
+  }
+}

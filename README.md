@@ -2,18 +2,20 @@
 
 A family of Claude Code plugins that turn the CLI into a persistent, event-driven AI workspace. Install one, two, or all three — each plugin is useful on its own, and they reinforce each other when combined.
 
-> **Status**: v0.1.0 (Draft). `kanban` is ready; `notify` and `memory` are stubs pending v0.1.0. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
+> **Status**: v0.1.0 (Draft). `kanban`, `notify`, and `docsync` are shipped; `memory` is the remaining core stub. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
 
-## The three plugins
+## Plugins
 
-| Plugin | Solves | Status |
-|---|---|---|
-| [`kanban`](./plugins/kanban) | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.0 ready** |
-| [`notify`](./plugins/notify) | Push notifications (Pushover, ntfy, …) when Claude needs your attention | v0.0.1 stub |
-| [`memory`](./plugins/memory) | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
-| [`workbench`](./plugins/workbench) | ★ Meta-bundle that installs all three | v0.0.1 stub |
+| Plugin | Profile | Solves | Status |
+|---|---|---|---|
+| [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.0 ready** |
+| [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.0 ready** |
+| [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
+| [`docsync`](./plugins/docsync) | dev | Code ↔ documentation drift prevention via `.claude/docsync.yaml` | **v0.1.0 ready** |
+| [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
+| [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
-Install individually for progressive adoption, or install the `workbench` bundle once v0.1.0 of all three lands.
+Install individually for progressive adoption, or install the meta-bundles once `memory` v0.1.0 also lands.
 
 ## Why
 
@@ -37,10 +39,17 @@ claude
 > /plugin marketplace add kirin/claude-workbench
 
 # 3. Install what you need
-> /plugin install kanban@claude-workbench       # ready today
-> /plugin install notify@claude-workbench       # coming soon
+> /plugin install kanban@claude-workbench       # ready
+> /plugin install notify@claude-workbench       # ready (Pushover)
+> /plugin install docsync@claude-workbench      # ready (dev profile)
 > /plugin install memory@claude-workbench       # coming soon
-> /plugin install workbench@claude-workbench    # bundle (when all three ship)
+> /plugin install workbench@claude-workbench    # bundle (when memory ships)
+```
+
+Add `~/.claude-workbench/bin` to your PATH so sibling plugins can discover each other's CLIs:
+
+```bash
+export PATH="$HOME/.claude-workbench/bin:$PATH"
 ```
 
 ## Quickstart — `kanban`
@@ -64,15 +73,17 @@ What Claude will and will not do with `kanban.json`:
 - Directly `Edit`/`Write` `kanban.json` (blocked by `kanban-guard.sh`).
 - Modify tasks in the `DONE` column.
 
-## Composition (coming in v0.1.0 of notify + memory)
+## Composition
 
-Capability detection (§6.5 in SPEC): each plugin checks for sibling CLIs (`workbench-notify`, `workbench-memory`) and gracefully degrades when they're absent.
+Capability detection (SPEC §8.7): each plugin checks for sibling CLIs (`workbench-notify`, `workbench-memory`, `workbench-docsync`) via `--health` and gracefully degrades when absent.
 
-| Pair | Effect |
-|---|---|
-| `kanban × notify` | State transitions trigger push notifications (BLOCKED → high priority). |
-| `kanban × memory` | `/kanban:next` queries past sessions for related work; `/kanban:done` saves completion notes. |
-| `notify × memory` | Decision prompts carry "last time you chose X". |
+| Pair | Effect | Status |
+|---|---|---|
+| `kanban × notify` | State transitions trigger push notifications (BLOCKED → high priority). | wired, not E2E tested |
+| `kanban × memory` | `/kanban:next` queries past sessions; `/kanban:done` saves completion notes. | awaits memory |
+| `kanban × docsync` | DONE gate: when `enforcement=block`, `workbench-docsync check` blocks premature DONE transitions. | wired, awaits E2E test |
+| `notify × memory` | Decision prompts carry "last time you chose X". | awaits memory |
+| `docsync × memory` | Doc-change summaries persisted at session end. | wired, awaits memory |
 
 ## Roadmap
 
@@ -92,13 +103,17 @@ Per [`SPEC.md §13`](./SPEC.md):
 claude-workbench/
 ├── SPEC.md                             # design doc (workbench family)
 ├── current_state.md                    # implementation snapshot
-├── .claude-plugin/marketplace.json     # 4 plugin entries
+├── .claude-plugin/marketplace.json     # 6 plugin entries
 ├── plugins/
 │   ├── kanban/                         # v0.1.0 (ready)
-│   ├── notify/                         # v0.0.1 (stub)
+│   ├── notify/                         # v0.1.0 (ready — Pushover)
 │   ├── memory/                         # v0.0.1 (stub)
-│   └── workbench/                      # v0.0.1 (meta stub)
-└── schema/kanban.schema.json           # canonical schema
+│   ├── docsync/                        # v0.1.0 (ready — dev profile)
+│   ├── workbench/                      # v0.0.1 (meta stub)
+│   └── workbench-dev/                  # v0.0.1 (meta stub)
+└── schema/
+    ├── kanban.schema.json              # canonical schema
+    └── docsync.schema.json             # canonical schema
 ```
 
 ## Uninstall

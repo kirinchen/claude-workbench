@@ -1,7 +1,7 @@
 {
   "name": "docsync",
-  "version": "0.0.1",
-  "description": "Keep code and documentation in sync via project-local rules in .claude/docsync.yaml. Stub — real implementation lands in v0.1.0 (Phase 7).",
+  "version": "0.1.0",
+  "description": "Keep code and documentation in sync via project-local rules in .claude/docsync.yaml. Config-driven, not prompt-driven.",
   "author": "kirin",
   "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT"

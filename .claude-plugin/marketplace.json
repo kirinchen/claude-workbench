@@ -15,8 +15,8 @@
     {
       "name": "notify",
       "source": "./plugins/notify",
-      "version": "0.0.1",
-      "description": "Push notifications when Claude needs your attention (stub — v0.1.0 coming)",
+      "version": "0.1.0",
+      "description": "Push notifications via Pushover when Claude needs your attention",
       "category": "productivity",
       "keywords": ["notifications", "pushover", "alerts"]
     },
@@ -31,10 +31,10 @@
     {
       "name": "docsync",
       "source": "./plugins/docsync",
-      "version": "0.0.1",
-      "description": "Keep code and documentation in sync (stub — v0.1.0 coming in Phase 7)",
+      "version": "0.1.0",
+      "description": "Keep code and documentation in sync via project-local rules (.claude/docsync.yaml)",
       "category": "developer-tools",
-      "keywords": ["docs", "drift", "sync"]
+      "keywords": ["docs", "drift", "sync", "yaml"]
     },
     {
       "name": "workbench",

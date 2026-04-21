@@ -1,0 +1,48 @@
+schema_version: 1
+
+bootstrap_docs:
+  - README.md
+  - docs/architecture.md
+  - docs/api.md
+
+rules:
+  - id: package-src
+    pattern: "src/**/*.py"
+    docs:
+      - path: docs/api.md
+        required_if: api_changed
+      - path: README.md
+        required_if: params_changed
+
+  - id: cli
+    pattern: "src/*/cli.py"
+    docs:
+      - path: docs/cli.md
+        required: true
+
+  - id: migrations
+    pattern: "migrations/*.sql"
+    docs:
+      - path: docs/schema.md
+        required_if: schema_changed
+
+  - id: pyproject
+    pattern: "pyproject.toml"
+    docs:
+      - path: README.md
+        section: install
+        required_if: params_changed
+
+skip_conditions:
+  - bug_fix_only
+  - internal_refactor
+  - test_only
+  - comment_formatting_only
+
+enforcement: warn
+
+integration:
+  kanban:
+    block_done_if_pending: false
+  memory:
+    summarize_doc_changes: true

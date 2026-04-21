@@ -1,0 +1,45 @@
+schema_version: 1
+
+bootstrap_docs:
+  - README.md
+  - docs/architecture.md
+  - docs/contributing.md
+
+rules:
+  - id: packages
+    pattern: "packages/*/src/**"
+    docs:
+      - path: docs/architecture.md
+        required_if: architecture_changed
+
+  - id: per-package-readme
+    pattern: "packages/*/src/**/*.ts"
+    docs:
+      - path: packages/*/README.md
+        required_if: api_changed
+
+  - id: api-schemas
+    pattern: "packages/api/schemas/*.json"
+    docs:
+      - path: docs/api.md
+        required_if: schema_changed
+
+  - id: pnpm-workspace
+    pattern: "pnpm-workspace.yaml"
+    docs:
+      - path: docs/contributing.md
+        required: false
+
+skip_conditions:
+  - bug_fix_only
+  - internal_refactor
+  - test_only
+  - comment_formatting_only
+
+enforcement: warn
+
+integration:
+  kanban:
+    block_done_if_pending: false
+  memory:
+    summarize_doc_changes: true

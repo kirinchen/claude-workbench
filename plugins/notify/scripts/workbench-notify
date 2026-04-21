@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# workbench-notify — public CLI for the claude-workbench notify plugin.
+#
+# Sibling plugins (kanban, docsync, memory) invoke this to reach the user:
+#
+#   workbench-notify --title "Kanban" --message "task-042 needs a decision" \
+#                    --priority high
+#
+# Capability detection uses:
+#
+#   workbench-notify --health    # exit 0 iff configured
+#
+# Installed by /notify:setup into ~/.claude-workbench/bin/. Requires
+# NOTIFY_DISPATCH_PY to point at the dispatcher, OR the script lives next
+# to notify-dispatch.py (development layout).
+set -euo pipefail
+
+if [ -n "${NOTIFY_DISPATCH_PY:-}" ] && [ -f "$NOTIFY_DISPATCH_PY" ]; then
+  dispatch="$NOTIFY_DISPATCH_PY"
+else
+  # Resolve symlinks so we find the real plugin dir even when this shim was
+  # installed via `ln -s` into ~/.claude-workbench/bin/.
+  src="${BASH_SOURCE[0]}"
+  while [ -L "$src" ]; do
+    target="$(readlink "$src")"
+    case "$target" in
+      /*) src="$target" ;;
+      *)  src="$(cd -- "$(dirname -- "$src")" && pwd)/$target" ;;
+    esac
+  done
+  here="$(cd -- "$(dirname -- "$src")" && pwd)"
+  if [ -f "$here/notify-dispatch.py" ]; then
+    dispatch="$here/notify-dispatch.py"
+  elif [ -f "$here/../scripts/notify-dispatch.py" ]; then
+    dispatch="$here/../scripts/notify-dispatch.py"
+  else
+    echo "workbench-notify: cannot locate notify-dispatch.py (set NOTIFY_DISPATCH_PY)" >&2
+    exit 1
+  fi
+fi
+
+if [[ " $* " == *" --health "* ]]; then
+  exec python3 "$dispatch" --health
+fi
+
+exec python3 "$dispatch" --cli "$@"

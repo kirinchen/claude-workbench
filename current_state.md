@@ -1,10 +1,10 @@
 # claude-workbench — current state
 
-**Snapshot taken**: 2026-04-21
-**Working directory**: `/home/kirin/Desktop/project/claude-kanban` (local dir still carries the old name — see §6.9 for why a local rename was attempted and reverted this session)
+**Snapshot taken**: 2026-04-21 (updated — same day, later session)
+**Working directory**: `/home/kirin/Desktop/project/claude-workbench`
 **Git branch**: `main`
 **Against spec**: [`SPEC.md`](./SPEC.md) v0.1.0 draft
-**Roadmap phase**: **0b complete**, Phase 1 (real-project validation) not started.
+**Roadmap phase**: **0b + Phase 2 + Phase 7 code-complete**, Phase 1 real-use validation still not started, Phase 3/5 cross-plugin integration wires are in place but untested.
 
 This file is the live implementation snapshot. Keep it in sync with the code when phases ship — don't let it drift into "aspirational".
 
@@ -15,15 +15,15 @@ This file is the live implementation snapshot. Keep it in sync with the code whe
 | Plugin / Component | Spec § | Status | Notes |
 |---|---|---|---|
 | `kanban` plugin | §3 | ✅ **v0.1.0 complete** | Skeleton shipped Phase 0a; commands + automation added Phase 0b |
-| `notify` plugin | §4 | 🟡 stub (`plugin.json` + README only) | Phase 2 |
+| `notify` plugin | §4 | ✅ **v0.1.0 code-complete** | Pushover only; dispatcher + CLI + setup/test/config commands; see §9 below |
 | `memory` plugin | §5 | 🟡 stub (`plugin.json` + README only) | Phase 4 |
-| `docsync` plugin | §6 | 🟡 stub (`plugin.json` + README only) | Phase 7 |
+| `docsync` plugin | §6 | ✅ **v0.1.0 code-complete** | Config-driven YAML, full init flow, all 5 commands, all 3 hooks; see §10 below |
 | Viewer (`kanban-tui`) | §7.1 | ⬜ not started | v0.2.0 |
 | Automation runners | §7.2 | 🟢 cron path ready (runner + installer); git-hook path documented in command only; webhook untouched | Phase 3 will add real `workbench-notify` for fan-out |
 | `workbench` meta | §9.1 | 🟡 stub | Real release in Phase 6 |
 | `workbench-dev` meta | §9.2 | 🟡 stub meta (deps on `workbench` + `docsync`) | Phase 7 |
 | `marketplace.json` | §10.1 | ✅ 6 entries matching SPEC | |
-| Schema sync script | §10.2 | ⬜ not automated | Manual copy in place; CI later |
+| Schema sync script | §10.2 | 🟢 manual copies (kanban + docsync) in place | CI automation later |
 | Release / CI | §12 | ⬜ not started | No `.github/workflows/` yet |
 | Docs (`docs/`) | §10 | ⬜ not started | README covers install; no quickstart/composition docs |
 
@@ -44,14 +44,15 @@ claude-workbench/
 │
 ├── plugins/
 │   ├── kanban/                                  ✅ see §3 below
-│   ├── notify/.claude-plugin/plugin.json        🟡 stub + README
+│   ├── notify/                                  ✅ see §9 below
 │   ├── memory/.claude-plugin/plugin.json        🟡 stub + README
-│   ├── docsync/.claude-plugin/plugin.json       🟡 stub + README
+│   ├── docsync/                                 ✅ see §10 below
 │   ├── workbench/.claude-plugin/plugin.json     🟡 stub meta + README
 │   └── workbench-dev/.claude-plugin/plugin.json 🟡 stub meta + README
 │
 └── schema/
-    └── kanban.schema.json                       ✅ canonical, mirrored into plugin templates
+    ├── kanban.schema.json                       ✅ canonical, mirrored into plugin templates
+    └── docsync.schema.json                      ✅ canonical, mirrored into plugins/docsync/templates/
 ```
 
 Not yet present (per spec): `viewer/`, `automation/` (canonical source; cron scripts currently live inside `plugins/kanban/scripts/`), `docs/`, `scripts/` (CI helpers), `.github/workflows/`, `CHANGELOG.md`, `LICENSE`.
@@ -206,11 +207,121 @@ None block Phase 1 (manual real-use validation of kanban v0.1.0).
 
 Ordered by leverage, not by strict SPEC sequence:
 
-1. **Phase 1 validation** — use kanban v0.1.0 on a real project for a week. Log pain points in a scratch file (not in SPEC) before touching notify. The longer we defer validation, the more Phase 2 designs on shaky assumptions.
-2. **Close the trivial gaps** from §6 above: add `docsync` / `workbench-dev` stubs to `marketplace.json`; drop a `LICENSE` file; seed `CHANGELOG.md`.
-3. **Decide repo-rename timing** — do it before the first push to GitHub, not after. Rename is cheap locally; expensive after remote clones exist.
-4. **Prototype `workbench-notify --health`** before writing notify proper. Settles the capability-detection contract question cheaply.
-5. **Stop extending SPEC**, start adding to `docs/quickstart.md`. SPEC has front-loaded a lot; real users want a 1-page getting-started, not §§1–15.
+1. **Phase 1 validation** — use the plugins on a real project for a week. Log pain points in a scratch file (not in SPEC) before iterating on code. The longer we defer validation, the more Phase 3/5 integration work designs on shaky assumptions.
+2. **End-to-end smoke of the three-way flow** (§8.8 in SPEC): install kanban + notify + docsync in a real repo, trigger a DOING→DONE with a docsync-mapped file edited, verify Pushover fires and docsync gates when `enforcement=block`.
+3. **Seed `memory` v0.1.0** — it's the last remaining core stub and blocks the `workbench` core bundle release.
+4. **Stop extending SPEC**, start adding to `docs/quickstart.md`. SPEC has front-loaded a lot; real users want a 1-page getting-started.
+5. **Install PyYAML in the plugin env or CI** — docsync's fallback YAML parser handles the shipped templates but is not a complete YAML implementation. Siblings that consume `.claude/docsync.yaml` via `workbench-docsync` are fine, but users who write exotic YAML by hand will hit the fallback.
+
+---
+
+## 9. `plugins/notify/` — shipped v0.1.0
+
+### 9.1 Contents
+
+```
+plugins/notify/
+├── .claude-plugin/plugin.json              ✅ v0.1.0
+├── skills/notify-usage/SKILL.md            ✅ governs capability-detection + priority conventions
+├── commands/
+│   ├── setup.md                            ✅ /notify:setup (interactive Pushover config + CLI install)
+│   ├── test.md                             ✅ /notify:test
+│   └── config.md                           ✅ /notify:config (show/edit, redacted display)
+├── hooks/hooks.json                        ✅ Notification: permission_prompt|elicitation_dialog|idle_prompt|auth_success
+├── scripts/
+│   ├── notify-dispatch.py                  ✅ hook + CLI + --health modes; scrubber; throttle state
+│   ├── providers/__init__.py               ✅
+│   ├── providers/pushover.py               ✅ stdlib HTTPS; 5s timeout; priority/sound mapping
+│   ├── workbench-notify                    ✅ bash shim (exec python3 notify-dispatch.py --cli "$@")
+│   └── install-cli.sh                      ✅ idempotent symlink into ~/.claude-workbench/bin/
+└── templates/
+    └── notify-config.example.json          ✅ env-var-driven shape with 4 rules matching the 4 events
+```
+
+### 9.2 What works right now
+
+- `workbench-notify --health` returns exit 0 iff `~/.claude-workbench/notify-config.json` exists, parses, and has at least one enabled provider. This is the contract SPEC §8.7 promised for capability detection.
+- `/notify:setup` links the CLI and writes a config that references `${PUSHOVER_USER_KEY}` / `${PUSHOVER_APP_TOKEN}` — **tokens never land in JSON**.
+- The dispatcher scrubs token-shaped substrings (`sk-…`, `ghp_…`, `xoxb-…`, JWTs, AWS keys, bare hex ≥ 40) before dispatch.
+- Failures log to `~/.claude-workbench/logs/notify-failures.log` with no message body — avoids secret leak via log.
+- Per-rule `throttle_seconds` (default 300 for `idle_prompt`) throttled via `~/.claude-workbench/state/notify-throttle.json`.
+
+### 9.3 Known limitations / parked work
+
+- **Pushover only** — `ntfy`/`slack`/`telegram` stanzas exist in the example config but have no provider module yet. The dispatcher tolerates them (logs "unknown provider") rather than crashing.
+- **No async delivery** — every hook call is synchronous through the HTTPS stack. 5-second Pushover timeout caps latency, but a dead network still delays the hook by up to 5 s.
+- **`emergency` priority is clamped to `high`** — Pushover's true `priority=2` requires a `retry`/`expire` pair this plugin doesn't wire.
+- **Throttle state is per-user, not per-project** — multiple projects on the same host share the `(event, provider)` throttle keys.
+- **`/notify:config edit` doesn't actually launch `$EDITOR`** — deliberately prints instructions instead, because the harness can't steal the user's TTY cleanly.
+
+### 9.4 Sibling wiring that now activates
+
+`kanban-autocommit.sh` has had `HAS_NOTIFY=1` dispatch blocks since Phase 0a (§4 of this doc). With notify v0.1.0 installed and `~/.claude-workbench/bin/` on PATH, those blocks fire automatically. Not yet verified end-to-end.
+
+---
+
+## 10. `plugins/docsync/` — shipped v0.1.0
+
+### 10.1 Contents
+
+```
+plugins/docsync/
+├── .claude-plugin/plugin.json              ✅ v0.1.0
+├── skills/docsync-workflow/
+│   ├── SKILL.md                            ✅
+│   └── references/
+│       ├── update-patterns.md              ✅ CODE_MAP / ARCHITECTURE / per-module README templates
+│       └── skip-decision-tree.md           ✅ skip_conditions + required_if decision rules
+├── commands/
+│   ├── init.md                             ✅ /docsync:init (scan → interview → dry-run → write)
+│   ├── check.md                            ✅ /docsync:check
+│   ├── rules.md                            ✅ /docsync:rules
+│   ├── bootstrap.md                        ✅ /docsync:bootstrap
+│   └── validate.md                         ✅ /docsync:validate
+├── hooks/hooks.json                        ✅ SessionStart · PostToolUse(Edit|Write|MultiEdit) · Stop
+├── scripts/
+│   ├── rule_engine.py                      ✅ pure logic; PyYAML preferred, tiny fallback parser
+│   ├── docsync-bootstrap.py                ✅ SessionStart — bootstrap docs reminder
+│   ├── docsync-guard.py                    ✅ PostToolUse — per-edit rule match, warn-level
+│   ├── docsync-finalcheck.py               ✅ Stop — session-end summary + memory fan-out
+│   ├── workbench-docsync.py                ✅ CLI: match / check / summarize / rules / validate / --health
+│   ├── workbench-docsync                   ✅ bash shim
+│   └── install-cli.sh                      ✅ symlink installer
+└── templates/
+    ├── docsync.example.yaml                ✅ Rust monorepo
+    ├── docsync.python.yaml                 ✅
+    ├── docsync.js.yaml                     ✅
+    └── docsync.schema.json                 ✅ mirror of schema/docsync.schema.json
+```
+
+### 10.2 What works right now
+
+- `workbench-docsync match <path>` resolves which rules apply.
+- `workbench-docsync check --since <ref>` returns exit 2 with a JSON `{pending: [...]}` payload when any rule's required doc is stale. This is the exact shape SPEC §8.4 calls for the kanban DONE gate.
+- `workbench-docsync validate` catches: wrong `schema_version`, duplicate rule ids, unknown `required_if` values, missing bootstrap docs.
+- SessionStart hook injects bootstrap-docs reminder as `additionalContext`.
+- PostToolUse guard fires an `additionalContext` warn on each Edit/Write/MultiEdit that matches a rule (when `enforcement != silent`).
+- Stop hook aggregates session-wide changes and, if `integration.memory.summarize_doc_changes: true` AND `workbench-memory` is on PATH, fans out summaries per touched doc.
+
+### 10.3 Known limitations / parked work
+
+- **YAML parser fallback is narrow** — if PyYAML is absent AND the user hand-writes exotic YAML (anchors, flow syntax, multi-line block scalars), the fallback will raise. The shipped templates are chosen to stay within the fallback's supported subset. Docs point users at `pip install pyyaml` for complex configs.
+- **`/docsync:init` Phase 4 dry-run** currently simulates rule matches inside the command prompt rather than calling `workbench-docsync match` (the YAML isn't on disk yet). A future improvement: write the YAML to a temp path, match against that, then rename on confirmation.
+- **No schema-level JSON-Schema validation at runtime** — `/docsync:validate` is structural + semantic but doesn't load `docsync.schema.json`. CI-side `jsonschema` validation is the follow-up.
+- **`required_if` is semantic-only** — the engine surfaces candidates, the skill teaches judgement. There's no code that automatically distinguishes "this edit changed an API" from "this edit renamed a private helper". That's by design (SPEC §6.4) but a future v0.2 could add heuristics for obvious cases.
+- **Glob matching**: only `**` and standard fnmatch patterns. `{a,b}` alternation not supported.
+- **Rename/move** (Open Question 15) still undefined — `git mv` shows up as an edit on the new path, so the rule fires, but the old filename still appears in docs until the user edits them.
+- **Enforcement `block`** wiring exists (kanban-autocommit.sh can call `workbench-docsync check`), but kanban's DONE command does NOT yet invoke that check before allowing transition. Add a one-liner into `kanban-autocommit.sh` pre-commit path when the three-plugin E2E is tested.
+
+### 10.4 How the three pieces interact now
+
+With all three plugins installed (`kanban` + `notify` + `docsync`):
+
+- **SessionStart**: kanban surfaces DOING/BLOCKED; docsync surfaces bootstrap docs. Both via `additionalContext`.
+- **Edit**: kanban-guard blocks direct `kanban.json` edits; docsync-guard warns on code edits that match rules.
+- **PostToolUse**: kanban-autocommit commits standalone kanban changes; docsync's Stop hook hasn't fired yet (that's session end).
+- **Kanban transitions**: `workbench-notify` fires through kanban-autocommit's `HAS_NOTIFY` block.
+- **Session end**: docsync-finalcheck runs; if memory installed, summaries propagate; otherwise just prints the summary.
 
 ---
 

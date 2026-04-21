@@ -1,0 +1,31 @@
+{
+  "Notification": [
+    {
+      "matcher": "permission_prompt|elicitation_dialog",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify-dispatch.py"
+        }
+      ]
+    },
+    {
+      "matcher": "idle_prompt",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify-dispatch.py --throttle 300"
+        }
+      ]
+    },
+    {
+      "matcher": "auth_success",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify-dispatch.py"
+        }
+      ]
+    }
+  ]
+}

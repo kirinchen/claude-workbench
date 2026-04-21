@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "default_provider": "pushover",
+  "providers": {
+    "pushover": {
+      "enabled": true,
+      "user_key": "${PUSHOVER_USER_KEY}",
+      "app_token": "${PUSHOVER_APP_TOKEN}",
+      "device": null,
+      "sound_map": {
+        "permission_prompt": "siren",
+        "elicitation_dialog": "cosmic",
+        "idle_prompt": "pushover",
+        "auth_success": "none",
+        "cli": "pushover"
+      }
+    },
+    "ntfy": {
+      "enabled": false,
+      "topic": "kirin-claude-code",
+      "server": "https://ntfy.sh"
+    }
+  },
+  "rules": [
+    {
+      "match": { "notification_type": "permission_prompt" },
+      "providers": ["pushover"],
+      "priority": 1
+    },
+    {
+      "match": { "notification_type": "elicitation_dialog" },
+      "providers": ["pushover"],
+      "priority": 1
+    },
+    {
+      "match": { "notification_type": "idle_prompt" },
+      "providers": ["pushover"],
+      "priority": -1,
+      "throttle_seconds": 300
+    },
+    {
+      "match": { "notification_type": "auth_success" },
+      "providers": ["pushover"],
+      "priority": -2
+    }
+  ]
+}

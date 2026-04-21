@@ -1,7 +1,7 @@
 {
   "name": "notify",
-  "version": "0.0.1",
-  "description": "Push notifications when Claude Code needs your attention. Stub — real implementation lands in v0.1.0 (Pushover first, ntfy/Slack/Telegram later).",
+  "version": "0.1.0",
+  "description": "Push notifications when Claude Code needs your attention. v0.1.0 ships Pushover; ntfy/Slack/Telegram land in v0.2+.",
   "author": "kirin",
   "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT"
