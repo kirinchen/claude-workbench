@@ -2,7 +2,7 @@
   "name": "notify",
   "version": "0.1.0",
   "description": "Push notifications when Claude Code needs your attention. v0.1.0 ships Pushover; ntfy/Slack/Telegram land in v0.2+.",
-  "author": "kirin",
+  "author": { "name": "kirin" },
   "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT"
 }

@@ -2,7 +2,7 @@
   "name": "workbench-dev",
   "version": "0.0.1",
   "description": "Claude Workbench for developers — core + docsync + (future: review, lint). Meta-plugin: installing this pulls in everything.",
-  "author": "kirin",
+  "author": { "name": "kirin" },
   "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT",
   "dependencies": [

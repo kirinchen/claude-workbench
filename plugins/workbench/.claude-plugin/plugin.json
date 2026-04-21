@@ -2,7 +2,7 @@
   "name": "workbench",
   "version": "0.0.1",
   "description": "Complete Claude Workbench — kanban + notify + memory. Meta-plugin: installing this pulls in the other three.",
-  "author": "kirin",
+  "author": { "name": "kirin" },
   "homepage": "https://github.com/kirin/claude-workbench",
   "license": "MIT",
   "dependencies": [
