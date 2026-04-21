@@ -1,5 +1,7 @@
 # docsync
 
+*[繁體中文](./README_zhtw.md)*
+
 Part of the [claude-workbench](../../README.md) family — **dev profile**. See [`SPEC.md §6`](../../SPEC.md) for the full design.
 
 Keep **code changes** and **documentation** in sync. Config-driven, not prompt-driven: per-project mapping lives in `.claude/docsync.yaml`, generated interactively by `/docsync:init` (scan → interview → dry-run → write).

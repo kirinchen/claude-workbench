@@ -1,5 +1,7 @@
 # memory (stub)
 
+*[繁體中文](./README_zhtw.md)*
+
 Part of the [claude-workbench](../../README.md) family.
 
 **Status**: Not yet implemented. See [`SPEC.md §5`](../../SPEC.md) for the design.

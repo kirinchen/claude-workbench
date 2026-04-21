@@ -1,5 +1,7 @@
 # claude-workbench — current state
 
+*[繁體中文](./current_state_zhtw.md)*
+
 **Snapshot taken**: 2026-04-21 (updated — same day, later session)
 **Working directory**: `/home/kirin/Desktop/project/claude-workbench`
 **Git branch**: `main`

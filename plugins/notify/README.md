@@ -1,5 +1,7 @@
 # notify
 
+*[繁體中文](./README_zhtw.md)*
+
 Part of the [claude-workbench](../../README.md) family. See [`SPEC.md §4`](../../SPEC.md) for the full design.
 
 Reach you through an external channel (currently **Pushover**) when Claude Code needs attention — so "AI stalls while user is AFK" stops happening.

@@ -1,5 +1,7 @@
 # claude-workbench
 
+*[繁體中文](./README_zhtw.md)*
+
 A family of Claude Code plugins that turn the CLI into a persistent, event-driven AI workspace. Install one, two, or all of them — each plugin is useful on its own, and they reinforce each other when combined.
 
 > **Status**: v0.1.0 (Draft). `kanban`, `notify`, and `docsync` are shipped; `memory` is the remaining core stub. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
@@ -53,6 +55,17 @@ claude
 ```
 
 Then jump into the quickstart for each plugin you installed — see the links at the top of this file.
+
+### Two identifiers, one letter apart
+
+The install flow uses two separate names that happen to look similar. Getting them mixed up is the most common new-user mistake:
+
+| Step | What it references | Where it comes from |
+|---|---|---|
+| `/plugin marketplace add `**`kirinchen/claude-workbench`** | GitHub **repo** (auto-expands to `https://github.com/kirinchen/claude-workbench`) | Your GitHub `owner/repo` path |
+| `/plugin install kanban@`**`claude-workbench`** | **Marketplace name** — the `"name"` field inside `.claude-plugin/marketplace.json` | Set in the marketplace metadata, not the repo name |
+
+They're equal today by choice. If the repo were ever renamed to `cwb`, the add command would become `kirinchen/cwb` but install would still be `kanban@claude-workbench` (until the marketplace.json's `name` field is also changed). Other accepted `add` sources: full HTTPS URL, SSH URL (for private), local path — see [Claude Code plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces).
 
 ## Quickstart — `kanban`
 

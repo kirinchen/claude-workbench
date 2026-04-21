@@ -1,5 +1,7 @@
 # docsync — quickstart
 
+*[繁體中文](./docsync_quickstart_zhtw.md)*
+
 > Keep code changes and documentation in sync. Config-driven (`.claude/docsync.yaml`), not prompt-driven. Replaces the common "hardcoded rules in CLAUDE.md" pattern with something structured, versioned, and team-reviewable.
 
 *See [`SPEC.md §6`](./SPEC.md) for full design, [`plugins/docsync/`](./plugins/docsync) for the code.*

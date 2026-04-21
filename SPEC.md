@@ -1,5 +1,7 @@
 # Claude Workbench — SPEC
 
+*[繁體中文](./SPEC_zhtw.md)*
+
 **Project**: `kirin/claude-workbench`
 **Version**: 0.1.0 (Draft)
 **Last Updated**: 2026-04-20

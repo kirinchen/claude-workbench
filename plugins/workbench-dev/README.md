@@ -1,5 +1,7 @@
 # workbench-dev (meta, stub)
 
+*[繁體中文](./README_zhtw.md)*
+
 Part of the [claude-workbench](../../README.md) family.
 
 **Meta-plugin** — no commands, skills, or hooks of its own. Installing it pulls in the full developer stack:
@@ -11,15 +13,15 @@ Part of the [claude-workbench](../../README.md) family.
 ## Install
 
 ```bash
-> /plugin marketplace add kirin/claude-workbench
+> /plugin marketplace add kirinchen/claude-workbench
 > /plugin install workbench-dev@claude-workbench
 ```
 
 ## Current status
 
-- `workbench` — v0.0.1 stub (core bundle)
-- `docsync` — v0.0.1 stub (Phase 7)
+- `workbench` — v0.0.1 stub (waits on `memory` v0.1.0)
+- `docsync` — v0.1.0 ✓
 
-This bundle is useful today only as a roadmap marker. Prefer installing plugins individually until v0.1.0 of `docsync` lands.
+Until the `workbench` meta-bundle can pin `^0.1.0` of all three core plugins (i.e. once `memory` ships), prefer installing the individual plugins.
 
 See [`SPEC.md §9.2`](../../SPEC.md) for the design.

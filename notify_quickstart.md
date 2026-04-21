@@ -1,5 +1,7 @@
 # notify — quickstart
 
+*[繁體中文](./notify_quickstart_zhtw.md)*
+
 > Push notifications from Claude Code to your phone via Pushover. So "AI stalls while user is AFK" stops happening.
 
 *See [`SPEC.md §4`](./SPEC.md) for full design, [`plugins/notify/`](./plugins/notify) for the code.*

@@ -1,5 +1,7 @@
 # kanban — quickstart
 
+*[繁體中文](./kanban_quickstart_zhtw.md)*
+
 > Task state persistence for Claude Code. A single `kanban.json` at the project root is the shared work queue between you and Claude.
 
 *See [`SPEC.md §3`](./SPEC.md) for full design, [`plugins/kanban/`](./plugins/kanban) for the code.*
