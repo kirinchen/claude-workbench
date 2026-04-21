@@ -25,9 +25,12 @@ Claude Code 會對四種事件發出 `Notification` hook，每一種都可路由
 > /notify:test          # 送一則測試推播
 ```
 
-`/notify:setup` 也會把 `workbench-notify` CLI link 到 `~/.claude-workbench/bin/`，讓相鄰 plugin（`kanban`、`docsync`、`memory`）透過 capability detection 發現它。
+`/notify:setup` 一次做三件事：
+1. 把 Pushover token 寫到 `~/.claude-workbench/.env`（chmod 600）——dispatcher 會自動載入這個檔案，**不用改 shell rc**。
+2. 寫 `~/.claude-workbench/notify-config.json`，內容只有 `${VAR}` 引用（token 絕不出現在 JSON 內）。
+3. 把 `workbench-notify` CLI link 到 `~/.claude-workbench/bin/`，讓相鄰 plugin 能發現。
 
-確認 `~/.claude-workbench/bin/` 在 PATH 上：
+**PATH 設定是選用的**——只有你想**從 terminal 手動**敲 `workbench-notify` 時才需要。Slash command 和 hook script 執行時會自動 prepend PATH。如果你要 terminal 用：
 
 ```bash
 export PATH="$HOME/.claude-workbench/bin:$PATH"
@@ -35,29 +38,35 @@ export PATH="$HOME/.claude-workbench/bin:$PATH"
 
 ## Config
 
-放在 `~/.claude-workbench/notify-config.json`（專案之外，token 不會漏進 git）。Secret 用 env var 展開：
+兩個檔案並排在 `~/.claude-workbench/`：
 
-```json
-{
-  "schema_version": 1,
-  "default_provider": "pushover",
-  "providers": {
-    "pushover": {
-      "enabled": true,
-      "user_key": "${PUSHOVER_USER_KEY}",
-      "app_token": "${PUSHOVER_APP_TOKEN}"
-    }
-  },
-  "rules": [
-    { "match": { "notification_type": "permission_prompt" },  "providers": ["pushover"], "priority":  1 },
-    { "match": { "notification_type": "elicitation_dialog" }, "providers": ["pushover"], "priority":  1 },
-    { "match": { "notification_type": "idle_prompt" },        "providers": ["pushover"], "priority": -1, "throttle_seconds": 300 },
-    { "match": { "notification_type": "auth_success" },       "providers": ["pushover"], "priority": -2 }
-  ]
-}
-```
+- **`.env`** — 你的 token（chmod 600；由 `/notify:setup` 管理）：
+  ```
+  PUSHOVER_USER_KEY=u...
+  PUSHOVER_APP_TOKEN=a...
+  ```
+- **`notify-config.json`** — 路由規則和 provider 旗標（可以安心放進 dotfile repo，因為它只引用環境變數）：
+  ```json
+  {
+    "schema_version": 1,
+    "default_provider": "pushover",
+    "providers": {
+      "pushover": {
+        "enabled": true,
+        "user_key": "${PUSHOVER_USER_KEY}",
+        "app_token": "${PUSHOVER_APP_TOKEN}"
+      }
+    },
+    "rules": [
+      { "match": { "notification_type": "permission_prompt" },  "providers": ["pushover"], "priority":  1 },
+      { "match": { "notification_type": "elicitation_dialog" }, "providers": ["pushover"], "priority":  1 },
+      { "match": { "notification_type": "idle_prompt" },        "providers": ["pushover"], "priority": -1, "throttle_seconds": 300 },
+      { "match": { "notification_type": "auth_success" },       "providers": ["pushover"], "priority": -2 }
+    ]
+  }
+  ```
 
-在 shell rc 或 `.env` + direnv 裡設 env var——**絕不要**直接寫死在 JSON 裡。
+Secret **只**在 `.env`。JSON 只放 `${VAR}` 引用，runtime 展開。
 
 ## CLI
 

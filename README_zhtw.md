@@ -35,11 +35,6 @@ Workbench 把這四個痛點拆成三個可以互相組合的獨立 plugin：
 ## 安裝
 
 ```bash
-# 0. 加進 shell rc（~/.bashrc / ~/.zshrc）——必要步驟
-#    讓相鄰的 plugin 能透過 PATH 發現彼此的 CLI
-#    （workbench-notify、workbench-docsync、...）
-export PATH="$HOME/.claude-workbench/bin:$PATH"
-
 # 1. 在任一專案裡啟動 Claude Code
 cd my-project
 claude
@@ -56,6 +51,8 @@ claude
 ```
 
 裝完之後看該 plugin 的 quickstart——連結在檔案頂端。
+
+> **不用改 shell rc**。Hook script 和 slash command 執行時會自動把 `~/.claude-workbench/bin` 加進 `PATH`，notify 的 token 由 `/notify:setup` 寫進 `~/.claude-workbench/.env` 自動讀取。如果你想**在 terminal 手動**執行 `workbench-*` CLI（純 debug 用），才需要手動 `export PATH="$HOME/.claude-workbench/bin:$PATH"`。
 
 ### 兩個差一個字的 identifier
 

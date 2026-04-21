@@ -13,6 +13,18 @@
 # considerations — notably `--allowedTools` is explicit (no wildcards).
 set -euo pipefail
 
+# Cron spawns with a minimal PATH (typically just /usr/bin:/bin). Ensure we
+# can find `claude` itself AND the sibling workbench-* CLIs. User-level bin
+# dirs get prepended; system PATH preserved.
+_WB_BIN="$HOME/.claude-workbench/bin"
+_USER_BIN="$HOME/.local/bin"
+for d in "$_WB_BIN" "$_USER_BIN"; do
+  case ":${PATH:-}:" in
+    *":$d:"*) ;;
+    *) [ -d "$d" ] && export PATH="$d:${PATH:-}" ;;
+  esac
+done
+
 PROJECT_DIR="${1:?project dir required as first argument}"
 PROJECT_DIR="$(realpath "$PROJECT_DIR")"
 LOG_DIR="${KANBAN_LOG_DIR:-$HOME/.claude-workbench/logs}"

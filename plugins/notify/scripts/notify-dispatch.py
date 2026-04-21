@@ -44,12 +44,60 @@ from providers import pushover  # noqa: E402
 
 WORKBENCH_HOME = Path(os.path.expanduser("~/.claude-workbench"))
 CONFIG_PATH = WORKBENCH_HOME / "notify-config.json"
+ENV_FILE = WORKBENCH_HOME / ".env"
 LOG_DIR = WORKBENCH_HOME / "logs"
 STATE_DIR = WORKBENCH_HOME / "state"
 FAILURE_LOG = LOG_DIR / "notify-failures.log"
 THROTTLE_STATE = STATE_DIR / "notify-throttle.json"
 
 PROVIDERS = {"pushover": pushover}
+
+
+# -----------------------------------------------------------------------------
+# .env auto-load
+# -----------------------------------------------------------------------------
+# Without this, users would have to `export PUSHOVER_USER_KEY=…` in their shell
+# rc — painful on Windows GUI-launched shells and anywhere env isn't inherited.
+# The dispatcher reads ~/.claude-workbench/.env at import time, filling in any
+# variables not already present in os.environ. Process env always wins, so
+# users who DO set shell exports are unaffected.
+
+def _load_env_file(path: Path) -> None:
+    """Populate os.environ from a KEY=VALUE file. Silent on missing/unreadable.
+
+    Accepted line shapes:
+        KEY=value
+        KEY="value"
+        KEY='value'
+        export KEY=value
+        # comment line (skipped)
+    Existing process env keys are NEVER overwritten — shell exports win.
+    """
+    if not path.is_file():
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or \
+           (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file(ENV_FILE)
 
 # -----------------------------------------------------------------------------
 # Secret scrubber

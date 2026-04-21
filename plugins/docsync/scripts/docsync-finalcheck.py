@@ -20,6 +20,15 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
+# Prepend ~/.claude-workbench/bin so we can find workbench-memory (and any
+# future sibling CLI) even when the user hasn't edited their shell rc.
+# Idempotent. Subprocess calls inherit this env.
+_WB_BIN = os.path.expanduser("~/.claude-workbench/bin")
+if os.path.isdir(_WB_BIN):
+    _path = os.environ.get("PATH", "")
+    if _WB_BIN not in _path.split(os.pathsep):
+        os.environ["PATH"] = _WB_BIN + os.pathsep + _path
+
 from rule_engine import (  # noqa: E402
     changed_files_since,
     load_config,

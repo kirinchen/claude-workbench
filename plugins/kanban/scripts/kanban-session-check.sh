@@ -20,9 +20,16 @@ for arg in "$@"; do
   esac
 done
 
+# --- Self-locate sibling CLIs ------------------------------------------------
+# Prepend ~/.claude-workbench/bin so we can detect sibling plugins without
+# relying on user shell rc. Idempotent.
+_WB_BIN="$HOME/.claude-workbench/bin"
+case ":${PATH:-}:" in
+  *":$_WB_BIN:"*) ;;
+  *) export PATH="$_WB_BIN:${PATH:-}" ;;
+esac
+
 # --- Capability detection (§6.5) ---------------------------------------------
-# Siblings are still stubs today; these vars stay 0, integration blocks are
-# no-op. When notify / memory ship real CLIs, flip without touching this file.
 has_plugin() { command -v "workbench-$1" >/dev/null 2>&1; }
 HAS_NOTIFY=0; has_plugin notify && HAS_NOTIFY=1
 HAS_MEMORY=0; has_plugin memory && HAS_MEMORY=1

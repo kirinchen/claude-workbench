@@ -12,10 +12,8 @@
 
 - Claude Code installed.
 - A Pushover account (free trial, one-time $5 per platform to unlock).
-- Shell rc (`~/.bashrc` or `~/.zshrc`) contains:
-  ```bash
-  export PATH="$HOME/.claude-workbench/bin:$PATH"
-  ```
+
+**No shell rc changes are required.** The dispatcher auto-loads tokens from `~/.claude-workbench/.env`, and hook scripts auto-prepend `~/.claude-workbench/bin` to PATH. You only need to add `~/.claude-workbench/bin` to PATH in your shell rc if you want to run `workbench-notify` **manually from your terminal** (e.g. for debugging).
 
 ---
 
@@ -26,25 +24,11 @@
 3. Scroll to **"Your Applications"** → **Create an Application/API Token** → name it (e.g. `claude-code`) → you get a 30-char **API Token/Key** starting with `a`. Copy it.
 4. Install the Pushover app on your phone (iOS / Android, one-time purchase unlocks beyond the 7-day trial) and log into the same account. On first launch the app registers a device — that's what receives pushes.
 
----
-
-## 2. Export tokens as env vars (**not** into JSON)
-
-Add to `~/.bashrc` / `~/.zshrc`:
-```bash
-export PUSHOVER_USER_KEY="u..."          # Your User Key from dashboard
-export PUSHOVER_APP_TOKEN="a..."         # API Token from the app you created
-```
-Then:
-```bash
-source ~/.bashrc    # or open a fresh terminal
-```
-
-**macOS caveat**: if you launch Claude Code from the Dock / Launchpad (GUI), it won't see shell rc env vars. Either (a) always start Claude from a terminal (`claude` in iTerm/Terminal), or (b) set the vars via `launchctl setenv` so the GUI app sees them too.
+Have both keys ready — `/notify:setup` will ask for them.
 
 ---
 
-## 3. Install the plugin
+## 2. Install the plugin
 
 Inside Claude Code (any project):
 ```
@@ -54,22 +38,23 @@ Inside Claude Code (any project):
 
 ---
 
-## 4. Run setup
+## 3. Run setup (handles tokens for you)
 
 ```
 > /notify:setup
 ```
 
-What it does:
-1. Writes `~/.claude-workbench/notify-config.json` using `${PUSHOVER_USER_KEY}` / `${PUSHOVER_APP_TOKEN}` references — **tokens never land in the JSON file**.
-2. Runs `install-cli.sh` which symlinks `workbench-notify` into `~/.claude-workbench/bin/`.
-3. Prints the follow-up steps (export, PATH, verify).
+What it does — **no shell rc edits, no env var exports by hand**:
+1. Asks for your Pushover user key and app token.
+2. Writes them to `~/.claude-workbench/.env` with `chmod 600`. That file is auto-loaded by the dispatcher at every hook / CLI call — no shell export needed.
+3. Writes `~/.claude-workbench/notify-config.json` with `${PUSHOVER_USER_KEY}` / `${PUSHOVER_APP_TOKEN}` references — **tokens never appear inside the JSON**.
+4. Runs `install-cli.sh` which symlinks `workbench-notify` into `~/.claude-workbench/bin/`.
 
-If you re-run setup later: pass `--reset` to reconfigure.
+To reconfigure later: `/notify:setup --reset`.
 
 ---
 
-## 5. Verify
+## 4. Verify
 
 Inside Claude:
 ```
@@ -77,16 +62,18 @@ Inside Claude:
 ```
 Your phone should buzz within ~3 seconds with "Claude Code · test".
 
-Outside Claude:
+Outside Claude (**only** if you added `~/.claude-workbench/bin` to your shell rc's PATH):
 ```bash
 workbench-notify --health
 #  -> exit 0, prints "notify: ok" when config + provider are both good
 workbench-notify --title "Hi" --message "from shell" --priority normal
 ```
 
+If `workbench-notify` isn't found from the terminal, that's expected with the default setup — `/notify:test` inside Claude still works, because it prepends PATH in its own command body.
+
 ---
 
-## 6. Understand what fires pushes
+## 5. Understand what fires pushes
 
 Claude Code emits four `Notification` hook events; the plugin routes each via `rules[]` in the config:
 
@@ -104,7 +91,7 @@ workbench-notify --title "Kanban" --message "task-042 blocked" --priority high
 
 ---
 
-## 7. Tune rules
+## 6. Tune rules
 
 Edit `~/.claude-workbench/notify-config.json`. Key knobs:
 
@@ -118,7 +105,7 @@ After editing, re-check with `workbench-notify --health`. No restart needed — 
 
 ---
 
-## 8. Security posture
+## 7. Security posture
 
 - HTTPS-only to Pushover.
 - Messages run through a scrubber that redacts common token shapes (`sk-…`, `sk-ant-…`, `ghp_…`, `xox[abpr]-…`, `AKIA…`, `AIza…`, JWTs, bare hex ≥40 chars) before send.
@@ -127,17 +114,18 @@ After editing, re-check with `workbench-notify --health`. No restart needed — 
 
 ---
 
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `/notify:test` says "sent" but no push arrives | Pushover app not logged in, or no device registered | Open the Pushover app, sign in, let it complete device registration; then resend |
-| `workbench-notify: command not found` | `~/.claude-workbench/bin` not on PATH | Add to shell rc (Step 0), re-source |
+| `/notify:test` fails with `workbench-notify: command not found` | `install-cli.sh` never ran (setup interrupted) | Re-run `/notify:setup` — it runs the installer as its final step |
+| `workbench-notify: command not found` **only when running from your terminal** | `~/.claude-workbench/bin` not on your shell PATH | Expected — not required for slash commands. Add `export PATH="$HOME/.claude-workbench/bin:$PATH"` to `~/.bashrc` if you want manual terminal use |
 | `workbench-notify --health` exit 1: "unconfigured" | `~/.claude-workbench/notify-config.json` missing | Run `/notify:setup` |
 | `workbench-notify --health` exit 1: "no enabled provider" | `providers.pushover.enabled: false` | Flip it back to `true` |
-| Push arrives but body is empty / "[REDACTED]" | scrubber overmatched on a legit string (bare hex etc.) | Report as bug; workaround: shorten the hex in the message before passing |
-| GUI-launched Claude on macOS gets no pushes | env vars not inherited | Launch Claude from terminal, or use `launchctl setenv` |
-| Duplicate / spammy pushes | rules have no throttle | Add `"throttle_seconds": 300` to noisy rules |
+| Push arrives but body is empty / "[REDACTED]" | Scrubber over-matched on a legit string (bare hex etc.) | Report as bug; workaround: shorten the hex in the message before passing |
+| `notify-failures.log` says "pushover: send returned falsy" and health is ok | Tokens in `~/.claude-workbench/.env` are wrong | `/notify:setup --reset` and re-enter tokens |
+| Duplicate / spammy pushes | Rules have no throttle | Add `"throttle_seconds": 300` to noisy rules |
 
 Inspect the failure log:
 ```bash
@@ -150,27 +138,30 @@ rm ~/.claude-workbench/state/notify-throttle.json
 
 ---
 
-## 10. Uninstall
+## 9. Uninstall
 
 ```
 > /plugin uninstall notify@claude-workbench
 ```
 
 This removes the plugin but leaves:
+- `~/.claude-workbench/.env` (your Pushover tokens — you probably want these gone).
 - `~/.claude-workbench/notify-config.json` (your config).
 - `~/.claude-workbench/bin/workbench-notify` (symlink — now dangling).
 - `~/.claude-workbench/logs/notify-failures.log`.
 
 To fully clean:
 ```bash
+rm -f ~/.claude-workbench/.env
 rm -f ~/.claude-workbench/notify-config.json
 rm -f ~/.claude-workbench/bin/workbench-notify
 ```
-The env vars (`PUSHOVER_USER_KEY`, `PUSHOVER_APP_TOKEN`) are yours to keep or remove from shell rc.
+
+If you had also added `export PATH="$HOME/.claude-workbench/bin:$PATH"` to your shell rc, that's yours to keep or remove.
 
 ---
 
-## 11. Next steps
+## 10. Next steps
 
 - Add `kanban` (if you haven't): [`kanban_quickstart.md`](./kanban_quickstart.md). Task transitions automatically push when both are installed.
 - Add `docsync`: [`docsync_quickstart.md`](./docsync_quickstart.md). When `enforcement=block`, docsync gates `/kanban:done` and the blocked transition pushes via this plugin.

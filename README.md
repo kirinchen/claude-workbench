@@ -35,10 +35,6 @@ Workbench solves these four pains as three independent plugins that compose:
 ## Install
 
 ```bash
-# 0. On your shell rc (~/.bashrc / ~/.zshrc) — required so sibling plugins
-#    can discover each other's CLIs (workbench-notify, workbench-docsync, ...).
-export PATH="$HOME/.claude-workbench/bin:$PATH"
-
 # 1. Start Claude Code in any project
 cd my-project
 claude
@@ -55,6 +51,8 @@ claude
 ```
 
 Then jump into the quickstart for each plugin you installed — see the links at the top of this file.
+
+> **No shell rc editing required.** Hook scripts and slash commands auto-prepend `~/.claude-workbench/bin` to `PATH` when they run, and notify reads tokens from `~/.claude-workbench/.env` (written by `/notify:setup`). Add `export PATH="$HOME/.claude-workbench/bin:$PATH"` only if you want to run `workbench-*` CLIs **manually from your terminal** for debugging.
 
 ### Two identifiers, one letter apart
 

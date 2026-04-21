@@ -52,16 +52,20 @@ Claude Code fires four `Notification` event types:
 
 The plugin routes each via the `rules[]` array in `notify-config.json`. Unmatched events fall back to `default_provider` at priority 0.
 
-## 3. Config location
+## 3. Config + secrets location
 
-`~/.claude-workbench/notify-config.json` (XDG-like, outside the project). This is by design: tokens don't end up in git.
+Two files in `~/.claude-workbench/` (outside any project so nothing leaks into git):
 
-Environment variables the user is expected to export (e.g. via their shell rc):
+- `notify-config.json` — routing rules, provider flags. Uses `${VAR}` references for secrets.
+- `.env` — actual token values. Managed by `/notify:setup`. chmod 600. Auto-loaded by the dispatcher at every invocation.
 
-```bash
-export PUSHOVER_USER_KEY="uXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-export PUSHOVER_APP_TOKEN="aXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
+# ~/.claude-workbench/.env — created by /notify:setup, never by hand
+PUSHOVER_USER_KEY=u...
+PUSHOVER_APP_TOKEN=a...
+```
+
+**Do NOT instruct users to `export PUSHOVER_*` in their shell rc.** The `.env` file handles it. If a user already has shell exports, those still win (process env takes precedence over the file), so nothing breaks for existing setups — but new setups go through `.env`.
 
 ## 4. When to use each slash command
 

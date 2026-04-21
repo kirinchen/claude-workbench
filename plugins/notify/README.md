@@ -25,9 +25,12 @@ Claude Code fires a `Notification` hook on four event types. Each is routable:
 > /notify:test          # send a test push
 ```
 
-`/notify:setup` also links the `workbench-notify` CLI into `~/.claude-workbench/bin/` so sibling plugins (`kanban`, `docsync`, `memory`) can discover it via capability detection.
+`/notify:setup` handles three things in one go:
+1. Writes your Pushover tokens to `~/.claude-workbench/.env` (chmod 600) — the dispatcher auto-loads this file, **no shell rc edits required**.
+2. Writes `~/.claude-workbench/notify-config.json` with `${VAR}` references (tokens never appear in the JSON).
+3. Links the `workbench-notify` CLI into `~/.claude-workbench/bin/` so sibling plugins can discover it.
 
-Make sure `~/.claude-workbench/bin/` is on your PATH:
+**PATH setup is optional** — only needed if you want to run `workbench-notify` manually from your terminal. Slash commands and hook scripts auto-prepend PATH when they run. For terminal use:
 
 ```bash
 export PATH="$HOME/.claude-workbench/bin:$PATH"
@@ -35,29 +38,35 @@ export PATH="$HOME/.claude-workbench/bin:$PATH"
 
 ## Config
 
-Lives at `~/.claude-workbench/notify-config.json` (outside the project so tokens don't leak into git). Use env-var expansion for secrets:
+Two files live side by side in `~/.claude-workbench/`:
 
-```json
-{
-  "schema_version": 1,
-  "default_provider": "pushover",
-  "providers": {
-    "pushover": {
-      "enabled": true,
-      "user_key": "${PUSHOVER_USER_KEY}",
-      "app_token": "${PUSHOVER_APP_TOKEN}"
-    }
-  },
-  "rules": [
-    { "match": { "notification_type": "permission_prompt" },  "providers": ["pushover"], "priority":  1 },
-    { "match": { "notification_type": "elicitation_dialog" }, "providers": ["pushover"], "priority":  1 },
-    { "match": { "notification_type": "idle_prompt" },        "providers": ["pushover"], "priority": -1, "throttle_seconds": 300 },
-    { "match": { "notification_type": "auth_success" },       "providers": ["pushover"], "priority": -2 }
-  ]
-}
-```
+- **`.env`** — your tokens (chmod 600; managed by `/notify:setup`):
+  ```
+  PUSHOVER_USER_KEY=u...
+  PUSHOVER_APP_TOKEN=a...
+  ```
+- **`notify-config.json`** — routing rules and provider flags (safe to commit to a dotfile repo, since it only references env vars):
+  ```json
+  {
+    "schema_version": 1,
+    "default_provider": "pushover",
+    "providers": {
+      "pushover": {
+        "enabled": true,
+        "user_key": "${PUSHOVER_USER_KEY}",
+        "app_token": "${PUSHOVER_APP_TOKEN}"
+      }
+    },
+    "rules": [
+      { "match": { "notification_type": "permission_prompt" },  "providers": ["pushover"], "priority":  1 },
+      { "match": { "notification_type": "elicitation_dialog" }, "providers": ["pushover"], "priority":  1 },
+      { "match": { "notification_type": "idle_prompt" },        "providers": ["pushover"], "priority": -1, "throttle_seconds": 300 },
+      { "match": { "notification_type": "auth_success" },       "providers": ["pushover"], "priority": -2 }
+    ]
+  }
+  ```
 
-Set the env vars in your shell rc or a `.env` sourced by your shell — never inline secrets in the JSON.
+Secrets ONLY live in `.env`. The JSON only holds `${VAR}` references, resolved at runtime.
 
 ## CLI
 

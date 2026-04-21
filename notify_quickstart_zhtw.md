@@ -12,10 +12,8 @@
 
 - 已安裝 Claude Code。
 - 有 Pushover 帳號（免費試用，解鎖要一次性 $5 / 平台）。
-- Shell rc（`~/.bashrc` 或 `~/.zshrc`）包含：
-  ```bash
-  export PATH="$HOME/.claude-workbench/bin:$PATH"
-  ```
+
+**不需要改 shell rc**。Dispatcher 會自動從 `~/.claude-workbench/.env` 讀 token，hook script 執行時會自動把 `~/.claude-workbench/bin` prepend 到 PATH。**只有**當你想**從 terminal 手動**敲 `workbench-notify` 指令（除錯用）時，才要自己在 shell rc 裡加那條 `export PATH`。
 
 ---
 
@@ -26,25 +24,11 @@
 3. 拉到 **"Your Applications"** → **Create an Application/API Token** → 取個名字（例：`claude-code`）→ 會給你一組 30 字元的 **API Token/Key**，`a` 開頭。複製下來。
 4. 手機裝 Pushover app（iOS / Android，一次性買斷解除 7 天試用），登入同一個帳號。第一次開 app 會註冊裝置——那就是收推播的對象。
 
----
-
-## 2. 把 token 設成環境變數（**不要**放進 JSON）
-
-加到 `~/.bashrc` / `~/.zshrc`：
-```bash
-export PUSHOVER_USER_KEY="u..."          # 儀表板的 Your User Key
-export PUSHOVER_APP_TOKEN="a..."         # 你建立的 Application 給的 API Token
-```
-然後：
-```bash
-source ~/.bashrc    # 或開新 terminal
-```
-
-**macOS 注意**：如果你從 Dock / Launchpad 啟動 Claude Code（GUI），它**看不到** shell rc 的 env。解法是：(a) 永遠從 terminal 開 Claude（iTerm / Terminal 裡 `claude`），或 (b) 用 `launchctl setenv` 把變數設給整個 GUI 環境。
+兩個 key 都拿到之後，`/notify:setup` 會問你。
 
 ---
 
-## 3. 安裝 plugin
+## 2. 安裝 plugin
 
 在 Claude Code 裡（任一專案都行）：
 ```
@@ -54,22 +38,23 @@ source ~/.bashrc    # 或開新 terminal
 
 ---
 
-## 4. 跑 setup
+## 3. 跑 setup（token 它幫你處理）
 
 ```
 > /notify:setup
 ```
 
-它會做這些事：
-1. 寫 `~/.claude-workbench/notify-config.json`，用 `${PUSHOVER_USER_KEY}` / `${PUSHOVER_APP_TOKEN}` 引用——**token 不會進 JSON 檔**。
-2. 跑 `install-cli.sh`，把 `workbench-notify` symlink 到 `~/.claude-workbench/bin/`。
-3. 印出後續步驟（export、PATH、驗證）。
+它會做這些事——**不用你手動 export、不用改 shell rc**：
+1. 問你 Pushover user key 和 app token。
+2. 把 token 寫到 `~/.claude-workbench/.env`（`chmod 600`）。這個檔案每次 hook / CLI 執行時都會被 dispatcher 自動載入——完全不需要 shell export。
+3. 寫 `~/.claude-workbench/notify-config.json`，用 `${PUSHOVER_USER_KEY}` / `${PUSHOVER_APP_TOKEN}` 引用——**token 絕不出現在 JSON 內**。
+4. 跑 `install-cli.sh`，把 `workbench-notify` symlink 到 `~/.claude-workbench/bin/`。
 
-之後想重跑 setup：加 `--reset`。
+要重跑：`/notify:setup --reset`。
 
 ---
 
-## 5. 驗證
+## 4. 驗證
 
 在 Claude 裡：
 ```
@@ -77,16 +62,18 @@ source ~/.bashrc    # 或開新 terminal
 ```
 手機應該在 ~3 秒內震動，顯示「Claude Code · test」。
 
-在 Claude 外：
+在 Claude 外（**只在**你把 `~/.claude-workbench/bin` 加進 shell rc 的 PATH 時才能這樣用）：
 ```bash
 workbench-notify --health
 #  -> exit 0，印 "notify: ok"（config + provider 都正常）
 workbench-notify --title "Hi" --message "from shell" --priority normal
 ```
 
+如果 terminal 裡敲 `workbench-notify` 說找不到，預設就是這樣——Claude 裡的 `/notify:test` 照樣會動，因為 slash command 自己會在內部 prepend PATH。
+
 ---
 
-## 6. 理解什麼情況會推播
+## 5. 理解什麼情況會推播
 
 Claude Code 會發四種 `Notification` hook 事件；plugin 依照 config 裡的 `rules[]` 路由：
 
@@ -104,7 +91,7 @@ workbench-notify --title "Kanban" --message "task-042 blocked" --priority high
 
 ---
 
-## 7. 調整規則
+## 6. 調整規則
 
 編輯 `~/.claude-workbench/notify-config.json`。關鍵旋鈕：
 
@@ -118,7 +105,7 @@ workbench-notify --title "Kanban" --message "task-042 blocked" --priority high
 
 ---
 
-## 8. 安全姿態
+## 7. 安全姿態
 
 - 全程 HTTPS 連 Pushover。
 - 訊息送出前會過一個 scrubber，redact 常見的 token 型態（`sk-…`、`sk-ant-…`、`ghp_…`、`xox[abpr]-…`、`AKIA…`、`AIza…`、JWT、純 hex ≥40 字元）。
@@ -127,16 +114,17 @@ workbench-notify --title "Kanban" --message "task-042 blocked" --priority high
 
 ---
 
-## 9. 疑難排解
+## 8. 疑難排解
 
 | 症狀 | 原因 | 解法 |
 |---|---|---|
 | `/notify:test` 說「sent」但手機沒響 | Pushover app 沒登入，或裝置沒註冊 | 打開 app、登入、等它完成裝置註冊；重試 |
-| `workbench-notify: command not found` | `~/.claude-workbench/bin` 不在 PATH | 加到 shell rc（Step 0），重新 source |
+| `/notify:test` 失敗：`workbench-notify: command not found` | `install-cli.sh` 沒跑（setup 中途斷掉） | 重跑 `/notify:setup`——它最後一步就是安裝 CLI shim |
+| `workbench-notify: command not found` **只在 terminal 裡** | `~/.claude-workbench/bin` 不在你 shell 的 PATH 上 | 這是正常的——slash command 不需要這個。如果要從 terminal 手動用，加 `export PATH="$HOME/.claude-workbench/bin:$PATH"` 到 `~/.bashrc` |
 | `workbench-notify --health` exit 1：`unconfigured` | `~/.claude-workbench/notify-config.json` 不存在 | 跑 `/notify:setup` |
 | `workbench-notify --health` exit 1：`no enabled provider` | `providers.pushover.enabled: false` | 改回 `true` |
 | 推播送到了但 body 是空 / `[REDACTED]` | Scrubber 誤傷合法字串（純 hex 等） | 回報；暫時解法：傳 message 前把長 hex 縮短 |
-| macOS GUI 啟動的 Claude 收不到推播 | env 沒繼承 | 從 terminal 開 Claude，或用 `launchctl setenv` |
+| `notify-failures.log` 寫 "pushover: send returned falsy" 但 health 正常 | `~/.claude-workbench/.env` 裡的 token 不對 | `/notify:setup --reset` 重新輸入 |
 | 推播太多 / 重複 | 規則沒設 throttle | 在吵的規則加 `"throttle_seconds": 300` |
 
 檢查失敗 log：
@@ -150,27 +138,30 @@ rm ~/.claude-workbench/state/notify-throttle.json
 
 ---
 
-## 10. 解除安裝
+## 9. 解除安裝
 
 ```
 > /plugin uninstall notify@claude-workbench
 ```
 
 會留下：
+- `~/.claude-workbench/.env`（你的 Pushover token——通常會想刪掉）。
 - `~/.claude-workbench/notify-config.json`（你的 config）。
 - `~/.claude-workbench/bin/workbench-notify`（symlink，現在是 dangling）。
 - `~/.claude-workbench/logs/notify-failures.log`。
 
 要完全清乾淨：
 ```bash
+rm -f ~/.claude-workbench/.env
 rm -f ~/.claude-workbench/notify-config.json
 rm -f ~/.claude-workbench/bin/workbench-notify
 ```
-環境變數（`PUSHOVER_USER_KEY`、`PUSHOVER_APP_TOKEN`）自己決定要留在 shell rc 還是移掉。
+
+如果你當初有把 `export PATH="$HOME/.claude-workbench/bin:$PATH"` 加到 shell rc，那條自己決定要留還是移掉。
 
 ---
 
-## 11. 下一步
+## 10. 下一步
 
 - 加裝 `kanban`（如果還沒）：[`kanban_quickstart_zhtw.md`](./kanban_quickstart_zhtw.md)。兩個都裝後，任務狀態轉換會自動推播。
 - 加裝 `docsync`：[`docsync_quickstart_zhtw.md`](./docsync_quickstart_zhtw.md)。當 `enforcement=block` 時，docsync 會擋 `/kanban:done`，被擋的轉換會透過這個 plugin 推播。

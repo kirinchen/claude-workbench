@@ -12,10 +12,19 @@
 # Silent on no-op. Exit 0 always — this is a convenience, never a blocker.
 set -euo pipefail
 
+# --- Self-locate sibling CLIs ------------------------------------------------
+# Always prepend ~/.claude-workbench/bin so sibling integration works even
+# when the user hasn't edited their shell rc (Windows GUI launch, cron with
+# minimal env, etc.). Idempotent: skipped if already present.
+_WB_BIN="$HOME/.claude-workbench/bin"
+case ":${PATH:-}:" in
+  *":$_WB_BIN:"*) ;;  # already there
+  *) export PATH="$_WB_BIN:${PATH:-}" ;;
+esac
+
 # --- Capability detection (§6.5) ---------------------------------------------
-# Siblings expose a `workbench-<name>` CLI when installed. Today only kanban
-# ships (§7 meta bundle), so HAS_NOTIFY / HAS_MEMORY stay 0 and the dispatch
-# blocks no-op. When notify / memory v0.1.0 ship, these flip automatically.
+# Siblings expose a `workbench-<name>` CLI when installed. With the PATH
+# prepend above, `command -v` finds them even without shell rc setup.
 has_plugin() { command -v "workbench-$1" >/dev/null 2>&1; }
 HAS_NOTIFY=0; has_plugin notify && HAS_NOTIFY=1
 HAS_MEMORY=0; has_plugin memory && HAS_MEMORY=1
