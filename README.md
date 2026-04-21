@@ -1,8 +1,10 @@
 # claude-workbench
 
-A family of Claude Code plugins that turn the CLI into a persistent, event-driven AI workspace. Install one, two, or all three — each plugin is useful on its own, and they reinforce each other when combined.
+A family of Claude Code plugins that turn the CLI into a persistent, event-driven AI workspace. Install one, two, or all of them — each plugin is useful on its own, and they reinforce each other when combined.
 
 > **Status**: v0.1.0 (Draft). `kanban`, `notify`, and `docsync` are shipped; `memory` is the remaining core stub. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
+>
+> **Quickstarts**: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`docsync`](./docsync_quickstart.md)
 
 ## Plugins
 
@@ -31,12 +33,16 @@ Workbench solves these four pains as three independent plugins that compose:
 ## Install
 
 ```bash
+# 0. On your shell rc (~/.bashrc / ~/.zshrc) — required so sibling plugins
+#    can discover each other's CLIs (workbench-notify, workbench-docsync, ...).
+export PATH="$HOME/.claude-workbench/bin:$PATH"
+
 # 1. Start Claude Code in any project
 cd my-project
 claude
 
-# 2. Add the marketplace
-> /plugin marketplace add kirin/claude-workbench
+# 2. Add the marketplace (public repo; use the SSH URL for private)
+> /plugin marketplace add kirinchen/claude-workbench
 
 # 3. Install what you need
 > /plugin install kanban@claude-workbench       # ready
@@ -46,11 +52,7 @@ claude
 > /plugin install workbench@claude-workbench    # bundle (when memory ships)
 ```
 
-Add `~/.claude-workbench/bin` to your PATH so sibling plugins can discover each other's CLIs:
-
-```bash
-export PATH="$HOME/.claude-workbench/bin:$PATH"
-```
+Then jump into the quickstart for each plugin you installed — see the links at the top of this file.
 
 ## Quickstart — `kanban`
 
@@ -133,6 +135,7 @@ MIT — see [`LICENSE`](./LICENSE) (to be added).
 
 - [`SPEC.md`](./SPEC.md) — full spec
 - [`current_state.md`](./current_state.md) — implementation snapshot
+- Quickstarts: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`docsync`](./docsync_quickstart.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Model Context Protocol](https://modelcontextprotocol.io)
