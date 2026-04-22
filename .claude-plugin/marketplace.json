@@ -29,12 +29,12 @@
       "keywords": ["memory", "rag", "sqlite", "embeddings"]
     },
     {
-      "name": "docsync",
-      "source": "./plugins/docsync",
+      "name": "mentor",
+      "source": "./plugins/mentor",
       "version": "0.1.0",
-      "description": "Keep code and documentation in sync via project-local rules (.claude/docsync.yaml)",
+      "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, doc hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces docsync.",
       "category": "developer-tools",
-      "keywords": ["docs", "drift", "sync", "yaml"]
+      "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]
     },
     {
       "name": "workbench",
@@ -48,7 +48,7 @@
       "name": "workbench-dev",
       "source": "./plugins/workbench-dev",
       "version": "0.0.1",
-      "description": "★ Developer bundle — workbench + docsync (meta, stub)",
+      "description": "★ Developer bundle — workbench + mentor (meta, stub)",
       "category": "developer-tools",
       "keywords": ["bundle", "meta", "dev"]
     }

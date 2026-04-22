@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# workbench-mentor — public CLI shim for the claude-workbench mentor plugin.
+#
+# Invoked by sibling plugins for capability detection:
+#   workbench-mentor --health
+# and for task→issue→epic tracing:
+#   workbench-mentor trace task-042 --format json
+set -euo pipefail
+
+if [ -n "${MENTOR_CLI_PY:-}" ] && [ -f "$MENTOR_CLI_PY" ]; then
+  cli="$MENTOR_CLI_PY"
+else
+  # Resolve symlinks so we find the real plugin dir even when this shim was
+  # installed via `ln -s` into ~/.claude-workbench/bin/.
+  src="${BASH_SOURCE[0]}"
+  while [ -L "$src" ]; do
+    target="$(readlink "$src")"
+    case "$target" in
+      /*) src="$target" ;;
+      *)  src="$(cd -- "$(dirname -- "$src")" && pwd)/$target" ;;
+    esac
+  done
+  here="$(cd -- "$(dirname -- "$src")" && pwd)"
+  if [ -f "$here/workbench-mentor.py" ]; then
+    cli="$here/workbench-mentor.py"
+  elif [ -f "$here/../scripts/workbench-mentor.py" ]; then
+    cli="$here/../scripts/workbench-mentor.py"
+  else
+    echo "workbench-mentor: cannot locate workbench-mentor.py (set MENTOR_CLI_PY)" >&2
+    exit 1
+  fi
+fi
+
+exec python3 "$cli" "$@"

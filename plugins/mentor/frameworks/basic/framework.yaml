@@ -1,0 +1,21 @@
+name: basic
+description: "Minimal mode — SPEC + tasks. Good for personal projects and prototypes."
+
+# Files materialised by /mentor:init --mode=basic
+scaffold:
+  - path: doc/SPEC.md
+    from_template: SPEC.md
+    required: true
+  - path: doc/task.md
+    from_template: task.md
+    required: false           # only when kanban plugin not installed
+    when: "no-kanban"
+
+# Default .claude/mentor.yaml fragment
+defaults:
+  agent_behavior:
+    bootstrap_docs:
+      - doc/SPEC.md
+    require_issue_context: false
+    auto_retrospective: false
+    require_adr_on_decision: false

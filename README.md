@@ -6,7 +6,7 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 
 > **Status**: v0.1.0 (Draft). `kanban`, `notify`, and `docsync` are shipped; `memory` is the remaining core stub. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
 >
-> **Quickstarts**: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`docsync`](./docsync_quickstart.md)
+> **Quickstarts**: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`mentor`](./plugins/mentor/README.md) *(docsync was replaced by mentor — see [`epic/mentor-plugin-spec.md`](./epic/mentor-plugin-spec.md))*
 
 ## Plugins
 
@@ -15,7 +15,7 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 | [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.0 ready** |
 | [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.0 ready** |
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
-| [`docsync`](./plugins/docsync) | dev | Code ↔ documentation drift prevention via `.claude/docsync.yaml` | **v0.1.0 ready** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.1.0 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
@@ -45,7 +45,7 @@ claude
 # 3. Install what you need
 > /plugin install kanban@claude-workbench       # ready
 > /plugin install notify@claude-workbench       # ready (Pushover)
-> /plugin install docsync@claude-workbench      # ready (dev profile)
+> /plugin install mentor@claude-workbench       # ready (dev profile, replaces docsync)
 > /plugin install memory@claude-workbench       # coming soon
 > /plugin install workbench@claude-workbench    # bundle (when memory ships)
 ```
@@ -94,9 +94,10 @@ Capability detection (SPEC §8.7): each plugin checks for sibling CLIs (`workben
 |---|---|---|
 | `kanban × notify` | State transitions trigger push notifications (BLOCKED → high priority). | wired, not E2E tested |
 | `kanban × memory` | `/kanban:next` queries past sessions; `/kanban:done` saves completion notes. | awaits memory |
-| `kanban × docsync` | DONE gate: when `enforcement=block`, `workbench-docsync check` blocks premature DONE transitions. | wired, awaits E2E test |
+| `kanban × mentor` | New Issue can spawn kanban task; optional DONE gate on Issue Acceptance Criteria. | wired, awaits E2E test |
 | `notify × memory` | Decision prompts carry "last time you chose X". | awaits memory |
-| `docsync × memory` | Doc-change summaries persisted at session end. | wired, awaits memory |
+| `mentor × memory` | Sprint retros + accepted ADRs persisted to memory. | wired, awaits memory |
+| `mentor × notify` | Sprint-end / Epic-done push notifications. | wired, awaits E2E test |
 
 ## Roadmap
 
@@ -121,12 +122,12 @@ claude-workbench/
 │   ├── kanban/                         # v0.1.0 (ready)
 │   ├── notify/                         # v0.1.0 (ready — Pushover)
 │   ├── memory/                         # v0.0.1 (stub)
-│   ├── docsync/                        # v0.1.0 (ready — dev profile)
+│   ├── mentor/                         # v0.1.0 (ready — dev profile, replaces docsync)
 │   ├── workbench/                      # v0.0.1 (meta stub)
 │   └── workbench-dev/                  # v0.0.1 (meta stub)
 └── schema/
     ├── kanban.schema.json              # canonical schema
-    └── docsync.schema.json             # canonical schema
+    └── mentor.schema.json              # canonical schema
 ```
 
 ## Uninstall
@@ -146,7 +147,7 @@ MIT — see [`LICENSE`](./LICENSE) (to be added).
 
 - [`SPEC.md`](./SPEC.md) — full spec
 - [`current_state.md`](./current_state.md) — implementation snapshot
-- Quickstarts: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`docsync`](./docsync_quickstart.md)
+- Quickstarts: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`mentor`](./plugins/mentor/README.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Model Context Protocol](https://modelcontextprotocol.io)

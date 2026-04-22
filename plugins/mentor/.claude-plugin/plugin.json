@@ -1,0 +1,8 @@
+{
+  "name": "mentor",
+  "version": "0.1.0",
+  "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, document hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces the earlier `docsync` plugin with a broader, framework-driven design. Dev profile.",
+  "author": { "name": "kirin" },
+  "homepage": "https://github.com/kirinchen/claude-workbench",
+  "license": "MIT"
+}

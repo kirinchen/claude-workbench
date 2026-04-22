@@ -6,7 +6,7 @@
 
 > **狀態**：v0.1.0（草稿）。`kanban`、`notify`、`docsync` 已完工；`memory` 是剩下的核心 stub。完整設計見 [`SPEC.md`](./SPEC.md)，即時實作快照見 [`current_state.md`](./current_state.md)。
 >
-> **快速上手**：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`docsync`](./docsync_quickstart_zhtw.md)
+> **快速上手**：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./plugins/mentor/README.md) *(docsync 已由 mentor 取代——詳見 [`epic/mentor-plugin-spec.md`](./epic/mentor-plugin-spec.md))*
 
 ## Plugins
 
@@ -15,7 +15,7 @@
 | [`kanban`](./plugins/kanban) | core | 任務狀態持續化 + 人 / AI 共用的工作佇列，透過 `kanban.json` | **v0.1.0 可用** |
 | [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.0 可用** |
 | [`memory`](./plugins/memory) | core | 跨 session 的 RAG 記憶（SQLite + embeddings，純本機） | v0.0.1 stub |
-| [`docsync`](./plugins/docsync) | dev | 透過 `.claude/docsync.yaml` 防止 code ↔ 文件漂移 | **v0.1.0 可用** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.1.0 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -45,7 +45,7 @@ claude
 # 3. 安裝你需要的 plugin
 > /plugin install kanban@claude-workbench       # 可用
 > /plugin install notify@claude-workbench       # 可用（Pushover）
-> /plugin install docsync@claude-workbench      # 可用（dev 分類）
+> /plugin install mentor@claude-workbench       # 可用（dev 分類，取代 docsync）
 > /plugin install memory@claude-workbench       # 尚未釋出
 > /plugin install workbench@claude-workbench    # bundle（等 memory 完工）
 ```
@@ -94,9 +94,10 @@ Claude 對 `kanban.json` **會做的**：
 |---|---|---|
 | `kanban × notify` | 狀態轉換觸發推播（BLOCKED → 高優先度）。 | 線路已接，E2E 未測 |
 | `kanban × memory` | `/kanban:next` 查詢過去 session；`/kanban:done` 存完工筆記。 | 等 memory |
-| `kanban × docsync` | DONE gate：`enforcement=block` 時，`workbench-docsync check` 會擋下文件未同步的 DONE 轉換。 | 線路已接，等 E2E |
+| `kanban × mentor` | 新 Issue 可自動產生 kanban task；可選的 Issue Acceptance Criteria DONE gate。 | 線路已接，等 E2E |
 | `notify × memory` | 決策提示會附帶「上次你選了 X」。 | 等 memory |
-| `docsync × memory` | Session 結束時持久化文件變更摘要。 | 線路已接，等 memory |
+| `mentor × memory` | Sprint retro + accepted ADR 持久化到 memory。 | 線路已接，等 memory |
+| `mentor × notify` | Sprint 結束 / Epic 完成推播。 | 線路已接，等 E2E |
 
 ## Roadmap
 
@@ -121,12 +122,12 @@ claude-workbench/
 │   ├── kanban/                         # v0.1.0（可用）
 │   ├── notify/                         # v0.1.0（可用 — Pushover）
 │   ├── memory/                         # v0.0.1（stub）
-│   ├── docsync/                        # v0.1.0（可用 — dev 分類）
+│   ├── mentor/                         # v0.1.0（可用 — dev 分類，取代 docsync）
 │   ├── workbench/                      # v0.0.1（meta stub）
 │   └── workbench-dev/                  # v0.0.1（meta stub）
 └── schema/
     ├── kanban.schema.json              # canonical schema
-    └── docsync.schema.json             # canonical schema
+    └── mentor.schema.json              # canonical schema
 ```
 
 ## 移除
@@ -146,7 +147,7 @@ MIT——見 [`LICENSE`](./LICENSE)（待補）。
 
 - [`SPEC.md`](./SPEC.md) — 完整 spec
 - [`current_state.md`](./current_state.md) — 實作快照
-- 快速上手：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`docsync`](./docsync_quickstart_zhtw.md)
+- 快速上手：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./plugins/mentor/README.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Model Context Protocol](https://modelcontextprotocol.io)

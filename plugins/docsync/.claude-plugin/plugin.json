@@ -1,8 +1,0 @@
-{
-  "name": "docsync",
-  "version": "0.1.0",
-  "description": "Keep code and documentation in sync via project-local rules in .claude/docsync.yaml. Config-driven, not prompt-driven.",
-  "author": { "name": "kirin" },
-  "homepage": "https://github.com/kirin/claude-workbench",
-  "license": "MIT"
-}

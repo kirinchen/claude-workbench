@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kirinchen/claude-workbench/schema/mentor.schema.json",
+  "title": "mentor config",
+  "description": "Schema for .claude/mentor.yaml — see epic/mentor-plugin-spec.md.",
+  "type": "object",
+  "required": ["schema_version", "mode"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["basic", "development"]
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "type": "string", "minLength": 1 },
+        "wiki": { "type": "string", "minLength": 1 },
+        "epic": { "type": "string", "minLength": 1 },
+        "sprint": { "type": "string", "minLength": 1 },
+        "issue": { "type": "string", "minLength": 1 },
+        "task_fallback": { "type": "string", "minLength": 1 }
+      }
+    },
+    "id_patterns": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "agent_behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bootstrap_docs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "require_issue_context": { "type": "boolean" },
+        "auto_retrospective": { "type": "boolean" },
+        "require_adr_on_decision": { "type": "boolean" }
+      }
+    },
+    "templates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "enum": ["builtin", "custom"] },
+        "custom_path": { "type": "string" }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kanban": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "string", "enum": ["auto", "force", "disable"] },
+            "sync_issue_to_task": { "type": "boolean" },
+            "block_done_if_issue_incomplete": { "type": "boolean" }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "string", "enum": ["auto", "force", "disable"] },
+            "save_sprint_retro": { "type": "boolean" },
+            "save_adr": { "type": "boolean" }
+          }
+        },
+        "notify": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "string", "enum": ["auto", "force", "disable"] },
+            "notify_sprint_end": { "type": "boolean" },
+            "notify_epic_done": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+name: development
+description: "Full hierarchy: SPEC + Wiki + Epic + Sprint + Issue + tasks. For multi-feature, planning-cycle, collaborative projects."
+
+scaffold:
+  - path: doc/SPEC.md
+    from_template: SPEC.md
+    required: true
+  - path: doc/Wiki/README.md
+    from_template: Wiki/README.md
+    required: true
+  - path: doc/Wiki/architecture-decisions/ADR-template.md
+    from_template: Wiki/architecture-decisions/ADR-template.md
+    required: true
+  - path: doc/Epic/README.md
+    from_template: Epic/README.md
+    required: true
+  - path: doc/Epic/epic-template.md
+    from_template: Epic/epic-template.md
+    required: true
+  - path: doc/Sprint/README.md
+    from_template: Sprint/README.md
+    required: true
+  - path: doc/Sprint/sprint-template.md
+    from_template: Sprint/sprint-template.md
+    required: true
+  - path: doc/Issue/README.md
+    from_template: Issue/README.md
+    required: true
+  - path: doc/Issue/issue-template.md
+    from_template: Issue/issue-template.md
+    required: true
+  - path: doc/task.md
+    from_template: ../../basic/templates/task.md
+    required: false
+    when: "no-kanban"
+
+defaults:
+  agent_behavior:
+    bootstrap_docs:
+      - doc/SPEC.md
+    require_issue_context: true
+    auto_retrospective: true
+    require_adr_on_decision: true

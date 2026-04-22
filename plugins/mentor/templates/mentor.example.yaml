@@ -1,0 +1,52 @@
+schema_version: 1
+
+# Framework mode — choose one
+mode: development          # basic | development
+
+# Document paths (override if your project uses different layout)
+paths:
+  spec: doc/SPEC.md
+  wiki: doc/Wiki/
+  epic: doc/Epic/
+  sprint: doc/Sprint/
+  issue: doc/Issue/
+  task_fallback: doc/task.md    # only used when kanban plugin not installed
+
+# ID generation patterns
+id_patterns:
+  epic: "EPIC-{seq:03d}"
+  sprint: "SPRINT-{year}-W{week:02d}"
+  issue: "ISSUE-{seq:03d}"
+  task: "task-{seq:03d}"
+
+# Agent behaviour rules
+agent_behavior:
+  # Documents the SessionStart hook asks Claude to read before any code change
+  bootstrap_docs:
+    - doc/SPEC.md
+  # Pick a task only after tracing its parent Issue (development mode)
+  require_issue_context: true
+  # Draft retrospective when Sprint ends (development mode)
+  auto_retrospective: true
+  # Write an ADR when a non-trivial decision is made (development mode)
+  require_adr_on_decision: true
+
+# Template source
+templates:
+  source: builtin           # builtin | custom
+  custom_path: .claude/mentor-templates/
+
+# Sibling plugin integration (all opt-in, respects --health check)
+integration:
+  kanban:
+    enabled: auto           # auto | force | disable
+    sync_issue_to_task: true
+    block_done_if_issue_incomplete: false
+  memory:
+    enabled: auto
+    save_sprint_retro: true
+    save_adr: true
+  notify:
+    enabled: auto
+    notify_sprint_end: true
+    notify_epic_done: true
