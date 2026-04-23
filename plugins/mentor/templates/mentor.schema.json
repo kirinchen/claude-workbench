@@ -53,6 +53,15 @@
         "custom_path": { "type": "string" }
       }
     },
+    "current_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in doc/current_state/ layer — see epic/mentor-current-state.md.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
     "integration": {
       "type": "object",
       "additionalProperties": false,

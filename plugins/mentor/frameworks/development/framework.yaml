@@ -33,6 +33,10 @@ scaffold:
     from_template: ../../basic/templates/task.md
     required: false
     when: "no-kanban"
+  - path: doc/current_state/ARCHITECTURE.md
+    from_template: current_state/ARCHITECTURE.md
+    required: false
+    when: "current_state_enabled"     # only when /mentor:init Phase 4.5 was yes
 
 defaults:
   agent_behavior:

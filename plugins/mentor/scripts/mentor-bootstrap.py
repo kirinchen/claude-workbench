@@ -69,6 +69,15 @@ def main() -> int:
             )
             lines.append("")
 
+    # current_state — opt-in implementation snapshot layer.
+    # Surface ARCHITECTURE.md only; agent reads other files in the dir on demand.
+    if cfg.current_state.enabled:
+        cs_arch = proj / cfg.current_state.path.rstrip("/") / "ARCHITECTURE.md"
+        if cs_arch.is_file():
+            present.append(str(cs_arch.relative_to(proj)) + "  [current state]")
+        else:
+            missing.append(str(cs_arch.relative_to(proj)))
+
     if present:
         lines.append("Before making non-trivial code changes, read these:")
         for d in present:
@@ -79,6 +88,25 @@ def main() -> int:
         for d in missing:
             lines.append(f"  - {d}")
         lines.append("")
+
+    # current_state behavioural reminders (Rule 1 + Rule 2 from spec)
+    if cfg.current_state.enabled:
+        lines.append("")
+        lines.append(
+            "current_state is enabled. Two rules apply:"
+        )
+        lines.append(
+            "  1. When code change goes beyond what current_state/ARCHITECTURE.md "
+            "describes (new component, removed component, interaction or stack "
+            "change), update ARCHITECTURE.md in the same change set. Trivial "
+            "refactors and renames don't count."
+        )
+        lines.append(
+            "  2. If you need a current_state file that doesn't exist (UML, "
+            "CODEMAP, DATA_MODEL, ...), create it under "
+            f"`{cfg.current_state.path}` directly — but you commit to maintain "
+            "what you create. Don't scaffold empty stubs."
+        )
 
     # Development-mode context: open issues count
     if cfg.mode == "development":

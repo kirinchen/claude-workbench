@@ -95,13 +95,50 @@ Controlled by `.claude/mentor.yaml` `integration.*`:
 
 You don't invoke these directly — the hooks and commands handle the fan-out.
 
-## 7. Kanban fallback
+## 7. `doc/current_state/` (when enabled)
+
+If `.claude/mentor.yaml` has `current_state.enabled: true`, the project keeps an **implementation-snapshot layer** — files describing how the system currently looks (vs SPEC's intent). The SessionStart hook surfaces `doc/current_state/ARCHITECTURE.md` alongside SPEC + active sprint.
+
+Two rules apply when this layer is enabled:
+
+### Rule 1 — Sync ARCHITECTURE on out-of-scope code changes
+
+When your code change goes **beyond what `doc/current_state/ARCHITECTURE.md` currently describes**, update ARCHITECTURE.md in the **same change set**.
+
+**Counts as out-of-scope** (must update):
+- Add or remove a component
+- Change how components interact (e.g. swap REST → gRPC, add a queue)
+- Replace a tech-stack pillar (e.g. Postgres → DynamoDB, Express → Fastify)
+- Add a new external dependency (3rd-party API, SaaS)
+
+**Does NOT count** (no update needed):
+- Bug fixes inside an existing component
+- Refactors that don't change the component boundary
+- Variable / function renames
+- Adding tests, comments, logging
+
+The judgment heuristic: *if a reader of ARCHITECTURE.md who hasn't seen your PR would have a wrong mental model after your change, you're out of scope — update it.*
+
+### Rule 2 — Agent-built file = agent-maintained
+
+When you find yourself wishing for a `current_state/` file that doesn't exist (UML, CODEMAP, DATA_MODEL, STATE_MACHINES, ...), **create it in `doc/current_state/` directly** — don't ask the user first.
+
+Filename convention:
+- ALL-CAPS or SNAKE_CASE
+- No prefix needed (the directory provides context)
+- Frontmatter: at least `title:`
+
+**But**: by creating it, you commit yourself (and future-you in later sessions) to keep it in sync. Rule 1 applies recursively to anything you create.
+
+**Hard prohibition**: never create empty stubs ("I'll fill this later"). Either write the real content now, or don't create the file. Stale stubs are worse than missing files because they imply coverage that doesn't exist.
+
+## 8. Kanban fallback
 
 Mentor never co-exists with both `kanban.json` and `doc/task.md`. Check `workbench-mentor config --format json`:
 - `kanban` CLI on PATH → `kanban.json` is the task store; don't touch `doc/task.md`.
 - No kanban → `doc/task.md` is the task store; update with Markdown checkboxes.
 
-## 8. References
+## 9. References
 
 - `references/basic-mode-guide.md` — detailed behaviour in basic mode
 - `references/development-mode-guide.md` — detailed behaviour in development mode

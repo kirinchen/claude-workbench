@@ -211,6 +211,13 @@ class AgentBehavior:
 
 
 @dataclass
+class CurrentStateFlags:
+    """Opt-in doc/current_state/ layer. See epic/mentor-current-state.md."""
+    enabled: bool = False
+    path: str = "doc/current_state/"
+
+
+@dataclass
 class MentorConfig:
     schema_version: int = 1
     mode: str = "basic"                        # basic | development
@@ -225,6 +232,7 @@ class MentorConfig:
     templates_source: str = "builtin"          # builtin | custom
     templates_custom_path: str = ".claude/mentor-templates/"
     integration: IntegrationFlags = field(default_factory=IntegrationFlags)
+    current_state: CurrentStateFlags = field(default_factory=CurrentStateFlags)
 
     @classmethod
     def from_dict(cls, raw: dict) -> "MentorConfig":
@@ -262,6 +270,11 @@ class MentorConfig:
             notify_sprint_end=bool(n_raw.get("notify_sprint_end", True)),
             notify_epic_done=bool(n_raw.get("notify_epic_done", True)),
         )
+        cs_raw = raw.get("current_state") or {}
+        cs = CurrentStateFlags(
+            enabled=bool(cs_raw.get("enabled", False)),
+            path=str(cs_raw.get("path", "doc/current_state/")),
+        )
         return cls(
             schema_version=int(raw.get("schema_version", 1)),
             mode=str(raw.get("mode", "basic")),
@@ -271,6 +284,7 @@ class MentorConfig:
             templates_source=str(tpl.get("source", "builtin")),
             templates_custom_path=str(tpl.get("custom_path", ".claude/mentor-templates/")),
             integration=integ,
+            current_state=cs,
         )
 
 
@@ -562,5 +576,9 @@ def config_to_dict(cfg: MentorConfig) -> dict:
                 "notify_sprint_end": cfg.integration.notify_sprint_end,
                 "notify_epic_done": cfg.integration.notify_epic_done,
             },
+        },
+        "current_state": {
+            "enabled": cfg.current_state.enabled,
+            "path": cfg.current_state.path,
         },
     }

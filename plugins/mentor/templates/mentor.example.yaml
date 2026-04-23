@@ -36,6 +36,13 @@ templates:
   source: builtin           # builtin | custom
   custom_path: .claude/mentor-templates/
 
+# Opt-in doc/current_state/ layer (see epic/mentor-current-state.md)
+# When enabled, mentor scaffolds ARCHITECTURE.md as a seed; agent autonomously
+# adds more files (UML, CODEMAP, ...) under this directory as needs arise.
+current_state:
+  enabled: false            # set true via /mentor:init or /mentor:current-state
+  path: doc/current_state/
+
 # Sibling plugin integration (all opt-in, respects --health check)
 integration:
   kanban:

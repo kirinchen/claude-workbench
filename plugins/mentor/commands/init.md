@@ -81,6 +81,26 @@ For each sibling plugin detected, ask one yes/no:
 
 Translate answers into `.claude/mentor.yaml` `integration.*.enabled` fields (`auto` when yes, `disable` when no). `auto` means "do it when the sibling's CLI is on PATH AND `--health` returns 0".
 
+## 5.5. Phase 4.5 — `doc/current_state/` opt-in (development mode only)
+
+**MUST ASK.** Use `AskUserQuestion`:
+
+> Scaffold `doc/current_state/`?
+>   Purpose: snapshot of how the system actually looks now, so agents
+>            and new contributors don't have to re-derive it from raw
+>            code every session.
+>   What ships: doc/current_state/ARCHITECTURE.md (single seed file)
+>   What follows: agent will add more files here (UML, CODEMAP, ...)
+>                 as needs arise — you don't need to plan them now.
+>   [y/N]   ← default N
+
+If `$ARGUMENTS` contains `--current-state=yes` or `--current-state=no`, skip the question.
+
+- **No** (default, including timeout / Ctrl-C): record `current_state.enabled: false`. Skip scaffold. Never nag — user can run `/mentor:current-state` later to enable.
+- **Yes**: record `current_state.enabled: true`. In Phase 6, materialise `doc/current_state/ARCHITECTURE.md` from `${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/current_state/ARCHITECTURE.md`.
+
+This question only fires in `development` mode — basic mode skips this phase entirely.
+
 ## 6. Phase 5 — First sprint (development mode only)
 
 Ask once:
@@ -100,8 +120,9 @@ If yes: materialise `doc/Sprint/SPRINT-<id>.md` from the development template wi
 2. Create all directories and files from the chosen framework template:
    - basic → copy `${CLAUDE_PLUGIN_ROOT}/frameworks/basic/templates/SPEC.md` → `<paths.spec>` (if missing)
    - development → copy the full tree under `${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/` into the project, respecting `paths.*`
+   - **If Phase 4.5 said yes**: also copy `${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/current_state/ARCHITECTURE.md` → `<current_state.path>/ARCHITECTURE.md` (if missing). Otherwise skip the entire `current_state/` directory in the template.
 3. **Never overwrite** existing files. Report each file as `created` or `kept` and proceed.
-4. Write `.claude/mentor.yaml` (schema_version 1 + user's answers).
+4. Write `.claude/mentor.yaml` (schema_version 1 + user's answers, including the `current_state:` block).
 5. Run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/install-cli.sh` and surface stdout.
 6. Run `workbench-mentor --health` and `workbench-mentor review --format text` to confirm structural health.
 7. Ask whether to commit:
