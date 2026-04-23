@@ -1,5 +1,7 @@
 # mentor
 
+*[繁體中文](./README_zhtw.md)*
+
 Part of the [claude-workbench](../../README.md) family — **dev profile**. See [`epic/mentor-plugin-spec.md`](../../epic/mentor-plugin-spec.md) for the full design.
 
 **Mentor is the onboarding consultant your project never had.** It tells Claude (and any human contributor) *what to read first*, *what templates to fill*, *what order to work in*, and *where to record decisions*. Install it and your repo acquires a working discipline, not just a doc folder.

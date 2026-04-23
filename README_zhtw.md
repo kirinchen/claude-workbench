@@ -6,7 +6,7 @@
 
 > **狀態**：v0.1.0（草稿）。`kanban`、`notify`、`docsync` 已完工；`memory` 是剩下的核心 stub。完整設計見 [`SPEC.md`](./SPEC.md)，即時實作快照見 [`current_state.md`](./current_state.md)。
 >
-> **快速上手**：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./plugins/mentor/README.md) *(docsync 已由 mentor 取代——詳見 [`epic/mentor-plugin-spec.md`](./epic/mentor-plugin-spec.md))*
+> **快速上手**：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./mentor_quickstart_zhtw.md) *(docsync 已由 mentor 取代——詳見 [`epic/mentor-plugin-spec.md`](./epic/mentor-plugin-spec.md))*
 
 ## Plugins
 
@@ -147,7 +147,7 @@ MIT——見 [`LICENSE`](./LICENSE)（待補）。
 
 - [`SPEC.md`](./SPEC.md) — 完整 spec
 - [`current_state.md`](./current_state.md) — 實作快照
-- 快速上手：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./plugins/mentor/README.md)
+- 快速上手：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./mentor_quickstart_zhtw.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Model Context Protocol](https://modelcontextprotocol.io)
