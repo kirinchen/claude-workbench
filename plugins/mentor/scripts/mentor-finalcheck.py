@@ -146,12 +146,10 @@ def main() -> int:
     if len(lines) == 1:  # only the header — nothing interesting
         return 0
 
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "Stop",
-            "additionalContext": "\n".join(lines),
-        }
-    }))
+    # Stop hooks do not accept hookSpecificOutput.additionalContext — the
+    # session is ending, so there is no next turn to inject context into.
+    # Surface the summary to the user via systemMessage instead.
+    print(json.dumps({"systemMessage": "\n".join(lines)}))
     return 0
 
 
