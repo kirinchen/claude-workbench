@@ -6,11 +6,13 @@ Subcommands:
   active-sprint  Path + frontmatter of the first Sprint/*.md with status=active.
   trace <task>   task → issue → epic lookup chain.
   review         Compliance check; exit 2 if violations found.
+  upgrade        Diff scaffold rules vs repo; --apply fills missing files.
   new <type>     Placeholder — real implementation delegated to /mentor:new slash command.
   --health       Exit 0 iff mentor is configured and loadable.
 
-All subcommands support ``--format {json,text}``. Read-only; mentor never
-mutates ``.claude/mentor.yaml`` itself.
+All subcommands support ``--format {json,text}``. Read-only by default;
+``upgrade --apply`` is the only path that writes to the repo, and it
+never overwrites existing files.
 """
 from __future__ import annotations
 
@@ -27,7 +29,9 @@ from framework_engine import (  # noqa: E402
     MentorConfig,
     active_sprint,
     config_to_dict,
+    kanban_installed,
     load_config,
+    load_yaml,
     read_frontmatter,
     review,
     trace_task,
@@ -182,6 +186,159 @@ def cmd_review(args):
     return 0 if not violations else 2
 
 
+def _remap_scaffold_path(rule_path: str, cfg: MentorConfig) -> str:
+    """Map a framework's default scaffold path to the user's configured path.
+
+    Framework yaml uses default paths (doc/SPEC.md, doc/Epic/, ...). Users may
+    override these in mentor.yaml's `paths.*` block. Map default → configured
+    by simple prefix substitution; fall back to literal when no mapping fits.
+    """
+    p = rule_path
+    if p == "doc/SPEC.md":
+        return cfg.paths.spec
+    if p == "doc/task.md":
+        return cfg.paths.task_fallback
+    prefix_map = [
+        ("doc/Wiki/", cfg.paths.wiki),
+        ("doc/Epic/", cfg.paths.epic),
+        ("doc/Sprint/", cfg.paths.sprint),
+        ("doc/Issue/", cfg.paths.issue),
+        ("doc/current_state/", cfg.current_state.path),
+    ]
+    for default_prefix, user_prefix in prefix_map:
+        if p.startswith(default_prefix):
+            up = user_prefix if user_prefix.endswith("/") else user_prefix + "/"
+            return up + p[len(default_prefix):]
+    return p
+
+
+def _evaluate_when(when: str, cfg: MentorConfig, proj: Path) -> tuple[bool, str | None]:
+    """Return (applicable, skip_reason) for a scaffold rule's `when` clause."""
+    when = (when or "").strip()
+    if not when:
+        return True, None
+    if when == "no-kanban":
+        if kanban_installed(proj):
+            return False, "kanban plugin installed — task fallback not needed"
+        return True, None
+    if when == "current_state_enabled":
+        if not cfg.current_state.enabled:
+            return False, "current_state.enabled is false"
+        return True, None
+    return True, None
+
+
+def cmd_upgrade(args):
+    cfg, cfg_path = load_config()
+    if cfg is None or cfg_path is None:
+        return _fail("mentor: no .claude/mentor.yaml found — run /mentor:init first")
+    proj = cfg_path.parent.parent
+
+    plugin_root = HERE.parent  # scripts/ → plugin root
+    fw_yaml = plugin_root / "frameworks" / cfg.mode / "framework.yaml"
+    if not fw_yaml.is_file():
+        return _fail(f"mentor: framework.yaml not found at {fw_yaml}")
+
+    try:
+        fw = load_yaml(fw_yaml)
+    except Exception as e:
+        return _fail(f"mentor: failed to parse {fw_yaml}: {e}")
+
+    template_root = plugin_root / "frameworks" / cfg.mode / "templates"
+    scaffold = fw.get("scaffold") or []
+
+    items: list[dict] = []
+    for rule in scaffold:
+        rule_path = str(rule.get("path", "")).strip()
+        if not rule_path:
+            continue
+        applicable, skip_reason = _evaluate_when(str(rule.get("when", "")), cfg, proj)
+        target_rel = _remap_scaffold_path(rule_path, cfg)
+        target = proj / target_rel
+        from_tpl = str(rule.get("from_template", "")).strip()
+        tpl_path = (template_root / from_tpl).resolve() if from_tpl else None
+        items.append({
+            "rule_path": rule_path,
+            "target": target_rel,
+            "exists": target.is_file(),
+            "applicable": applicable,
+            "skip_reason": skip_reason,
+            "required": bool(rule.get("required", False)),
+            "tpl_path": tpl_path,
+            "from_template": from_tpl,
+        })
+
+    applied: list[str] = []
+    if args.apply:
+        for it in items:
+            if not it["applicable"] or it["exists"] or it["tpl_path"] is None:
+                continue
+            tpl: Path = it["tpl_path"]
+            if not tpl.is_file():
+                # Template missing on disk — surface as a warning, don't crash
+                continue
+            target = proj / it["target"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(tpl.read_text(encoding="utf-8"), encoding="utf-8")
+            it["exists"] = True
+            applied.append(it["target"])
+
+    missing_req = [it for it in items if it["applicable"] and not it["exists"] and it["required"]]
+    missing_opt = [it for it in items if it["applicable"] and not it["exists"] and not it["required"]]
+    present = [it for it in items if it["applicable"] and it["exists"]]
+    skipped = [it for it in items if not it["applicable"]]
+
+    if args.format == "json":
+        print(json.dumps({
+            "mode": cfg.mode,
+            "applied": applied,
+            "present": [it["target"] for it in present],
+            "missing_required": [
+                {"target": it["target"], "from_template": it["from_template"]}
+                for it in missing_req
+            ],
+            "missing_optional": [
+                {"target": it["target"], "from_template": it["from_template"]}
+                for it in missing_opt
+            ],
+            "skipped": [
+                {"target": it["target"], "reason": it["skip_reason"]}
+                for it in skipped
+            ],
+        }, indent=2))
+    else:
+        print(f"mentor upgrade — mode: {cfg.mode}")
+        if applied:
+            print(f"\nApplied ({len(applied)}):")
+            for p in applied:
+                print(f"  + {p}")
+        if missing_req:
+            print(f"\nMissing required ({len(missing_req)}):")
+            for it in missing_req:
+                print(f"  - {it['target']}  (template: {it['from_template']})")
+        if missing_opt:
+            print(f"\nMissing optional ({len(missing_opt)}):")
+            for it in missing_opt:
+                print(f"  - {it['target']}  (template: {it['from_template']})")
+        if skipped:
+            print(f"\nSkipped ({len(skipped)}):")
+            for it in skipped:
+                print(f"  - {it['target']}  ({it['skip_reason']})")
+        if args.verbose and present:
+            print(f"\nPresent ({len(present)}):")
+            for it in present:
+                print(f"  = {it['target']}")
+        if not args.apply and (missing_req or missing_opt):
+            print("\nRun `workbench-mentor upgrade --apply` to fill in missing files "
+                  "(never overwrites existing).")
+        elif applied:
+            print(f"\n{len(applied)} file(s) created. Existing files were never modified.")
+        elif not missing_req and not missing_opt:
+            print("\nNothing to do — all expected scaffold files are present.")
+
+    return 2 if missing_req else 0
+
+
 def cmd_new(args):
     """Minimal stub. The rich interactive path lives in /mentor:new (command)."""
     if args.format == "json":
@@ -220,6 +377,14 @@ def build_parser():
 
     sp = sub.add_parser("review", parents=[common])
     sp.set_defaults(func=cmd_review)
+
+    sp = sub.add_parser("upgrade", parents=[common])
+    sp.add_argument("--apply", action="store_true",
+                    help="Create missing scaffold files from templates "
+                         "(never overwrites existing).")
+    sp.add_argument("--verbose", action="store_true",
+                    help="Also list scaffold files that are already present.")
+    sp.set_defaults(func=cmd_upgrade)
 
     sp = sub.add_parser("new", parents=[common])
     sp.add_argument("type", choices=["epic", "sprint", "issue", "adr"])

@@ -15,7 +15,7 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 | [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.1 ready** |
 | [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.1 ready** |
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.1.1 ready** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.2.0 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
@@ -83,15 +83,26 @@ Verify: `/doctor` should show no `Plugin errors` section, and `/reload-plugins` 
 
 ### Re-align an existing project's scaffold (mentor only)
 
-`/mentor:init` writes files into your repo. Those files do **not** auto-resync when mentor's framework templates change in a later version.
+`/mentor:init` writes files into your repo. Those files do **not** auto-resync when mentor's framework templates change in a later version. Use `/mentor:upgrade` to close the gap:
 
 ```bash
-> /mentor:review              # list compliance gaps — missing docs, frontmatter drift, orphans
+> /mentor:upgrade             # dry-run — list scaffold files that should exist but don't
+> /mentor:upgrade --apply     # create the missing files from templates (never overwrites existing)
+> /mentor:review              # follow-up compliance check
 > /mentor:new <kind>          # create new Epic / Sprint / Issue / ADR using the latest templates
 > /mentor:current-state       # opt in to the current_state/ layer if you didn't initially
 ```
 
-If `/mentor:review` reports a missing scaffold doc that the current framework expects (for example `doc/task.md`, referenced from `plugins/mentor/frameworks/<mode>/framework.yaml`'s scaffold rules), open that yaml and add the missing pieces by hand. A dedicated `/mentor:upgrade` command that diffs scaffold rules against your repo and offers to fill the gaps is on the roadmap.
+`/mentor:upgrade` reads the active framework's scaffold rules (`plugins/mentor/frameworks/<mode>/framework.yaml`), compares them against your repo, and reports gaps. With `--apply` it creates the missing files from the bundled templates. Existing scaffold content is **never** overwritten, and `.claude/mentor.yaml` is **never** touched — for a config refresh use `/mentor:init --reset`.
+
+**Known limitations**: `/mentor:upgrade` only fills missing files. It does not diff the *content* of files that already exist against newer templates — if a template was rewritten in a later mentor version, compare manually:
+
+```bash
+diff doc/Epic/epic-template.md \
+     ${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/Epic/epic-template.md
+```
+
+This is by design: your repo may have intentionally diverged from the template.
 
 ## Quickstart — `kanban`
 

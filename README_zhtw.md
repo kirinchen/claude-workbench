@@ -15,7 +15,7 @@
 | [`kanban`](./plugins/kanban) | core | 任務狀態持續化 + 人 / AI 共用的工作佇列，透過 `kanban.json` | **v0.1.1 可用** |
 | [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.1 可用** |
 | [`memory`](./plugins/memory) | core | 跨 session 的 RAG 記憶（SQLite + embeddings，純本機） | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.1.1 可用** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.0 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -81,17 +81,28 @@ claude
 
 驗證：`/doctor` 應該不再有 `Plugin errors` 區段，`/reload-plugins` 顯示的 `hooks` 數字應該大於 0。
 
-### 對齊已 scaffold 過的專案(僅 mentor 適用)
+### 對齊已 scaffold 過的專案（僅 mentor 適用）
 
-`/mentor:init` 會在你 repo 裡建立檔案。當 mentor 的 framework 模板在後續版本更新時，**這些檔案不會自動同步**。
+`/mentor:init` 會在你 repo 裡建立檔案。當 mentor 的 framework 模板在後續版本更新時，**這些檔案不會自動同步**。用 `/mentor:upgrade` 補齊：
 
 ```bash
-> /mentor:review              # 列出 compliance 落差——缺檔、frontmatter drift、orphan issue
+> /mentor:upgrade             # dry-run — 列出 framework 預期但 repo 缺的 scaffold 檔
+> /mentor:upgrade --apply     # 用模板建立缺漏的檔案（永不覆蓋既有檔案）
+> /mentor:review              # 後續做 compliance 檢查
 > /mentor:new <kind>          # 用最新模板建立新的 Epic / Sprint / Issue / ADR
 > /mentor:current-state       # 如果之前沒啟用，現在補開 current_state/ 層
 ```
 
-如果 `/mentor:review` 顯示有當前 framework 預期、但 repo 裡沒有的 scaffold 檔案（例如 `plugins/mentor/frameworks/<mode>/framework.yaml` 的 scaffold rules 引用的 `doc/task.md`），對照那個 yaml 手動補上。一個會把 scaffold rules 跟你 repo 比對、列出缺漏並可選補建的 `/mentor:upgrade` 命令已列入 roadmap。
+`/mentor:upgrade` 會讀取當前 framework 的 scaffold rules（`plugins/mentor/frameworks/<mode>/framework.yaml`），跟你 repo 比對後列出缺漏。加 `--apply` 就會用 plugin 內建模板建立缺檔。**既有檔案永遠不會被覆蓋**，**`.claude/mentor.yaml` 永遠不會被動到**——如果你需要更新 config，請用 `/mentor:init --reset`。
+
+**已知限制**：`/mentor:upgrade` 只補「缺檔」，**不會**對已存在檔案跟新模板做內容比對。如果某個模板在新版 mentor 改寫了，需要手動比對：
+
+```bash
+diff doc/Epic/epic-template.md \
+     ${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/Epic/epic-template.md
+```
+
+這是刻意設計——你的 repo 可能特意客製過模板，自動 merge 反而會踩雷。
 
 ## 快速體驗 — `kanban`
 
