@@ -158,6 +158,18 @@ claude-workbench/
     └── mentor.schema.json              # canonical schema
 ```
 
+## Development setup
+
+If you're contributing or hacking on the plugins locally, enable the bundled git pre-commit hook so version numbers stay paired with code changes:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook (`.githooks/pre-commit`) runs before each commit. If anything under `plugins/<name>/` is staged, the version in **both** `plugins/<name>/.claude-plugin/plugin.json` and the matching entry in `.claude-plugin/marketplace.json` must change relative to `HEAD`, and the two values must agree. New plugins (no `HEAD` version) and deletions are exempt.
+
+Bypass with `git commit --no-verify` only when intentional (branch testing, trivial typo). Don't make it a habit on `main`.
+
 ## Uninstall
 
 ```bash

@@ -158,6 +158,18 @@ claude-workbench/
     └── mentor.schema.json              # canonical schema
 ```
 
+## 開發者設定
+
+如果你要 PR 或在本機 hack plugin，啟用 repo 內附的 git pre-commit hook，確保版本號跟 plugin 改動同步：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+這個 hook（`.githooks/pre-commit`）在每次 commit 前執行。只要 `plugins/<name>/` 底下任何檔案被 stage，**`plugins/<name>/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 對應條目兩處的版本都必須**相對 `HEAD` 改動、且兩邊版本要一致。新增的 plugin（HEAD 還沒有）和刪除的 plugin 不受限。
+
+臨時 bypass 用 `git commit --no-verify`，但別在 `main` 上常用——保留版本紀律。
+
 ## 移除
 
 ```bash
