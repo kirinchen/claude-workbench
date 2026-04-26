@@ -65,6 +65,34 @@ claude
 
 兩個現在同名是**刻意設計**。如果未來把 repo 改名成 `cwb`，add 指令會變成 `kirinchen/cwb`，但 install 仍然是 `kanban@claude-workbench`（除非你同時也改了 marketplace.json 的 `name` 欄位）。`add` 還支援：完整 HTTPS URL、SSH URL（給 private repo）、本機路徑——詳見 [Claude Code plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces)。
 
+## 更新
+
+更新分兩層——每台機器上的 **plugin 程式碼**，以及 mentor 在你 repo 裡建立的 **專案 scaffold**。
+
+### 更新 plugin（每台機器各自做）
+
+```bash
+> /plugin marketplace update claude-workbench
+> /plugin update mentor@claude-workbench         # 或 kanban / notify
+> /reload-plugins
+```
+
+中間那行最關鍵——不跑 `marketplace update`，`install` / `update` 還是會用本機 `~/.claude/plugins/cache/` 裡的舊 cache。每台會用到 plugin 的機器都要各自跑；cache 是 **per-machine**，不會跟著你的 repo 同步。
+
+驗證：`/doctor` 應該不再有 `Plugin errors` 區段，`/reload-plugins` 顯示的 `hooks` 數字應該大於 0。
+
+### 對齊已 scaffold 過的專案(僅 mentor 適用)
+
+`/mentor:init` 會在你 repo 裡建立檔案。當 mentor 的 framework 模板在後續版本更新時，**這些檔案不會自動同步**。
+
+```bash
+> /mentor:review              # 列出 compliance 落差——缺檔、frontmatter drift、orphan issue
+> /mentor:new <kind>          # 用最新模板建立新的 Epic / Sprint / Issue / ADR
+> /mentor:current-state       # 如果之前沒啟用，現在補開 current_state/ 層
+```
+
+如果 `/mentor:review` 顯示有當前 framework 預期、但 repo 裡沒有的 scaffold 檔案（例如 `plugins/mentor/frameworks/<mode>/framework.yaml` 的 scaffold rules 引用的 `doc/task.md`），對照那個 yaml 手動補上。一個會把 scaffold rules 跟你 repo 比對、列出缺漏並可選補建的 `/mentor:upgrade` 命令已列入 roadmap。
+
 ## 快速體驗 — `kanban`
 
 ```bash

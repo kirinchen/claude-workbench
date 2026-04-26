@@ -65,6 +65,34 @@ The install flow uses two separate names that happen to look similar. Getting th
 
 They're equal today by choice. If the repo were ever renamed to `cwb`, the add command would become `kirinchen/cwb` but install would still be `kanban@claude-workbench` (until the marketplace.json's `name` field is also changed). Other accepted `add` sources: full HTTPS URL, SSH URL (for private), local path — see [Claude Code plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces).
 
+## Update
+
+Updating has two layers — the **plugin code** on each machine, and any **project scaffold** mentor created inside your repo.
+
+### Update the plugin (per machine)
+
+```bash
+> /plugin marketplace update claude-workbench
+> /plugin update mentor@claude-workbench         # or kanban / notify
+> /reload-plugins
+```
+
+The middle command is the one that matters — without `marketplace update`, `install` / `update` keep using the local cache at `~/.claude/plugins/cache/`. Repeat on every machine where you use the plugin; the cache is per-machine and is **not** synced through your repo.
+
+Verify: `/doctor` should show no `Plugin errors` section, and `/reload-plugins` should report a non-zero `hooks` count.
+
+### Re-align an existing project's scaffold (mentor only)
+
+`/mentor:init` writes files into your repo. Those files do **not** auto-resync when mentor's framework templates change in a later version.
+
+```bash
+> /mentor:review              # list compliance gaps — missing docs, frontmatter drift, orphans
+> /mentor:new <kind>          # create new Epic / Sprint / Issue / ADR using the latest templates
+> /mentor:current-state       # opt in to the current_state/ layer if you didn't initially
+```
+
+If `/mentor:review` reports a missing scaffold doc that the current framework expects (for example `doc/task.md`, referenced from `plugins/mentor/frameworks/<mode>/framework.yaml`'s scaffold rules), open that yaml and add the missing pieces by hand. A dedicated `/mentor:upgrade` command that diffs scaffold rules against your repo and offers to fill the gaps is on the roadmap.
+
 ## Quickstart — `kanban`
 
 ```bash
