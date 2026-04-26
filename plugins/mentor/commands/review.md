@@ -25,9 +25,11 @@ workbench-mentor review --format text
 ## 3. Do NOT auto-fix
 
 Review is diagnostic only. To fix:
-- `missing_doc` for a framework file → materialise via `/mentor:new <type>`
+- `missing_doc` for a framework file → first suggest `/mentor:upgrade` to the user. It auto-fills scaffold files (SPEC, Epic/Sprint/Issue READMEs, templates) from the bundled framework — never overwrites. For an *individual* doc instance (a new Epic, Sprint, Issue, ADR), use `/mentor:new <type>` instead.
 - `no_frontmatter` / `drift` → the user edits the file, Claude can help but only with their go-ahead
 - `orphan_issue` → fix the `epic:` frontmatter field, or create the missing Epic first
+
+When the CLI prints a `Tip:` line about `workbench-mentor upgrade`, surface it verbatim — the user sees the same hint in either entry point.
 
 ## Absolute rules
 

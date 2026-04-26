@@ -31,7 +31,7 @@
     {
       "name": "mentor",
       "source": "./plugins/mentor",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, doc hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces docsync.",
       "category": "developer-tools",
       "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]

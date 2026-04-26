@@ -168,14 +168,21 @@ def cmd_review(args):
         return _fail("mentor: no config found")
     proj = path.parent.parent
     violations = review(proj, cfg)
+    has_missing_doc = any(v.kind == "missing_doc" for v in violations)
     if args.format == "json":
-        print(json.dumps({
+        out = {
             "mode": cfg.mode,
             "violations": [
                 {"kind": v.kind, "path": v.path, "detail": v.detail}
                 for v in violations
             ],
-        }, indent=2))
+        }
+        if has_missing_doc:
+            out["hints"] = [
+                "Run `workbench-mentor upgrade` to see which missing scaffold "
+                "files can be auto-created from templates."
+            ]
+        print(json.dumps(out, indent=2))
     else:
         if not violations:
             print(f"mentor: review clean (mode: {cfg.mode}).")
@@ -183,6 +190,10 @@ def cmd_review(args):
             print(f"mentor: {len(violations)} violation(s) (mode: {cfg.mode}):")
             for v in violations:
                 print(f"  [{v.kind}] {v.path}: {v.detail}")
+            if has_missing_doc:
+                print("\nTip: `workbench-mentor upgrade` (or `/mentor:upgrade` "
+                      "in Claude Code) can auto-create missing scaffold files "
+                      "from templates. Existing files are never overwritten.")
     return 0 if not violations else 2
 
 
