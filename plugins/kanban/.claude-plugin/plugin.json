@@ -1,6 +1,6 @@
 {
   "name": "kanban",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Kanban-driven workflow for Claude Code. Manages task lifecycle through kanban.json.",
   "author": { "name": "kirin" },
   "homepage": "https://github.com/kirin/claude-workbench",

@@ -12,10 +12,10 @@
 
 | Plugin | 分類 | 解決什麼 | 狀態 |
 |---|---|---|---|
-| [`kanban`](./plugins/kanban) | core | 任務狀態持續化 + 人 / AI 共用的工作佇列，透過 `kanban.json` | **v0.1.0 可用** |
-| [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.0 可用** |
+| [`kanban`](./plugins/kanban) | core | 任務狀態持續化 + 人 / AI 共用的工作佇列，透過 `kanban.json` | **v0.1.1 可用** |
+| [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.1 可用** |
 | [`memory`](./plugins/memory) | core | 跨 session 的 RAG 記憶（SQLite + embeddings，純本機） | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.1.0 可用** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.1.1 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 

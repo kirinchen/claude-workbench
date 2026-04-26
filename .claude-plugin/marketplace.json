@@ -7,7 +7,7 @@
     {
       "name": "kanban",
       "source": "./plugins/kanban",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Kanban workflow for Claude Code — task lifecycle through kanban.json",
       "category": "productivity",
       "keywords": ["kanban", "tasks", "workflow"]
@@ -15,7 +15,7 @@
     {
       "name": "notify",
       "source": "./plugins/notify",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Push notifications via Pushover when Claude needs your attention",
       "category": "productivity",
       "keywords": ["notifications", "pushover", "alerts"]
@@ -31,7 +31,7 @@
     {
       "name": "mentor",
       "source": "./plugins/mentor",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, doc hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces docsync.",
       "category": "developer-tools",
       "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]

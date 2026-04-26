@@ -12,10 +12,10 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 
 | Plugin | Profile | Solves | Status |
 |---|---|---|---|
-| [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.0 ready** |
-| [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.0 ready** |
+| [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.1 ready** |
+| [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.1 ready** |
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.1.0 ready** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.1.1 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
