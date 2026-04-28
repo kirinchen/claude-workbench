@@ -239,7 +239,83 @@ def _evaluate_when(when: str, cfg: MentorConfig, proj: Path) -> tuple[bool, str 
     return True, None
 
 
+def _do_diff(target_arg: str, items: list[dict], proj: Path, fmt: str) -> int:
+    """Show a unified diff between a repo file and its bundled template.
+
+    `target_arg` may be relative to the project root or absolute.
+    Returns 0 if the diff was produced successfully (regardless of whether
+    the file matches the template); non-zero only on lookup / IO errors.
+    """
+    import difflib
+
+    norm = target_arg
+    p = Path(norm)
+    if p.is_absolute():
+        try:
+            norm = str(p.resolve().relative_to(proj))
+        except ValueError:
+            return _fail(f"mentor: {target_arg} is outside the project root")
+
+    matched = next((it for it in items if it["target"] == norm), None)
+    if matched is None:
+        return _fail(
+            f"mentor: {norm} is not a scaffold-managed file. "
+            "List managed targets with `workbench-mentor upgrade --format json`."
+        )
+    if not matched["applicable"]:
+        return _fail(
+            f"mentor: {norm} is not applicable in current config "
+            f"({matched['skip_reason']})"
+        )
+    tpl = matched["tpl_path"]
+    if tpl is None or not tpl.is_file():
+        return _fail(
+            f"mentor: template missing for {norm} (expected at {tpl}). "
+            "Re-install the mentor plugin."
+        )
+
+    repo_path = proj / norm
+    if not repo_path.is_file():
+        return _fail(
+            f"mentor: {norm} does not exist in repo. "
+            "Run `workbench-mentor upgrade --apply` to create it from the template."
+        )
+
+    user_lines = repo_path.read_text(encoding="utf-8").splitlines()
+    tpl_lines = tpl.read_text(encoding="utf-8").splitlines()
+    diff_lines = list(difflib.unified_diff(
+        user_lines, tpl_lines,
+        fromfile=f"a/{norm}",
+        tofile=f"b/template:{matched['from_template']}",
+        lineterm="",
+    ))
+
+    identical = len(diff_lines) == 0
+
+    if fmt == "json":
+        print(json.dumps({
+            "target": norm,
+            "template": matched["from_template"],
+            "identical": identical,
+            "diff": "\n".join(diff_lines) if diff_lines else None,
+        }, indent=2))
+    else:
+        if identical:
+            print(f"mentor diff: {norm} is identical to the current template "
+                  f"({matched['from_template']}). Nothing to merge.")
+        else:
+            print("\n".join(diff_lines))
+            print()
+            print(f"mentor diff: {norm} differs from template "
+                  f"{matched['from_template']}.")
+            print("Apply changes manually — `--diff` does not auto-merge by design.")
+    return 0
+
+
 def cmd_upgrade(args):
+    if args.diff and args.apply:
+        return _fail("mentor: --diff and --apply are mutually exclusive")
+
     cfg, cfg_path = load_config()
     if cfg is None or cfg_path is None:
         return _fail("mentor: no .claude/mentor.yaml found — run /mentor:init first")
@@ -278,6 +354,10 @@ def cmd_upgrade(args):
             "tpl_path": tpl_path,
             "from_template": from_tpl,
         })
+
+    # --diff <FILE> short-circuits the dry-run / apply path.
+    if args.diff:
+        return _do_diff(args.diff, items, proj, args.format)
 
     applied: list[str] = []
     if args.apply:
@@ -395,6 +475,10 @@ def build_parser():
                          "(never overwrites existing).")
     sp.add_argument("--verbose", action="store_true",
                     help="Also list scaffold files that are already present.")
+    sp.add_argument("--diff", metavar="FILE", default=None,
+                    help="Show a unified diff between FILE in your repo "
+                         "and its bundled template. Mutually exclusive "
+                         "with --apply.")
     sp.set_defaults(func=cmd_upgrade)
 
     sp = sub.add_parser("new", parents=[common])

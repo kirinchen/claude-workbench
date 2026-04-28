@@ -17,7 +17,7 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 | [`kanban`](./plugins/kanban) | core | Task state persistence + shared human/AI work queue via `kanban.json` | **v0.1.1 ready** |
 | [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.1 ready** |
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.2.1 ready** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.2.2 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
@@ -97,14 +97,13 @@ Verify: `/doctor` should show no `Plugin errors` section, and `/reload-plugins` 
 
 `/mentor:upgrade` reads the active framework's scaffold rules (`plugins/mentor/frameworks/<mode>/framework.yaml`), compares them against your repo, and reports gaps. With `--apply` it creates the missing files from the bundled templates. Existing scaffold content is **never** overwritten, and `.claude/mentor.yaml` is **never** touched — for a config refresh use `/mentor:init --reset`.
 
-**Known limitations**: `/mentor:upgrade` only fills missing files. It does not diff the *content* of files that already exist against newer templates — if a template was rewritten in a later mentor version, compare manually:
+**Compare an existing file against the current template** with `--diff`:
 
 ```bash
-diff doc/Epic/epic-template.md \
-     ${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/Epic/epic-template.md
+> /mentor:upgrade --diff doc/Epic/epic-template.md
 ```
 
-This is by design: your repo may have intentionally diverged from the template.
+Produces a unified diff (no auto-merge — by design, since your repo may have intentionally diverged). Mutually exclusive with `--apply`.
 
 ## Quickstart — `kanban`
 
@@ -200,6 +199,7 @@ MIT — see [`LICENSE`](./LICENSE) (to be added).
 
 - [`SPEC.md`](./SPEC.md) — full spec
 - [`current_state.md`](./current_state.md) — implementation snapshot
+- [`CHANGELOG.md`](./CHANGELOG.md) — per-plugin version history starting at v0.1.1
 - [`RELATED.md`](./RELATED.md) — how claude-workbench differs from other Claude Code tools
 - Quickstarts: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`mentor`](./mentor_quickstart.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)

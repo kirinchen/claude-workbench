@@ -17,7 +17,7 @@
 | [`kanban`](./plugins/kanban) | core | 任務狀態持續化 + 人 / AI 共用的工作佇列，透過 `kanban.json` | **v0.1.1 可用** |
 | [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.1 可用** |
 | [`memory`](./plugins/memory) | core | 跨 session 的 RAG 記憶（SQLite + embeddings，純本機） | v0.0.1 stub |
-| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.1 可用** |
+| [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.2 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -97,14 +97,13 @@ claude
 
 `/mentor:upgrade` 會讀取當前 framework 的 scaffold rules（`plugins/mentor/frameworks/<mode>/framework.yaml`），跟你 repo 比對後列出缺漏。加 `--apply` 就會用 plugin 內建模板建立缺檔。**既有檔案永遠不會被覆蓋**，**`.claude/mentor.yaml` 永遠不會被動到**——如果你需要更新 config，請用 `/mentor:init --reset`。
 
-**已知限制**：`/mentor:upgrade` 只補「缺檔」，**不會**對已存在檔案跟新模板做內容比對。如果某個模板在新版 mentor 改寫了，需要手動比對：
+**用 `--diff` 對單檔比對當前模板**：
 
 ```bash
-diff doc/Epic/epic-template.md \
-     ${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/Epic/epic-template.md
+> /mentor:upgrade --diff doc/Epic/epic-template.md
 ```
 
-這是刻意設計——你的 repo 可能特意客製過模板，自動 merge 反而會踩雷。
+產生 unified diff（**不會**自動 merge — 你的 repo 可能特意客製過模板，自動 merge 反而踩雷）。跟 `--apply` 互斥。
 
 ## 快速體驗 — `kanban`
 
@@ -200,6 +199,7 @@ MIT——見 [`LICENSE`](./LICENSE)（待補）。
 
 - [`SPEC.md`](./SPEC.md) — 完整 spec
 - [`current_state.md`](./current_state.md) — 實作快照
+- [`CHANGELOG.md`](./CHANGELOG.md) — 各 plugin 版本歷程（從 v0.1.1 起）
 - [`RELATED_zhtw.md`](./RELATED_zhtw.md) — claude-workbench 跟其他 Claude Code 工具的差異對照
 - 快速上手：[`kanban`](./kanban_quickstart_zhtw.md) · [`notify`](./notify_quickstart_zhtw.md) · [`mentor`](./mentor_quickstart_zhtw.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)

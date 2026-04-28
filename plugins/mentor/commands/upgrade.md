@@ -70,16 +70,22 @@ After `--apply` reports created files:
    ```
    (Only suggest — never commit autonomously.)
 
-## Manual content compare
+## Per-file diff against the current template (`--diff`)
 
-`/mentor:upgrade` only handles missing files. If a template was rewritten in a later mentor version and you want to see what changed in an existing file, compare manually:
+When the user passes `--diff <FILE>` (e.g. `/mentor:upgrade --diff doc/Epic/epic-template.md`), call:
 
 ```bash
-diff doc/Epic/epic-template.md \
-     ${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/Epic/epic-template.md
+workbench-mentor upgrade --diff <FILE> --format text
 ```
 
-Apply changes selectively — there's no automatic merge, by design (your project may have customized the template intentionally).
+This produces a unified diff between the user's repo file and the bundled template. Use it when a template has changed in a later mentor version and the user wants to cherry-pick edits into an existing file (which `--apply` will *not* touch).
+
+Surface the diff verbatim. After the diff:
+
+- If the CLI says the file is **identical to the template**: confirm "no merge needed" and stop.
+- If a **diff is shown**: do **not** auto-apply it. Suggest the user copy/paste the relevant hunks themselves, or open the file and the template side-by-side.
+
+`--diff` is mutually exclusive with `--apply`; the CLI rejects the combination.
 
 ## Edge cases
 
