@@ -7,6 +7,8 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 > **Status**: v0.1.0 (Draft). `kanban`, `notify`, and `docsync` are shipped; `memory` is the remaining core stub. See [`SPEC.md`](./SPEC.md) for the full design and [`current_state.md`](./current_state.md) for the live implementation snapshot.
 >
 > **Quickstarts**: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`mentor`](./mentor_quickstart.md) *(docsync was replaced by mentor — see [`epic/mentor-plugin-spec.md`](./epic/mentor-plugin-spec.md))*
+>
+> **Looking for a different "Claude Code workbench"?** See [`RELATED.md`](./RELATED.md) — Norman-else/claude-workbench is a desktop GUI; this repo is a plugin family. Plus comparisons with claudewatch, wshobson/agents, claude-agent-os, and others.
 
 ## Plugins
 
@@ -198,6 +200,7 @@ MIT — see [`LICENSE`](./LICENSE) (to be added).
 
 - [`SPEC.md`](./SPEC.md) — full spec
 - [`current_state.md`](./current_state.md) — implementation snapshot
+- [`RELATED.md`](./RELATED.md) — how claude-workbench differs from other Claude Code tools
 - Quickstarts: [`kanban`](./kanban_quickstart.md) · [`notify`](./notify_quickstart.md) · [`mentor`](./mentor_quickstart.md)
 - [Claude Code plugins docs](https://code.claude.com/docs/en/plugins)
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
