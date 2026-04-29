@@ -7,6 +7,10 @@ allowed-tools: Read
 
 Print a concise snapshot of `kanban.json`. Read-only — do not write anything.
 
+## 0. Driver check
+
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"` (v0.1 backwards-compat). If the value is anything other than `"local"`, stop and tell the user this slash command does not yet support that driver in this build — Jira-mode commands land in a later phase.
+
 ## 1. Load
 
 Read `kanban.json` at the project root. If missing, tell the user to run `/kanban:init`.
@@ -24,7 +28,7 @@ Read `kanban.json` at the project root. If missing, tell the user to run `/kanba
 Format (keep it tight — monospace-friendly):
 
 ```
-Kanban status (kanban.json · schema v1)
+Kanban status (kanban.json · v0.2 · local)
 
 Columns: TODO 7 · DOING 1 · DONE 12 · BLOCKED 2
 

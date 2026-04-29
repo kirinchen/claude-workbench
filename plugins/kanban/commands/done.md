@@ -10,6 +10,10 @@ Arguments: `$ARGUMENTS`
 
 Close out a task. The Skill `kanban-workflow` governs the rules.
 
+## 0. Driver check
+
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is anything other than `"local"`, stop and tell the user that the Jira-driver branch of this command is not yet implemented in this build.
+
 ## 1. Resolve target task
 
 Parse `$ARGUMENTS`:

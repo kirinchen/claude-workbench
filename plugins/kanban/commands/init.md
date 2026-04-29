@@ -38,8 +38,11 @@ Copy `${CLAUDE_PLUGIN_ROOT}/templates/kanban.schema.json` to `<project-root>/kan
 - Read back `kanban.json` and confirm no `__CREATED_AT__` / `__UPDATED_AT__` placeholders remain.
 - Report what was created, e.g.:
 
-> ✓ Created kanban.json (empty / with 4 example tasks) and kanban.schema.json.
+> ✓ Created kanban.json v0.2 (local driver, empty / with 4 example tasks) and kanban.schema.json.
 > Next: try `/kanban:status` or `/kanban:next`.
+
+The template ships with `backend: { driver: "local" }`. To switch to the
+Jira backend later, run `/kanban:initjira` (added in plugin v0.2.0+).
 
 ## Absolute rules
 

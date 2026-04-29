@@ -10,6 +10,10 @@ Arguments: `$ARGUMENTS`
 
 Pick the next eligible TODO task, move it to DOING, then begin executing it. The Skill `kanban-workflow` (loaded automatically) governs the rules.
 
+## 0. Driver check
+
+Read `kanban.json` first. Look at `backend.driver`. If absent, treat as `"local"`. If the value is anything other than `"local"`, stop and tell the user that the Jira-driver branch of this command is not yet implemented in this build.
+
 ## 1. Load state
 
 Read `kanban.json` fresh. Do not rely on earlier reads from this session.

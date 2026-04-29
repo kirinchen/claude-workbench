@@ -1,6 +1,6 @@
 ---
 name: kanban-workflow
-description: Use this skill whenever kanban.json exists in the project root, or when the user mentions tasks, TODO, kanban, priorities, or asks "what should I work on next", "pick a task", "繼續工作", etc. This skill governs task lifecycle (TODO → DOING → DONE/BLOCKED) through the kanban.json file.
+description: Use this skill whenever kanban.json exists at the project root with backend.driver = "local" (or no backend block, which implies local), or when the user mentions tasks, TODO, kanban, priorities, or asks "what should I work on next", "pick a task", "繼續工作", etc. This skill governs the local-driver task lifecycle (TODO → DOING → DONE/BLOCKED). For backend.driver = "jira" the kanban-jira-agent skill applies instead.
 ---
 
 # Kanban Workflow
