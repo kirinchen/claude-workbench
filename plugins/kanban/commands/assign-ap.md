@@ -21,6 +21,11 @@ operates as. The AP must already be in `kanban.json#backend.jira.ap.registered`
 
 ## 1. Persist
 
+The helper live-queries Jira's AP custom-field options before validating
+(the local `kanban.json#registered` is a stale hint — Jira is authoritative).
+On network failure it falls back to the local list with a `fallbackUsed: true`
+warning.
+
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
   assign-ap --kanban-path '<kanban.json path>' --name '<ap-name>'
@@ -33,9 +38,10 @@ On `{ok: true, ap, path}`: print:
   Written to: <path>
 ```
 
-On `{ok: false, error: ..., registered: [...]}`: surface the error and the
-list of registered APs verbatim. Suggest `/kanban:register-ap <name>` if the
-user wants to add the AP.
+On `{ok: false, error: ..., registered: [...], fallbackUsed: true|false}`:
+surface the error and the list verbatim. If `fallbackUsed` is true, mention
+the network failure so the user knows the list may be stale. Suggest
+`/kanban:register-ap <name>` if the user wants to add the AP.
 
 ## 2. Git-policy reminder
 

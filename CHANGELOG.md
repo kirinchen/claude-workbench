@@ -58,24 +58,32 @@ For earlier history, see the git log.
     intent. First write upgrades the file in place; legacy keys dropped.
   - **New CLI subcommands**: `parse-transitions-dsl`, `set-transitions`.
     Existing `build-status-map` returns the richer suggestion shape.
-  - **Per-machine board cache** — `~/.claude-workbench/kanban-boards/<host>__<KEY>__<id>.json`
-    stores a board's `transitions` block, AP-field config, and AP roster.
-    `/kanban:initjira` step 2.5 looks it up first; on hit the user can
-    reuse without re-entering the DSL. `write-backend` writes the cache
-    as a side-effect; `register-ap` syncs the AP roster so sibling repos
-    pick up newly-registered APs without re-querying Jira. New
-    subcommands `read-board-cache`, `list-board-cache`.
+  - **Code-based mapping sharing across machines / teams** —
+    `/kanban:showjira-code` emits the current board's mapping
+    (transitions + AP field config) as compact JSON. `/kanban:initjira-by-code`
+    on another machine accepts the pasted JSON and skips the DSL setup
+    entirely (jumps from credentials directly to "assign this repo's AP").
+    Tokens / per-machine credentials are NEVER in the code; receiving
+    machine still runs `/kanban:reset-credentials` once. Replaces the
+    earlier per-machine `kanban-boards/` cache attempt — code-based
+    sharing crosses machines, the cache didn't.
+  - **Live AP roster** — `/kanban:assign-ap`, `/kanban:register-ap`,
+    `/kanban:whoami` query Jira's custom-field options as the source of
+    truth for who's registered (the local `kanban.json#registered` is
+    just a hint that gets refreshed on each operation). On network /
+    credential failure, the helpers fall back to the local list with a
+    `fallbackUsed: true` flag so the user knows it may be stale.
   - **Security**: removed `--dsl-file` from `parse-transitions-dsl`
     (would have allowed an LLM-driven misuse to reflect arbitrary file
     contents — including `~/.claude-workbench/.env` — back into the chat
     transcript via the parser's verbatim error messages). DSL parser
     errors now report `line N` plus a 32-char redacted snippet, never
     the full line.
-  - **Tests**: 28 new cases across `test_phase7.py` (DSL parser,
+  - **Tests**: 29 new cases across `test_phase7.py` (DSL parser,
     suggester, migration, disambiguation, compound write, CLI) and
-    `test_phase8.py` (board cache: round-trip, AP roster sync,
-    multi-repo sharing, missing/corrupt handling). All 8 phase suites
-    (86 tests) green.
+    `test_phase8.py` (emit/import code roundtrip, live AP query
+    fallback, register-ap fuzzy via local hint). All 8 phase suites
+    (87 tests) green.
   - Workbench bundle: `0.0.2 → 0.0.3`, kanban dep `^0.2.0 → ^0.3.0`.
 
 ## 2026-04-30

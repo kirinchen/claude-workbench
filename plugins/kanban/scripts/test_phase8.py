@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""Phase 8 regression checks for kanban v0.3.0 — board cache reuse.
+"""Phase 8 regression checks for kanban v0.3.x — code-based sharing + live AP query.
 
-Multiple repos pointing at the same Jira board can share their compound-
-transition mapping via a per-machine cache at
-`~/.claude-workbench/kanban-boards/<host>__<KEY>__<id>.json`.
-
-Each test isolates the cache directory with `monkeypatch_cache_dir(td)`.
-
+A board's compound-transition mapping travels between machines as a
+shareable JSON code (no per-machine credentials, no stale AP roster).
 Cases:
-  (a) cache_path uses safe_host normalization
-  (b) write/read round-trip preserves backend_jira block
-  (c) read returns None on missing file or corrupt content (auto-skipped)
-  (d) update_ap_registered appends, is idempotent, no-ops on missing entry
-  (e) list_all enumerates entries, skips corrupt files
-  (f) write-backend CLI populates the cache (best-effort, non-fatal)
-  (g) read-board-cache CLI reports hit / miss
-  (h) two repos sharing a board: repo A writes cache; repo B's read sees it
-  (i) register-ap CLI syncs the cache's ap.registered
-  (j) different boards → different cache entries; same board different host
-       → different keys
+
+  (a) emit-jira-code returns the schema-tagged code; defaults strip
+      `agentAccountId` and `ap.registered`
+  (b) emit-jira-code with --include-agent-account preserves the field
+  (c) import-jira-code rejects non-matching schema; rejects bad transitions
+  (d) emit + import roundtrip: repo B's kanban.json mirrors repo A's
+      transitions exactly, with a fresh empty `ap.registered`
+  (e) live-list-aps falls back to local hint when credentials are missing
+  (f) cmd_assign_ap fallback path still works when Jira is unreachable
+       (validates against local hint with fallbackUsed: true)
+  (g) cmd_register_ap collision check uses live options when available;
+       falls back gracefully without credentials
 """
 from __future__ import annotations
 
@@ -28,101 +25,51 @@ import pathlib
 import subprocess
 import sys
 import tempfile
-import time
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
 sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
 
-def _isolated_cache(td) -> pathlib.Path:
-    """Return a path that the board_cache module will treat as ~/.cache root."""
-    fake_home = pathlib.Path(td) / "fakehome"
-    (fake_home / ".claude-workbench").mkdir(parents=True, exist_ok=True)
-    return fake_home
+def _seed_jira(td, *, registered=("agent-fin", "agent-quant"),
+               include_agent=True) -> pathlib.Path:
+    p = pathlib.Path(td) / "kanban.json"
+    cfg = {
+        "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
+        "boardId": 1,
+        "projectKey": "AGENT",
+        "transitions": {
+            "TODO": {"status": "Selected for Development"},
+            "DOING": {"status": "In Progress"},
+            "BLOCKED": {"status": "In Progress", "addLabels": ["kanban:blocked"]},
+            "DONE": {"status": "Done"},
+        },
+        "ap": {
+            "fieldId": "customfield_10042",
+            "fieldName": "Claude Agent",
+            "registered": list(registered),
+        },
+    }
+    if include_agent:
+        cfg["agentAccountId"] = "shared-agent-acct"
+    p.write_text(json.dumps({
+        "version": "0.2",
+        "backend": {"driver": "jira", "jira": cfg},
+        "meta": {
+            "priorities": ["P0"], "categories": [],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "created_at": "x", "updated_at": "x",
+        },
+        "tasks": [],
+    }))
+    return p
 
 
-def _patch_cache_dir(fake_home: pathlib.Path):
-    from lib import board_cache
-    board_cache.cache_dir = lambda: fake_home / ".claude-workbench" / "kanban-boards"
-    return board_cache
-
-
-# --- pure lib --------------------------------------------------------------
-
-
-def test_safe_host_normalization():
-    from lib import board_cache as bc
-    assert bc.safe_host("https://Acme.Atlassian.NET/jira") == "acme.atlassian.net"
-    assert bc.safe_host("https://x.example.com:443") == "x.example.com"
-    assert bc.safe_host("") == "unknown"
-    assert bc.safe_host("https://weird*host.example") == "weird_host.example"
-
-
-def test_write_read_round_trip():
-    with tempfile.TemporaryDirectory() as td:
-        bc = _patch_cache_dir(_isolated_cache(td))
-        backend = {
-            "agentAccountId": "agent-acct",
-            "transitions": {
-                "DOING": {"status": "In Progress"},
-                "BLOCKED": {"status": "In Progress", "addLabels": ["kanban:blocked"]},
-            },
-            "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
-                   "registered": ["agent-fin"]},
-        }
-        bc.write("https://acme.atlassian.net", "AGENT", 1, backend, source_repo="/r/a")
-        got = bc.read("https://acme.atlassian.net", "AGENT", 1)
-        assert got is not None
-        assert got["backend_jira"] == backend
-        assert got["last_repo"] == "/r/a"
-        assert got["key"]["projectKey"] == "AGENT"
-
-
-def test_read_handles_missing_and_corrupt():
-    with tempfile.TemporaryDirectory() as td:
-        bc = _patch_cache_dir(_isolated_cache(td))
-        assert bc.read("https://x", "AGENT", 1) is None
-        # Corrupt file
-        p = bc.cache_path("https://x.atlassian.net", "BAD", 99)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("not json", encoding="utf-8")
-        assert bc.read("https://x.atlassian.net", "BAD", 99) is None
-
-
-def test_update_ap_registered_idempotent():
-    with tempfile.TemporaryDirectory() as td:
-        bc = _patch_cache_dir(_isolated_cache(td))
-        backend = {
-            "transitions": {"DOING": {"status": "In Progress"}},
-            "ap": {"fieldId": "customfield_10042", "registered": ["agent-fin"]},
-        }
-        bc.write("https://a", "AGENT", 1, backend)
-        # New AP appended
-        assert bc.update_ap_registered("https://a", "AGENT", 1, "agent-quant") is True
-        got = bc.read("https://a", "AGENT", 1)
-        assert got["backend_jira"]["ap"]["registered"] == ["agent-fin", "agent-quant"]
-        # Idempotent
-        assert bc.update_ap_registered("https://a", "AGENT", 1, "agent-quant") is False
-        # No entry → no-op
-        assert bc.update_ap_registered("https://a", "OTHER", 9, "x") is False
-
-
-def test_list_all_skips_corrupt():
-    with tempfile.TemporaryDirectory() as td:
-        bc = _patch_cache_dir(_isolated_cache(td))
-        bc.write("https://a", "AGENT", 1, {"transitions": {"DOING": {"status": "X"}}})
-        bc.write("https://a", "FIN", 9, {"transitions": {"DOING": {"status": "Y"}}})
-        # Drop a corrupt file in the same dir.
-        bad = bc.cache_dir() / "bogus.json"
-        bad.write_text("garbage")
-        entries = bc.list_all()
-        assert len(entries) == 2
-        keys = {(e["key"]["projectKey"], e["key"]["boardId"]) for e in entries}
-        assert keys == {("AGENT", 1), ("FIN", 9)}
-
-
-# --- CLI integration -------------------------------------------------------
+def _isolated_home(td: pathlib.Path) -> dict[str, str]:
+    """HOME override so the subprocess sees an empty ~/.claude-workbench/.env."""
+    home = td / "fakehome"
+    home.mkdir(parents=True, exist_ok=True)
+    return {"HOME": str(home)}
 
 
 def _run(*args, env_extra=None) -> subprocess.CompletedProcess:
@@ -133,89 +80,107 @@ def _run(*args, env_extra=None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, env=env, text=True)
 
 
-def _isolated_home_env(td: pathlib.Path) -> dict[str, str]:
-    """Return env-var override that points HOME at td/fakehome.
-
-    The board_cache module reads `Path.home()`, so flipping HOME in the
-    subprocess environment isolates the cache to the test's tmp dir.
-    """
-    home = td / "fakehome"
-    home.mkdir(parents=True, exist_ok=True)
-    return {"HOME": str(home)}
+# --- emit-jira-code ------------------------------------------------------
 
 
-def test_read_board_cache_cli_miss_and_hit():
+def test_emit_strips_agent_and_registered():
     with tempfile.TemporaryDirectory() as raw:
         td = pathlib.Path(raw)
-        env = _isolated_home_env(td)
-        # Miss
-        out = _run(
-            "read-board-cache",
-            "--base-url", "https://acme.atlassian.net",
-            "--project", "AGENT",
-            "--board", "1",
-            env_extra=env,
-        )
+        kp = _seed_jira(td, registered=["agent-fin"], include_agent=True)
+        out = _run("emit-jira-code", "--kanban-path", str(kp),
+                   env_extra=_isolated_home(td))
         assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
         assert j["ok"] is True
-        assert j["hit"] is False
+        code = j["code"]
+        assert code["schema"] == "kanban-jira-code/1"
+        assert code["projectKey"] == "AGENT"
+        assert code["boardId"] == 1
+        # Defaults strip these:
+        assert "agentAccountId" not in code
+        assert "registered" not in code["ap"]
+        # Always-included:
+        assert code["transitions"]["BLOCKED"]["addLabels"] == ["kanban:blocked"]
+        assert code["ap"]["fieldId"] == "customfield_10042"
 
-        # Seed via write-backend then read again.
-        kp = td / "repo-a" / "kanban.json"
-        kp.parent.mkdir()
+
+def test_emit_preserves_agent_with_flag():
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = _seed_jira(td, include_agent=True)
+        out = _run("emit-jira-code", "--kanban-path", str(kp),
+                   "--include-agent-account",
+                   env_extra=_isolated_home(td))
+        assert out.returncode == 0, out.stderr
+        j = json.loads(out.stdout)
+        assert j["code"]["agentAccountId"] == "shared-agent-acct"
+
+
+def test_emit_refuses_local_driver():
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = pathlib.Path(td) / "kanban.json"
         kp.write_text(json.dumps({
             "version": "0.2",
-            "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
+            "backend": {"driver": "local"},
+            "meta": {"priorities": ["P0"], "categories": [],
+                     "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                     "created_at": "x", "updated_at": "x"},
+            "tasks": [],
+        }))
+        out = _run("emit-jira-code", "--kanban-path", str(kp),
+                   env_extra=_isolated_home(td))
+        assert out.returncode != 0
+        j = json.loads(out.stdout)
+        assert j["ok"] is False
+
+
+# --- import-jira-code ----------------------------------------------------
+
+
+def test_import_rejects_bad_schema():
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = pathlib.Path(td) / "kanban.json"
+        kp.write_text(json.dumps({
+            "version": "0.2",
+            "backend": {"driver": "jira", "jira": {"projectKey": "X"}},
             "meta": {"priorities": ["P0"], "categories": [],
                      "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
-        cfg = {
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1,
-            "projectKey": "AGENT",
-            "agentAccountId": "shared-agent",
-            "transitions": {
-                "DOING": {"status": "In Progress"},
-                "DONE": {"status": "Done"},
-            },
-            "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
-                   "registered": ["agent-fin"]},
-        }
-        out = _run(
-            "write-backend",
-            "--kanban-path", str(kp),
-            "--jira-config-json", json.dumps(cfg),
-            env_extra=env,
-        )
-        assert out.returncode == 0, out.stderr
-        wb = json.loads(out.stdout)
-        assert wb["cachePath"]
-
-        out = _run(
-            "read-board-cache",
-            "--base-url", "https://acme.atlassian.net",
-            "--project", "AGENT",
-            "--board", "1",
-            env_extra=env,
-        )
-        j = json.loads(out.stdout)
-        assert j["hit"] is True
-        assert j["backend_jira"]["transitions"]["DOING"] == {"status": "In Progress"}
-        assert j["last_repo"] == str((td / "repo-a").resolve())
+        bad_codes = [
+            json.dumps({"schema": "kanban-jira-code/0"}),
+            json.dumps({"schema": "kanban-jira-code/1"}),  # missing transitions
+            json.dumps({"schema": "kanban-jira-code/1",
+                        "transitions": {"FOO": {"status": "X"}},  # bad canonical
+                        "projectKey": "X", "boardId": 1}),
+            "not-json-at-all",
+        ]
+        for bad in bad_codes:
+            out = _run("import-jira-code",
+                       "--kanban-path", str(kp),
+                       "--code-json", bad,
+                       env_extra=_isolated_home(td))
+            assert out.returncode != 0, f"should reject: {bad[:80]}"
+            j = json.loads(out.stdout)
+            assert j["ok"] is False
 
 
-def test_two_repos_share_cache():
-    """Repo A writes the cache; repo B's read picks up the same mapping."""
+def test_emit_import_roundtrip_two_repos():
     with tempfile.TemporaryDirectory() as raw:
         td = pathlib.Path(raw)
-        env = _isolated_home_env(td)
-        # Repo A — full backend write
+        # Repo A — fully configured
         repo_a = td / "repo-a"
         repo_a.mkdir()
-        (repo_a / "kanban.json").write_text(json.dumps({
+        kp_a = _seed_jira(repo_a, registered=["agent-fin", "agent-quant"])
+
+        # Repo B — fresh kanban.json with jira backend but no transitions yet
+        repo_b = td / "repo-b"
+        repo_b.mkdir()
+        kp_b = repo_b / "kanban.json"
+        kp_b.write_text(json.dumps({
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
             "meta": {"priorities": ["P0"], "categories": [],
@@ -223,135 +188,126 @@ def test_two_repos_share_cache():
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
-        cfg_a = {
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1, "projectKey": "AGENT", "agentAccountId": "shared",
-            "transitions": {"DOING": {"status": "In Progress"}},
-            "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
-                   "registered": ["agent-a"]},
-        }
-        _run("write-backend",
-             "--kanban-path", str(repo_a / "kanban.json"),
-             "--jira-config-json", json.dumps(cfg_a),
-             env_extra=env)
 
-        # Repo B — fresh cwd, asks for the cache for the same board.
-        out = _run(
-            "read-board-cache",
-            "--base-url", "https://acme.atlassian.net",
-            "--project", "AGENT",
-            "--board", "1",
-            env_extra=env,
-        )
+        env = _isolated_home(td)
+
+        # Emit from A
+        out = _run("emit-jira-code", "--kanban-path", str(kp_a), env_extra=env)
+        assert out.returncode == 0, out.stderr
+        code = json.loads(out.stdout)["code"]
+
+        # Import to B
+        out = _run("import-jira-code",
+                   "--kanban-path", str(kp_b),
+                   "--code-json", json.dumps(code),
+                   env_extra=env)
+        assert out.returncode == 0, out.stderr
+
+        # Verify repo B's kanban.json mirrors A's transitions (and ap.fieldId)
+        # but starts with empty ap.registered (live-queried later).
+        cfg_b = json.loads(kp_b.read_text())["backend"]["jira"]
+        cfg_a = json.loads(kp_a.read_text())["backend"]["jira"]
+        assert cfg_b["transitions"] == cfg_a["transitions"]
+        assert cfg_b["projectKey"] == cfg_a["projectKey"]
+        assert cfg_b["boardId"] == cfg_a["boardId"]
+        assert cfg_b["ap"]["fieldId"] == cfg_a["ap"]["fieldId"]
+        assert cfg_b["ap"]["registered"] == []   # cleared by import
+
+
+# --- live-list-aps + assign-ap fallback ---------------------------------
+
+
+def test_live_list_aps_no_credentials():
+    """Without credentials, live-list-aps fails fast (the helper requires
+    creds to talk to Jira). The slash command surfaces the error so the
+    user runs /kanban:reset-credentials. We just check it errors cleanly,
+    not silently."""
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = _seed_jira(td)
+        out = _run("live-list-aps", "--kanban-path", str(kp),
+                   env_extra=_isolated_home(td))
+        assert out.returncode != 0
+        j = json.loads(out.stdout)
+        assert j["ok"] is False
+        assert "credentials missing" in j["error"].lower() or "jira" in j["error"].lower()
+
+
+def test_assign_ap_falls_back_without_credentials():
+    """assign-ap must still work when there are no credentials yet — fall
+    back to the local hint list and mark fallbackUsed: true."""
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = _seed_jira(td, registered=["agent-fin"])
+        out = _run("assign-ap", "--kanban-path", str(kp), "--name", "agent-fin",
+                   env_extra=_isolated_home(td))
         assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
-        assert j["hit"] is True
-        assert j["last_repo"] == str(repo_a.resolve())
-        assert j["backend_jira"]["transitions"] == cfg_a["transitions"]
-        assert j["backend_jira"]["ap"]["registered"] == ["agent-a"]
+        assert j["ok"] is True
+        assert (kp.parent / ".claude" / "kanban-agent.json").exists()
 
 
-def test_register_ap_syncs_cache():
-    """register-ap on repo A appends to the cache; repo B sees the new AP."""
+def test_assign_ap_unregistered_refused():
     with tempfile.TemporaryDirectory() as raw:
         td = pathlib.Path(raw)
-        env = _isolated_home_env(td)
-        # Seed the board cache directly.
-        sys.path.insert(0, str(REPO / "plugins" / "kanban"))
-        from lib import board_cache as bc
-        bc.cache_dir = lambda: td / "fakehome" / ".claude-workbench" / "kanban-boards"
-        backend = {
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1, "projectKey": "AGENT", "agentAccountId": "shared",
-            "transitions": {"DOING": {"status": "In Progress"}},
-            "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
-                   "registered": ["agent-fin"]},
-        }
-        bc.write(backend["boardUrl"], "AGENT", 1, backend, source_repo="/r/a")
-
-        # Repo A's kanban.json mirrors the cache.
-        repo_a = td / "repo-a"
-        repo_a.mkdir()
-        (repo_a / "kanban.json").write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": backend},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-
-        # register-ap goes through Jira via the helper. We can't avoid the
-        # network round-trip here since cmd_register_ap calls
-        # client.add_field_option. Skipping the real network call: instead
-        # of running the CLI, exercise the cache sync side-effect directly
-        # via board_cache.update_ap_registered (the same code path the CLI
-        # uses) — that's the part Phase 8 owns.
-        ok = bc.update_ap_registered(backend["boardUrl"], "AGENT", 1, "agent-quant")
-        assert ok is True
-        ok2 = bc.update_ap_registered(backend["boardUrl"], "AGENT", 1, "agent-quant")
-        assert ok2 is False  # idempotent
-
-        # Repo B reads — sees the sync'd AP.
-        out = _run(
-            "read-board-cache",
-            "--base-url", backend["boardUrl"],
-            "--project", "AGENT",
-            "--board", "1",
-            env_extra=env,
-        )
+        kp = _seed_jira(td, registered=["agent-fin"])
+        out = _run("assign-ap", "--kanban-path", str(kp), "--name", "agent-other",
+                   env_extra=_isolated_home(td))
+        assert out.returncode != 0
         j = json.loads(out.stdout)
-        assert j["hit"] is True
-        assert sorted(j["backend_jira"]["ap"]["registered"]) == ["agent-fin", "agent-quant"]
+        assert j["ok"] is False
+        assert j["fallbackUsed"] is True
+        assert "agent-fin" in j["registered"]
 
 
-def test_different_boards_isolated():
+def test_register_ap_fuzzy_falls_back_without_creds():
+    """register-ap surfaces the fuzzy collision against local hint when
+    credentials are missing — same UX as before, no live query needed for
+    the fuzzy check itself."""
     with tempfile.TemporaryDirectory() as raw:
         td = pathlib.Path(raw)
-        env = _isolated_home_env(td)
-        repo = td / "r"
-        repo.mkdir()
-        (repo / "kanban.json").write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-        cfg = {
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1, "projectKey": "AGENT",
-            "transitions": {"DOING": {"status": "In Progress"}},
-        }
-        _run("write-backend", "--kanban-path", str(repo / "kanban.json"),
-             "--jira-config-json", json.dumps(cfg), env_extra=env)
-        cfg["boardId"] = 2
-        cfg["boardUrl"] = "https://acme.atlassian.net/jira/software/projects/AGENT/boards/2"
-        _run("write-backend", "--kanban-path", str(repo / "kanban.json"),
-             "--jira-config-json", json.dumps(cfg), env_extra=env)
-
-        out = _run("list-board-cache", env_extra=env)
+        kp = _seed_jira(td, registered=["agent-fin"])
+        out = _run("register-ap", "--kanban-path", str(kp),
+                   "--name", "agent-fix",
+                   env_extra=_isolated_home(td))
+        assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
-        assert len(j["entries"]) == 2
-        keys = {(e["key"]["projectKey"], e["key"]["boardId"]) for e in j["entries"]}
-        assert keys == {("AGENT", 1), ("AGENT", 2)}
+        assert j["ok"] is False
+        assert j["fuzzyMatch"] is True
 
 
-# --- entry point -----------------------------------------------------------
+def test_register_ap_no_creds_fails_at_write():
+    """register-ap with --force needs Jira to add the option. Without
+    credentials, fail explicitly with a clear hint instead of silently
+    skipping the Jira write."""
+    with tempfile.TemporaryDirectory() as raw:
+        td = pathlib.Path(raw)
+        kp = _seed_jira(td, registered=["agent-fin"])
+        out = _run("register-ap", "--kanban-path", str(kp),
+                   "--name", "agent-brand-new",
+                   "--force",
+                   env_extra=_isolated_home(td))
+        assert out.returncode != 0, f"expected fail, got {out.stdout!r}"
+        j = json.loads(out.stdout)
+        assert j["ok"] is False
+        assert "credentials missing" in j["error"].lower()
+
+
+# --- entry point ---------------------------------------------------------
 
 
 def main() -> int:
     cases = [
-        ("safe_host_normalization", test_safe_host_normalization),
-        ("write_read_round_trip", test_write_read_round_trip),
-        ("read_handles_missing_and_corrupt", test_read_handles_missing_and_corrupt),
-        ("update_ap_registered_idempotent", test_update_ap_registered_idempotent),
-        ("list_all_skips_corrupt", test_list_all_skips_corrupt),
-        ("read_board_cache_cli_miss_and_hit", test_read_board_cache_cli_miss_and_hit),
-        ("two_repos_share_cache", test_two_repos_share_cache),
-        ("register_ap_syncs_cache", test_register_ap_syncs_cache),
-        ("different_boards_isolated", test_different_boards_isolated),
+        ("emit_strips_agent_and_registered", test_emit_strips_agent_and_registered),
+        ("emit_preserves_agent_with_flag", test_emit_preserves_agent_with_flag),
+        ("emit_refuses_local_driver", test_emit_refuses_local_driver),
+        ("import_rejects_bad_schema", test_import_rejects_bad_schema),
+        ("emit_import_roundtrip_two_repos", test_emit_import_roundtrip_two_repos),
+        ("live_list_aps_no_credentials", test_live_list_aps_no_credentials),
+        ("assign_ap_falls_back_without_credentials", test_assign_ap_falls_back_without_credentials),
+        ("assign_ap_unregistered_refused", test_assign_ap_unregistered_refused),
+        ("register_ap_fuzzy_falls_back_without_creds", test_register_ap_fuzzy_falls_back_without_creds),
+        ("register_ap_no_creds_fails_at_write", test_register_ap_no_creds_fails_at_write),
     ]
     for name, fn in cases:
         try:

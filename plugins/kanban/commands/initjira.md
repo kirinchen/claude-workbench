@@ -118,54 +118,10 @@ echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
 
 Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)`.
 
-## Step 2.5 — Reuse cached board mapping (if any)
-
-Multiple repos pointing at the same board share the same `transitions`,
-AP-field, and AP-roster. Look up the per-machine cache before doing the
-DSL dance again:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-board-cache \
-  --base-url '<URL>' --project '<KEY>' --board <ID>
-```
-
-| Shape | Action |
-|---|---|
-| `{ok: true, hit: false}` | no cache; continue to step 3 |
-| `{ok: true, hit: true, backend_jira: {...}, last_repo: "...", fetched_at_unix: ...}` | offer reuse — see below |
-
-When `hit: true`, ask via `AskUserQuestion`:
-
-> Found a cached mapping for `<projectKey>/<boardId>`
-> (last touched by `<last_repo>`, ~<X> ago).
->
-> The cached mapping defines:
->   <list canonical → status from `backend_jira.transitions`>
->   AP field: `<fieldName>` (`<fieldId>`)
->   Registered APs: `<comma list>`
->
-> Reuse?  [Y]es / [n]o (re-enter from scratch)
-
-On **yes** — write the cached `backend_jira` straight to this repo's
-kanban.json by calling `write-backend` with the cached config plus this
-repo's identity (boardUrl, boardId, projectKey come from steps 2; the
-cache provides transitions / agentAccountId / ap):
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py write-backend \
-  --kanban-path '<kanban.json path>' \
-  --jira-config-json '<merged json>'
-```
-
-Then **skip steps 3 and 4** (mapping + AP-field discovery) and jump
-straight to **step 5** to assign this repo's AP. The cached AP roster
-already lists the registered names, so the user can pick an existing one
-or run `/kanban:register-ap <new-name>` afterwards (which will sync the
-cache for the next sibling repo).
-
-On **no** — fall through to step 3 as written below. After step 3d's
-`write-backend`, the cache is refreshed with the new mapping (last
-writer wins).
+> **Tip — already configured the same board in another repo or machine?**
+> Skip this entire flow: run `/kanban:showjira-code` in the source repo,
+> copy the printed JSON, then run `/kanban:initjira-by-code` in this repo
+> and paste it. Jumps straight from credentials to step 5 (assign AP).
 
 ## Step 3/5 — Compound transitions (canonical → Jira)
 
