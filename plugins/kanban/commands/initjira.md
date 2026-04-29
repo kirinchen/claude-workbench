@@ -237,6 +237,54 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py assign-ap \
   --kanban-path '<kanban.json path>' --name '<ap-name>'
 ```
 
+## Step 6/6 — Migration of existing local tasks (optional)
+
+Before printing the Done block, check whether `kanban.json#tasks` has any
+entries from a prior local-mode life. If `len(tasks) > 0`, ask:
+
+> Found N existing local tasks. Import them as Jira issues? (y/N)
+>   • Imported tasks get the `migrated-from-local` label.
+>   • DONE / CANCELLED tasks are skipped by default (use --include-done to override).
+>   • The original `tasks[]` stays in kanban.json for rollback.
+
+On `y`:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py import-tasks \
+  --kanban-path '<kanban.json path>'
+```
+
+Surface the response: `imported`, `skipped`, mapping path. If any task
+errored individually (`skippedDetail[i].reason` starts with `error:`),
+print those lines so the user can investigate.
+
+On `n` or absent: skip silently. The user can run `import-tasks` later via
+the helper if they change their mind.
+
+## Final check — Jira MCP conflict scan
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py mcp-conflict-scan \
+  --kanban-path '<kanban.json path>'
+```
+
+If `conflicts` is non-empty, print a warning per SPEC §18.2:
+
+```
+⚠ Detected conflicting Jira MCP server(s):
+  • <server> (in <source>) — matched on <matchedOn>
+
+This plugin enforces AP routing, anti-self-approve, and comment attribution.
+A separate Jira MCP can bypass these silently. Recommended:
+  - scope the conflicting MCP to user-level only (not project-level), OR
+  - disable it for repos that use kanban Jira mode.
+
+The kanban-jira-agent skill instructs agents not to call other Jira MCPs,
+but defense in depth is preferred.
+```
+
+This is informational. Do not block the init flow.
+
 ## Done
 
 Print:
@@ -251,6 +299,8 @@ Workflow:   full | partial (label fallback: <list>)
 AP field:   <fieldName> (<fieldId>)
 This repo:  <ap-name>
 Roster:     <comma-list of registered APs>
+Migration:  N imported, M skipped     (omit if not run)
+MCP scan:   ✓ no conflicts | ⚠ <count> conflict(s)
 
 Try:
   • /kanban:whoami       — confirm current state

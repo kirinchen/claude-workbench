@@ -159,6 +159,34 @@ git log --oneline | head -3      # 應該看到 "kanban: task-XXX TODO→DOING"
 
 ---
 
+## 8a. Jira 模式（kanban v0.2+）
+
+預設 driver 寫進 `kanban.json`。如果是多機器團隊、或非工程的 owner 要用手機審核，切到 **Jira 模式**：slash command 介面不變，只換儲存層。
+
+```
+> /kanban:initjira
+```
+
+五步互動式：憑證 → board URL → workflow 檢查 → AP custom field → 第一個 AP 註冊。Token 存到 `~/.claude-workbench/.env`（和 notify 共用同一個檔）。整個 flow 冪等可續跑——上次中斷點接著走。
+
+init 完之後：
+
+```
+> /kanban:status     # 從 Jira 拉即時狀態
+> /kanban:next       # 認領這個 AP 最高優先 TODO
+> /kanban:done       # DOING → In Review（由人類批准成 Done）
+> /kanban:question AGENT-42 "v1 是否保留向下相容？"
+> /kanban:whoami     # 顯示 driver、AP、token 有效性、MCP 衝突
+```
+
+每個 repo 的 agent 身份存在 `.claude/kanban-agent.json`（建議 commit——讓團隊看到哪個 agent 管哪個 repo）。Anti-self-approve 會拒絕「自己 AP 的卡片」轉 DONE。
+
+如果 workflow 沒有完整 6 個 canonical status（缺 `BLOCKED` / `REVIEW` / `CANCELLED`），加 `--partial` 重跑——缺的欄位會用 label 替代（`kanban:blocked` 等）。
+
+完整 v0.2 設計見 [`epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`](./epic/)。
+
+---
+
 ## 9. 解除安裝
 
 在 Claude 裡：

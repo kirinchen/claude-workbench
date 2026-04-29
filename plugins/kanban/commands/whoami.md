@@ -62,6 +62,16 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-agent-ap \
 
 Also pull `backend.jira.ap.registered` from `kanban.json` for the AP roster.
 
+Run the MCP conflict scan:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py mcp-conflict-scan \
+  --kanban-path '<kanban.json path>'
+```
+
+The `Jira MCP` row reports `✓ none` (empty conflicts) or
+`⚠ N detected: <comma-list>` (so the user knows what to scope away).
+
 Render:
 
 ```
@@ -76,6 +86,7 @@ AP (this repo):   <ap or "(unset — run /kanban:assign-ap <name>)">
 AP (registered):  <comma-list or "(empty — run /kanban:register-ap <name>)">
 Token:            <validity row>
 Workflow:         full | partial (fallback: BLOCKED, REVIEW, CANCELLED)
+Jira MCP:         <conflict row>
 ```
 
 ## Absolute rules

@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -87,6 +88,7 @@ PLUGINS_ROOT = HERE.parents[2]   # .../plugins
 sys.path.insert(0, str(PLUGINS_ROOT))
 
 from kanban.lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
+from kanban.lib import mcp_conflict_scan  # noqa: E402
 from kanban.lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
@@ -814,6 +816,109 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp_conflict_scan(args: argparse.Namespace) -> int:
+    """SPEC §18.2: surface any Jira-flavoured MCP servers in scope."""
+    p = Path(args.kanban_path) if args.kanban_path else Path.cwd()
+    project_root = p.parent if p.name == "kanban.json" else p
+    hits = mcp_conflict_scan.scan(project_root)
+    _emit(
+        {
+            "ok": True,
+            "conflicts": [
+                {"server": h.server_name, "source": h.source, "matchedOn": h.matched_on}
+                for h in hits
+            ],
+        }
+    )
+    return 0
+
+
+def cmd_import_tasks(args: argparse.Namespace) -> int:
+    """Migrate local kanban.json#tasks into Jira issues. Idempotent.
+
+    Skip strategy:
+      - tasks already in `.claude/.migration-map.json` → skip (mapped)
+      - column in {DONE, CANCELLED} and not --include-done → skip
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    if (data.get("backend") or {}).get("driver") != "jira":
+        _fail("backend.driver must be 'jira' to import — run /kanban:initjira first")
+        return 1
+    legacy_tasks = data.get("tasks") or []
+    if not legacy_tasks:
+        _emit({"ok": True, "imported": 0, "skipped": 0, "tasks": []})
+        return 0
+
+    map_path = p.parent / ".claude" / ".migration-map.json"
+    map_path.parent.mkdir(parents=True, exist_ok=True)
+    if map_path.exists():
+        try:
+            mapping = json.loads(map_path.read_text())
+        except Exception:
+            mapping = {}
+    else:
+        mapping = {}
+
+    from kanban.drivers import get_driver
+    from kanban.drivers.base import TaskInput
+
+    driver = get_driver(data, p.parent)
+
+    imported: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for t in legacy_tasks:
+        local_id = t.get("id")
+        if not local_id:
+            continue
+        if local_id in mapping:
+            skipped.append({"id": local_id, "reason": "already-mapped", "key": mapping[local_id]})
+            continue
+        col = t.get("column")
+        if col in {"DONE", "CANCELLED"} and not args.include_done:
+            skipped.append({"id": local_id, "reason": f"closed-{col.lower()}"})
+            continue
+        if args.dry_run:
+            imported.append({"id": local_id, "would_create": True})
+            continue
+        try:
+            new_task = driver.create_task(
+                TaskInput(
+                    title=t.get("title") or local_id,
+                    description=t.get("description") or "",
+                    priority=t.get("priority"),
+                    tags=list(t.get("tags") or []) + ["migrated-from-local"],
+                    category=t.get("category"),
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            skipped.append({"id": local_id, "reason": f"error: {type(e).__name__}: {e}"})
+            continue
+        mapping[local_id] = new_task.id
+        imported.append({"id": local_id, "key": new_task.id, "title": new_task.title})
+
+    if not args.dry_run:
+        tmp = map_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, map_path)
+
+    _emit(
+        {
+            "ok": True,
+            "dryRun": bool(args.dry_run),
+            "imported": len(imported),
+            "skipped": len(skipped),
+            "tasks": imported,
+            "skippedDetail": skipped,
+            "mapPath": str(map_path),
+        }
+    )
+    return 0
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     p = Path(args.kanban_path)
     if not p.exists():
@@ -933,6 +1038,19 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("sync-summary")
     s.add_argument("--kanban-path", required=True)
     s.set_defaults(func=cmd_sync_summary)
+
+    s = sub.add_parser("mcp-conflict-scan")
+    s.add_argument("--kanban-path", default=None,
+                   help="optional; defaults to current working directory")
+    s.set_defaults(func=cmd_mcp_conflict_scan)
+
+    s = sub.add_parser("import-tasks")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--dry-run", action="store_true",
+                   help="report what would be imported without creating Jira issues")
+    s.add_argument("--include-done", action="store_true",
+                   help="also import DONE / CANCELLED tasks (default: skip)")
+    s.set_defaults(func=cmd_import_tasks)
 
     return p
 
