@@ -15,6 +15,54 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-29
+
+### Added
+- **kanban 0.2.0** — Jira Cloud as a second backend driver. The plugin
+  keeps the same `/kanban:*` command surface (status, next, done, block);
+  the storage layer is the only thing that changes when a project opts in.
+  Highlights:
+  - **Driver abstraction** — `plugins/kanban/drivers/{base,local,jira}.py`
+    behind a single `Driver` Protocol. `kanban.json` writers always emit
+    the new `version: "0.2"` shape; readers still accept legacy
+    `schema_version: 1` files transparently.
+  - **`/kanban:initjira`** — five-step setup (credentials → board →
+    workflow check → AP custom field → first AP registration), plus an
+    optional migration step that imports existing local tasks into Jira
+    and a final MCP-conflict scan.
+  - **Agent Property (AP)** — single-select Jira custom field that
+    distinguishes which AI agent owns a card. Slash commands
+    `/kanban:register-ap`, `/kanban:assign-ap`, `/kanban:whoami`. Registry
+    lives in Jira (source of truth) with a cached mirror in
+    `kanban.json#backend.jira.ap.registered` and per-repo identity in
+    `.claude/kanban-agent.json`.
+  - **Anti-self-approve (SPEC §8)** — `JiraDriver.transition` refuses
+    DONE when `task.ap == current_repo_ap`. Raises `SelfApproveRefused`;
+    surfaced to slash commands as exit code 2 + `kind: self-approve`.
+  - **Auto-detection** — `UserPromptSubmit` and `SessionStart` hooks scan
+    for Jira card keys / URLs filtered by `projectKey`, run a precheck
+    (cached 30s under `.claude/.kanban-cache/`), and inject context above
+    the agent's prompt. Cache is invalidated on every plugin write.
+  - **`/kanban:sync`** and **`/kanban:question`** — explicit refresh,
+    Q-prefix comment + transition to BLOCKED.
+  - **Comment prefix grammar (§9)** — agent comments include
+    `**[<ap>] [Q|A|C|S]**` round-trip parsable; reader resolves AP
+    attribution from the prefix when present.
+  - **Bundled skills** — `kanban-jira-agent` (agent-facing rules) and
+    `kanban-jira-setup` (owner-facing walkthrough). The existing
+    `kanban-workflow` skill scopes itself to `backend.driver = "local"`.
+  - **MCP conflict scan** — surfaces `atlassian|jira|rovo|mcp-atlassian`
+    MCP servers configured at user / project / `.mcp.json` scope. Warning
+    only — agent-side compliance is via the `kanban-jira-agent` skill.
+  - **Graceful degradation** — `--partial` opts into label substitutes
+    (`kanban:blocked` / `kanban:review` / `kanban:cancelled`) when the
+    Jira workflow lacks canonical statuses. Round-trip safe.
+  - **48 mocked regression tests** across five phase suites, runnable via
+    `plugins/kanban/scripts/test_all.sh`.
+  - Backwards-compatible: existing v0.1.x `kanban.json` files (no
+    `backend` block, `schema_version: 1`) continue to work as local mode
+    with no migration. The first write upgrades the file in place.
+
 ## 2026-04-28
 
 ### Added

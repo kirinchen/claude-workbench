@@ -4,16 +4,78 @@
   "title": "Kanban",
   "description": "Schema for kanban.json — the single source of truth for the claude-workbench kanban plugin.",
   "type": "object",
-  "required": ["schema_version", "meta", "tasks"],
+  "required": ["meta", "tasks"],
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
     },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "v0.2+ semantic version. Writers always emit this; readers accept either this or schema_version."
+    },
     "schema_version": {
       "type": "integer",
       "minimum": 1,
-      "description": "Schema version. Bump on breaking changes."
+      "description": "Legacy v0.1 version field. Readers still accept it; new writes use 'version' instead."
+    },
+    "backend": {
+      "type": "object",
+      "description": "Driver selection. Absent ⇒ implicit local mode (v0.1 backwards-compat).",
+      "required": ["driver"],
+      "additionalProperties": false,
+      "properties": {
+        "driver": {
+          "type": "string",
+          "enum": ["local", "jira"]
+        },
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "boardUrl": { "type": "string", "format": "uri" },
+            "boardId": { "type": "integer", "minimum": 1 },
+            "projectKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+            "agentAccountId": { "type": "string" },
+            "statusMap": {
+              "type": "object",
+              "description": "Canonical column -> Jira status display name. Built at /kanban:initjira time.",
+              "additionalProperties": false,
+              "properties": {
+                "TODO": { "type": "string" },
+                "DOING": { "type": "string" },
+                "BLOCKED": { "type": "string" },
+                "REVIEW": { "type": "string" },
+                "DONE": { "type": "string" },
+                "CANCELLED": { "type": "string" }
+              }
+            },
+            "partial": {
+              "type": "boolean",
+              "description": "True when the Jira workflow lacks one or more canonical statuses; missing columns fall back to label substitution per SPEC §7."
+            },
+            "labelFallback": {
+              "type": "object",
+              "description": "Canonical column -> Jira label, used only when `partial` is true and the column has no native status.",
+              "additionalProperties": { "type": "string" }
+            },
+            "ap": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fieldId": { "type": "string", "pattern": "^customfield_[0-9]+$" },
+                "fieldName": { "type": "string" },
+                "registered": {
+                  "type": "array",
+                  "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,40}$" },
+                  "uniqueItems": true
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "meta": {
       "type": "object",
@@ -35,12 +97,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["TODO", "DOING", "DONE", "BLOCKED"]
+            "enum": ["TODO", "DOING", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
           },
           "minItems": 4,
-          "maxItems": 4,
+          "maxItems": 6,
           "uniqueItems": true,
-          "description": "Fixed columns: TODO, DOING, DONE, BLOCKED."
+          "description": "Columns. Local mode uses the 4 canonical [TODO, DOING, DONE, BLOCKED]; Jira mode may add REVIEW and CANCELLED. Driver-side runtime enforces its own subset."
         },
         "created_at": {
           "type": "string",
@@ -74,7 +136,7 @@
         },
         "column": {
           "type": "string",
-          "enum": ["TODO", "DOING", "DONE", "BLOCKED"]
+          "enum": ["TODO", "DOING", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
         },
         "priority": {
           "type": "string"

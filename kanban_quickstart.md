@@ -159,6 +159,43 @@ git log --oneline | head -3      # should see "kanban: task-XXX TODO→DOING"
 
 ---
 
+## 8a. Jira mode (kanban v0.2+)
+
+The default driver writes to `kanban.json`. For multi-machine teams or
+non-developer owners, switch to **Jira mode** instead. Same slash command
+surface, different storage layer.
+
+```
+> /kanban:initjira
+```
+
+Five interactive steps: credentials → board URL → workflow check → AP
+custom field → first AP registration. Tokens are stored in
+`~/.claude-workbench/.env` (the same file `notify` uses). The flow is
+idempotent and resumable — re-running picks up where the last one stopped.
+
+After init:
+
+```
+> /kanban:status     # live state from Jira
+> /kanban:next       # claim the top TODO for this AP
+> /kanban:done       # transition DOING → In Review (a human approves to Done)
+> /kanban:question AGENT-42 "should v1 stay backward-compatible?"
+> /kanban:whoami     # show driver, AP, token validity, MCP scan
+```
+
+Per-repo agent identity lives in `.claude/kanban-agent.json` (commit it —
+the team should see which agent owns the repo). Anti-self-approve refuses
+DONE transitions on a card whose AP equals this repo's AP.
+
+If the workflow lacks canonical statuses (`BLOCKED`, `REVIEW`, `CANCELLED`),
+re-run with `--partial` to accept label substitutes (`kanban:blocked`, etc.).
+
+See [`epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`](./epic/) for the
+full v0.2 design.
+
+---
+
 ## 9. Uninstall
 
 Inside Claude:

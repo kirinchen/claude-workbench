@@ -45,17 +45,36 @@ KANBAN="$proj/kanban.json"
 
 # --- Extract DOING / BLOCKED summary -----------------------------------------
 # Prefer python3 (always present on Linux/macOS). Falls back to jq.
+# In v0.2 kanban_io normalizes the file shape and surfaces backend.driver;
+# this hook only emits a summary for the local driver (jira mode lives in
+# Jira, not in this file). The PLUGIN_LIB var is passed so the python block
+# can `import` lib/kanban_io.py.
+PLUGIN_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 summary=""
 if command -v python3 >/dev/null 2>&1; then
-  summary="$(KANBAN_PATH="$KANBAN" LIGHTWEIGHT="$LIGHTWEIGHT" python3 - <<'PY' 2>/dev/null || true
-import json, os
+  summary="$(KANBAN_PATH="$KANBAN" LIGHTWEIGHT="$LIGHTWEIGHT" PLUGIN_LIB="$PLUGIN_LIB" python3 - <<'PY' 2>/dev/null || true
+import json, os, sys
+sys.path.insert(0, os.environ["PLUGIN_LIB"])
 path = os.environ["KANBAN_PATH"]
 lightweight = os.environ["LIGHTWEIGHT"] == "1"
 try:
-    with open(path) as f:
-        data = json.load(f)
+    from lib import kanban_io
+    data = kanban_io.load(path)
 except Exception:
+    # Fall back to raw json read (e.g. lib unavailable on this checkout).
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        data.setdefault("backend", {"driver": "local"})
+    except Exception:
+        raise SystemExit(0)
+
+driver = (data.get("backend") or {}).get("driver", "local")
+if driver != "local":
+    # Jira mode: live state lives in Jira, not in this file. The jira-mode
+    # hook (added in a later phase) will surface its own summary.
     raise SystemExit(0)
+
 tasks = data.get("tasks", [])
 doing = [t for t in tasks if t.get("column") == "DOING"]
 blocked = [] if lightweight else [t for t in tasks if t.get("column") == "BLOCKED"]
