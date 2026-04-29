@@ -305,12 +305,15 @@ def cmd_parse_transitions_dsl(args: argparse.Namespace) -> int:
 
     DSL grammar (per line):
         CANONICAL > status [+ Label[ name]] [+ Assignee to me|<displayName>]
+
+    Input is taken from --dsl-text only. We deliberately do NOT accept a
+    file path: the parser's error messages would otherwise reflect file
+    line content back into the slash-command transcript, which would leak
+    secrets if the path were ever pointed at a token / credential file.
     """
     text = args.dsl_text
-    if args.dsl_file:
-        text = Path(args.dsl_file).read_text(encoding="utf-8")
     if not text:
-        return _fail("DSL is empty (pass --dsl-text or --dsl-file)")
+        return _fail("DSL is empty (pass --dsl-text)")
 
     user_lookup = None
     if not args.no_user_lookup:
@@ -1131,8 +1134,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_import_tasks)
 
     s = sub.add_parser("parse-transitions-dsl")
-    s.add_argument("--dsl-text", help="DSL block as a string")
-    s.add_argument("--dsl-file", help="path to a file containing the DSL block")
+    s.add_argument("--dsl-text", required=True,
+                   help="DSL block as a string (file paths are deliberately "
+                        "not accepted — the parser surfaces errors verbatim "
+                        "and a file path would risk leaking secrets)")
     s.add_argument("--current-user-account-id",
                    help="accountId to use when DSL says 'Assignee to me'")
     s.add_argument("--no-user-lookup", action="store_true",

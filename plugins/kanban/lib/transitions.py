@@ -92,25 +92,40 @@ def parse_dsl(
     Raises ValueError on syntax error / unknown canonical / cycle / missing
     user lookup when needed.
     """
+    def _redact(s: str, limit: int = 32) -> str:
+        """Trim a line for safe inclusion in error messages.
+
+        Errors flow back to the caller (slash command) verbatim per the
+        documented UX. Long or sensitive content (e.g. accidentally pasted
+        secrets) must not round-trip wholesale. Keep only a short prefix.
+        """
+        s = s.strip()
+        if len(s) > limit:
+            return f"{s[:limit]}…"
+        return s
+
     pre: dict[str, dict[str, Any]] = {}
-    for raw_line in (text or "").splitlines():
+    for line_index, raw_line in enumerate((text or "").splitlines(), start=1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if ">" not in line:
-            raise ValueError(f"missing `>` separator: {raw_line!r}")
+            raise ValueError(
+                f"line {line_index}: missing `>` separator (got {_redact(line)!r})"
+            )
         head, sep, tail = line.partition(">")
         canonical = head.strip().upper()
         if canonical not in CANONICAL_COLUMNS:
             raise ValueError(
-                f"unknown canonical {canonical!r}; expected one of {CANONICAL_COLUMNS}"
+                f"line {line_index}: unknown canonical {_redact(canonical)!r}; "
+                f"expected one of {CANONICAL_COLUMNS}"
             )
         if canonical in pre:
-            raise ValueError(f"duplicate entry for {canonical!r}")
+            raise ValueError(f"line {line_index}: duplicate entry for {canonical!r}")
         try:
             status_tok, labels, assignee = _parse_components(tail.strip())
         except ValueError as e:
-            raise ValueError(f"line {raw_line!r}: {e}") from e
+            raise ValueError(f"line {line_index} ({canonical}): {e}") from e
         pre[canonical] = {
             "status_raw": status_tok,
             "addLabels": labels,
