@@ -26,9 +26,9 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
-sys.path.insert(0, str(REPO / "plugins"))
+sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
-from kanban.lib.jira_client import JiraClient, _Response  # noqa: E402
+from lib.jira_client import JiraClient, _Response  # noqa: E402
 
 
 def _mock_transport(queue, calls):
@@ -79,8 +79,8 @@ def _mk_data(ap_field_id="customfield_10042", registered=None, partial=False):
 
 def _patched_driver(data, project_root):
     """Return a JiraDriver with credentials.read mocked."""
-    from kanban.drivers.jira import JiraDriver
-    from kanban.lib import credentials
+    from drivers.jira import JiraDriver
+    from lib import credentials
 
     orig = credentials.read
     credentials.read = lambda prefix=None: {
@@ -107,7 +107,7 @@ def _attach_mock(drv, queue, calls):
 
 
 def test_ap_registry():
-    from kanban.lib import ap_registry as ap
+    from lib import ap_registry as ap
 
     ap.validate_ap_name("agent-fin-exchange")
     for bad in ("", "A", "ab", "1agent", "agent_x", "-agent", "a"*42):
@@ -169,7 +169,7 @@ def test_assign_agent_writes_custom_field():
         calls = []
         _attach_mock(drv, queue, calls)
 
-        from kanban.drivers.base import AgentRef
+        from drivers.base import AgentRef
 
         result = drv.assign("AGENT-1", AgentRef(ap="agent-fin"))
         assert result.ap == "agent-fin"
@@ -218,7 +218,7 @@ def test_transition_refuses_self_approve():
         calls = []
         _attach_mock(drv, queue, calls)
 
-        from kanban.drivers.jira import SelfApproveRefused
+        from drivers.jira import SelfApproveRefused
 
         try:
             drv.transition("AGENT-1", "DONE")

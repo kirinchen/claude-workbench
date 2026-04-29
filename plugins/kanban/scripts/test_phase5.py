@@ -24,16 +24,16 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
-sys.path.insert(0, str(REPO / "plugins"))
+sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
-from kanban.lib.jira_client import JiraClient, _Response  # noqa: E402
+from lib.jira_client import JiraClient, _Response  # noqa: E402
 
 
 # --- mcp_conflict_scan tests ---------------------------------------------
 
 
 def test_mcp_scan_matches_keywords():
-    from kanban.lib.mcp_conflict_scan import _scan_servers
+    from lib.mcp_conflict_scan import _scan_servers
 
     blob = {
         "mcpServers": {
@@ -189,8 +189,8 @@ def test_import_tasks_dry_run():
 
 def test_import_tasks_idempotent():
     """Live import creates Jira issues; second run reports skipped/already-mapped."""
-    from kanban.drivers.jira import JiraDriver
-    from kanban.lib import credentials
+    from drivers.jira import JiraDriver
+    from lib import credentials
 
     with tempfile.TemporaryDirectory() as td:
         p = pathlib.Path(td) / "kanban.json"
@@ -220,13 +220,11 @@ def test_import_tasks_idempotent():
         # Hack the subprocess by setting JIRA_FAKE_DRIVER=1 and patching
         # create_task within the helper. To keep things simple here, run
         # import-tasks in-process instead of subprocess.
-        sys.path.insert(0, str(REPO / "plugins"))
+        sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
-        from kanban.drivers import base as base_mod  # noqa: F401
-        from kanban.scripts import jira_setup  # type: ignore[import-not-found]
+        from drivers import base as base_mod  # noqa: F401
 
-        # That `from kanban.scripts import` will fail because kanban/scripts
-        # is not a package. Fall back to importing the module via path.
+        # scripts/ is not a package — load jira_setup.py via importlib.
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "jira_setup_mod", str(PLUGIN / "scripts" / "jira_setup.py")
@@ -235,8 +233,8 @@ def test_import_tasks_idempotent():
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
         # Patch JiraDriver.create_task to a fake.
-        from kanban.drivers.jira import JiraDriver as Jd
-        from kanban.drivers.base import Task
+        from drivers.jira import JiraDriver as Jd
+        from drivers.base import Task
 
         counter = {"n": 100}
         created: list[str] = []
@@ -324,8 +322,8 @@ def test_label_fallback_round_trip():
         for c in ("BLOCKED", "REVIEW", "CANCELLED"):
             data["backend"]["jira"]["statusMap"].pop(c, None)
 
-        from kanban.drivers.jira import JiraDriver
-        from kanban.lib import credentials
+        from drivers.jira import JiraDriver
+        from lib import credentials
 
         orig = credentials.read
         credentials.read = lambda prefix=None: {

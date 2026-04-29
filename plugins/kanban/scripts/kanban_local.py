@@ -37,12 +37,11 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve()
-PLUGIN_ROOT = HERE.parents[1]               # plugins/kanban
-PLUGINS_ROOT = HERE.parents[2]              # plugins/
+PLUGIN_ROOT = HERE.parents[1]               # holds lib/, drivers/, templates/
 TEMPLATES = PLUGIN_ROOT / "templates"
-sys.path.insert(0, str(PLUGINS_ROOT))
+sys.path.insert(0, str(PLUGIN_ROOT))
 
-from kanban.lib import kanban_io  # noqa: E402
+from lib import kanban_io  # noqa: E402
 
 
 LOCAL_COLUMNS = ("TODO", "DOING", "DONE", "BLOCKED")

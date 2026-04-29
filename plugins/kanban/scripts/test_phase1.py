@@ -23,7 +23,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
-sys.path.insert(0, str(REPO / "plugins"))
+sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
 
 def _seed_meta() -> dict:
@@ -37,7 +37,7 @@ def _seed_meta() -> dict:
 
 
 def test_kanban_io():
-    from kanban.lib import kanban_io
+    from lib import kanban_io
 
     # (a) v0.1 normalize
     v01 = {
@@ -80,7 +80,7 @@ def test_kanban_io():
 
 
 def test_credentials_isolation():
-    from kanban.lib import credentials
+    from lib import credentials
 
     with tempfile.TemporaryDirectory() as td:
         # Override module-level paths.
@@ -123,8 +123,8 @@ def test_credentials_isolation():
 
 
 def test_local_driver():
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import HumanRef, NotSupported, TaskFilter, TaskInput
+    from drivers import get_driver
+    from drivers.base import HumanRef, NotSupported, TaskFilter, TaskInput
 
     with tempfile.TemporaryDirectory() as td:
         proj = pathlib.Path(td)
