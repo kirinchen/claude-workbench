@@ -12,7 +12,7 @@ Move a task out of the active flow into `BLOCKED` with a mandatory reason. The S
 
 ## 0. Driver check
 
-Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is anything other than `"local"`, stop and tell the user that the Jira-driver branch of this command is not yet implemented in this build.
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is `"jira"`, stop and tell the user: "Jira-mode `/kanban:block` requires AP routing, which lands in Phase 3."
 
 ## 1. Parse arguments
 

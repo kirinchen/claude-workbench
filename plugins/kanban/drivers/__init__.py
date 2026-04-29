@@ -16,8 +16,7 @@ def get_driver(data: dict[str, Any], project_root: str | Path) -> Driver:
         from .local import LocalDriver
         return LocalDriver(Path(project_root))
     if name == "jira":
-        # Phase 2 lands this. Importing lazily so Phase 1 has no jira deps.
-        from .jira import JiraDriver  # type: ignore[import-not-found]
+        from .jira import JiraDriver
         return JiraDriver(data, Path(project_root))
     raise ValueError(f"unknown driver: {name!r}")
 

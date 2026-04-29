@@ -35,8 +35,31 @@
           "additionalProperties": false,
           "properties": {
             "boardUrl": { "type": "string", "format": "uri" },
+            "boardId": { "type": "integer", "minimum": 1 },
             "projectKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
             "agentAccountId": { "type": "string" },
+            "statusMap": {
+              "type": "object",
+              "description": "Canonical column -> Jira status display name. Built at /kanban:initjira time.",
+              "additionalProperties": false,
+              "properties": {
+                "TODO": { "type": "string" },
+                "DOING": { "type": "string" },
+                "BLOCKED": { "type": "string" },
+                "REVIEW": { "type": "string" },
+                "DONE": { "type": "string" },
+                "CANCELLED": { "type": "string" }
+              }
+            },
+            "partial": {
+              "type": "boolean",
+              "description": "True when the Jira workflow lacks one or more canonical statuses; missing columns fall back to label substitution per SPEC §7."
+            },
+            "labelFallback": {
+              "type": "object",
+              "description": "Canonical column -> Jira label, used only when `partial` is true and the column has no native status.",
+              "additionalProperties": { "type": "string" }
+            },
             "ap": {
               "type": "object",
               "additionalProperties": false,

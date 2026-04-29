@@ -12,7 +12,7 @@ Pick the next eligible TODO task, move it to DOING, then begin executing it. The
 
 ## 0. Driver check
 
-Read `kanban.json` first. Look at `backend.driver`. If absent, treat as `"local"`. If the value is anything other than `"local"`, stop and tell the user that the Jira-driver branch of this command is not yet implemented in this build.
+Read `kanban.json` first. Look at `backend.driver`. If absent, treat as `"local"`. If the value is `"jira"`, stop and tell the user: "Jira-mode `/kanban:next` requires AP routing and anti-self-approve enforcement, both of which land in Phase 3. For now use `/kanban:status` to see live Jira state."
 
 ## 1. Load state
 

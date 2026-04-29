@@ -12,7 +12,7 @@ Close out a task. The Skill `kanban-workflow` governs the rules.
 
 ## 0. Driver check
 
-Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is anything other than `"local"`, stop and tell the user that the Jira-driver branch of this command is not yet implemented in this build.
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is `"jira"`, stop and tell the user: "Jira-mode `/kanban:done` requires AP routing and anti-self-approve enforcement, both of which land in Phase 3."
 
 ## 1. Resolve target task
 
