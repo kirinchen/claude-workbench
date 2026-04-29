@@ -15,6 +15,54 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30 (later)
+
+### Added
+- **kanban 0.3.0** — compound transitions for Jira mode. Closes #4.
+  Replaces the v0.2 flat `statusMap` + `labelFallback` (which couldn't
+  express realistic Jira workflows where multiple canonical states share
+  one Jira status) with a richer per-canonical record:
+
+  ```json
+  "transitions": {
+    "BLOCKED": { "status": "In Progress",
+                 "addLabels": ["kanban:blocked"] },
+    "REVIEW":  { "status": "In Progress",
+                 "addLabels": ["kanban:review"],
+                 "assignee": { "accountId": "..." } }
+  }
+  ```
+
+  Highlights:
+  - `lib/transitions.py` — DSL parser, auto-suggester, legacy migrator,
+    and the read-back disambiguation algorithm (most-specific match wins).
+  - **DSL** — users define transitions in plain text:
+    `BLOCKED > In Progress + Label`,
+    `REVIEW > In Progress + label + Assignee to me`,
+    `CANCELLED > DONE + label` (UPPERCASE = canonical self-reference).
+  - **Non-English status matching** (closes Bug #1 in #4) — the
+    suggester uses Atlassian's `statusCategory.key` as a fallback signal
+    so `進行中` / `完成` / `Backlog` are recognised even when the name
+    isn't in the English keyword list.
+  - **`/kanban:initjira` step 3 rewritten** — runs the suggester, prints
+    the auto-detected mapping, then asks the user for a DSL block. The
+    `--partial` flag is gone; partial workflows are now expressed
+    naturally by sharing a status across canonicals.
+  - **`drivers/jira.py`** — compound write order: status transition first
+    (skip if already in target), then PUT labels (add/remove), then PUT
+    assignee. Partial-failure tracking with audit comment. Anti-self-
+    approve unchanged in semantics.
+  - **Auto-migration on load** — existing v0.2.x kanban.json files
+    (statusMap + labelFallback + partial) are converted in-memory to
+    transitions form by `kanban_io.load`. Lossless on the writer's
+    intent. First write upgrades the file in place; legacy keys dropped.
+  - **New CLI subcommands**: `parse-transitions-dsl`, `set-transitions`.
+    Existing `build-status-map` returns the richer suggestion shape.
+  - **Tests**: 19 new cases in `test_phase7.py` (DSL parser, suggester,
+    migration, disambiguation, compound write, CLI). All 7 phase suites
+    (77 tests) green.
+  - Workbench bundle: `0.0.2 → 0.0.3`, kanban dep `^0.2.0 → ^0.3.0`.
+
 ## 2026-04-30
 
 ### Fixed

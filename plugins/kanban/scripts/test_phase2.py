@@ -235,8 +235,34 @@ def test_list_tasks_builds_jql():
 def test_transition_resolves_id():
     data = _mk_kanban_data()
     drv = _patched_driver(data)
-    # 1) get_transitions, 2) transition_issue, 3) get_issue (after-transition refresh)
+    # v0.3 flow: 1) pre-flight get_task; 2) get_transitions;
+    # 3) transition_issue (POST); 4) post-transition get_task refresh.
+    pre_issue = {
+        "key": "AGENT-1",
+        "fields": {
+            "summary": "first",
+            "status": {"name": "To Do"},
+            "priority": {"name": "P1"},
+            "assignee": None,
+            "labels": [],
+            "created": "x",
+            "updated": "y",
+        },
+    }
+    post_issue = {
+        "key": "AGENT-1",
+        "fields": {
+            "summary": "first",
+            "status": {"name": "In Progress"},
+            "priority": {"name": "P1"},
+            "assignee": None,
+            "labels": [],
+            "created": "x",
+            "updated": "y",
+        },
+    }
     queue = [
+        _Response(200, json.dumps(pre_issue).encode(), {}),
         _Response(
             200,
             json.dumps(
@@ -250,33 +276,16 @@ def test_transition_resolves_id():
             {},
         ),
         _Response(204, b"", {}),
-        _Response(
-            200,
-            json.dumps(
-                {
-                    "key": "AGENT-1",
-                    "fields": {
-                        "summary": "first",
-                        "status": {"name": "In Progress"},
-                        "priority": {"name": "P1"},
-                        "assignee": None,
-                        "labels": [],
-                        "created": "x",
-                        "updated": "y",
-                    },
-                }
-            ).encode(),
-            {},
-        ),
+        _Response(200, json.dumps(post_issue).encode(), {}),
     ]
     calls = []
     _attach_mock(drv, queue, calls)
 
     t = drv.transition("AGENT-1", "DOING")
     assert t.column == "DOING"
-    # Second call must be the transition POST with id=21
-    assert calls[1]["method"] == "POST"
-    sent = json.loads(calls[1]["body"])
+    # Third call must be the transition POST with id=21 (after pre-flight + transitions list).
+    assert calls[2]["method"] == "POST"
+    sent = json.loads(calls[2]["body"])
     assert sent["transition"]["id"] == "21"
 
 

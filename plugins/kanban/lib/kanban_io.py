@@ -42,6 +42,9 @@ def normalize(data: dict[str, Any]) -> dict[str, Any]:
     - Adds `version: "0.2"` if absent.
     - Drops legacy `schema_version` (writer policy is single-source).
     - Adds `backend: {driver: local}` if absent (v0.1 implicit local).
+    - For jira backends: auto-migrates legacy `statusMap`/`labelFallback`/
+      `partial` (v0.2.x) into the v0.3 `transitions` block. Lossless on the
+      writer's intent — see lib/transitions.py.
     - Leaves `meta`, `tasks` untouched.
     """
     out = dict(data)
@@ -51,6 +54,15 @@ def normalize(data: dict[str, Any]) -> dict[str, Any]:
         out["backend"] = default_backend()
     elif "driver" not in out["backend"]:
         out["backend"]["driver"] = "local"
+
+    backend = out["backend"]
+    if backend.get("driver") == "jira" and isinstance(backend.get("jira"), dict):
+        try:
+            from lib import transitions as _tr  # local import — avoid cycles
+        except ImportError:
+            _tr = None
+        if _tr is not None:
+            backend["jira"] = _tr.migrate_legacy(backend["jira"])
     return out
 
 

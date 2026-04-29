@@ -91,7 +91,7 @@ PLUGIN_ROOT = HERE.parents[1]
 sys.path.insert(0, str(PLUGIN_ROOT))
 
 from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
-from lib import mcp_conflict_scan  # noqa: E402
+from lib import mcp_conflict_scan, transitions as _tr  # noqa: E402
 from lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
@@ -267,21 +267,15 @@ def cmd_build_status_map(args: argparse.Namespace) -> int:
                 seen.add(n)
                 found.append({"name": n, "category": (status.get("statusCategory") or {}).get("key")})
 
-    canonical_map: dict[str, str] = {}
-    for s in found:
-        canonical = _NAME_RULES.get(_norm(s["name"]))
-        if canonical and canonical not in canonical_map:
-            canonical_map[canonical] = s["name"]
-
-    missing = [c for c in CANONICAL_COLUMNS if c not in canonical_map]
-    label_fallback = {c: f"kanban:{c.lower()}" for c in missing}
+    # Delegate to lib.transitions which understands non-English names (via
+    # statusCategory) and ambiguity tracking.
+    sugg = _tr.suggest_from_jira(found)
     _emit(
         {
             "found": found,
-            "map": canonical_map,
-            "missing": missing,
-            "partial": bool(missing),
-            "labelFallback": label_fallback,
+            "suggestions": sugg.suggestions,
+            "unmapped": sugg.unmapped,
+            "ambiguous": sugg.ambiguous,
         }
     )
     return 0
@@ -294,12 +288,93 @@ def cmd_write_backend(args: argparse.Namespace) -> int:
         _fail(f"kanban.json not found at {p}")
         return 1
     data = kanban_io.load(p)
+    # Run any legacy fields through the migrator so callers can hand us either
+    # v0.2 (statusMap+labelFallback) or v0.3 (transitions) shape.
+    cfg = _tr.migrate_legacy(cfg)
     data["backend"] = {"driver": "jira", "jira": cfg}
     # Adjust columns metadata to match SPEC: jira mode permits all 6.
     meta = data.setdefault("meta", {})
     meta["columns"] = list(CANONICAL_COLUMNS)
     kanban_io.save(p, data)
     _emit({"ok": True, "version": data.get("version", "0.2")})
+    return 0
+
+
+def cmd_parse_transitions_dsl(args: argparse.Namespace) -> int:
+    """Parse a DSL block into a backend.jira.transitions dict.
+
+    DSL grammar (per line):
+        CANONICAL > status [+ Label[ name]] [+ Assignee to me|<displayName>]
+    """
+    text = args.dsl_text
+    if args.dsl_file:
+        text = Path(args.dsl_file).read_text(encoding="utf-8")
+    if not text:
+        return _fail("DSL is empty (pass --dsl-text or --dsl-file)")
+
+    user_lookup = None
+    if not args.no_user_lookup:
+        # Make /user/search available so 'Assignee to <displayName>' resolves.
+        try:
+            client = _client_from_env()
+        except SystemExit:
+            client = None  # _client_from_env _fail-exited; user_lookup unavailable
+        if client is not None:
+            def lookup(name: str) -> str | None:
+                try:
+                    res = client._request(
+                        "GET", "/rest/api/3/user/search", query={"query": name}
+                    )
+                except JiraError:
+                    return None
+                if isinstance(res, list) and res:
+                    return (res[0] or {}).get("accountId")
+                return None
+            user_lookup = lookup
+
+    try:
+        out = _tr.parse_dsl(
+            text,
+            current_user_account_id=args.current_user_account_id,
+            user_lookup=user_lookup,
+        )
+    except ValueError as e:
+        return _fail(str(e))
+    _emit({"ok": True, "transitions": out})
+    return 0
+
+
+def cmd_set_transitions(args: argparse.Namespace) -> int:
+    """Persist `backend.jira.transitions` to kanban.json."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    transitions = json.loads(args.transitions_json)
+    if not isinstance(transitions, dict):
+        return _fail("--transitions-json must be a JSON object")
+
+    data = kanban_io.load(p)
+    backend = data.setdefault("backend", {"driver": "jira"})
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    jira_cfg = backend.setdefault("jira", {})
+    # Drop any legacy fields — transitions supersedes them.
+    for k in ("statusMap", "labelFallback", "partial"):
+        jira_cfg.pop(k, None)
+
+    available = []
+    if args.available_statuses:
+        available = json.loads(args.available_statuses)
+    errs = _tr.validate(transitions, available)
+    if errs and not args.force:
+        return _fail(
+            "validation failed; pass --force to write anyway",
+            errors=errs,
+        )
+
+    jira_cfg["transitions"] = transitions
+    kanban_io.save(p, data)
+    _emit({"ok": True, "transitions": transitions, "warnings": errs})
     return 0
 
 
@@ -1054,6 +1129,25 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--include-done", action="store_true",
                    help="also import DONE / CANCELLED tasks (default: skip)")
     s.set_defaults(func=cmd_import_tasks)
+
+    s = sub.add_parser("parse-transitions-dsl")
+    s.add_argument("--dsl-text", help="DSL block as a string")
+    s.add_argument("--dsl-file", help="path to a file containing the DSL block")
+    s.add_argument("--current-user-account-id",
+                   help="accountId to use when DSL says 'Assignee to me'")
+    s.add_argument("--no-user-lookup", action="store_true",
+                   help="skip /user/search resolution for non-'me' assignees")
+    s.set_defaults(func=cmd_parse_transitions_dsl)
+
+    s = sub.add_parser("set-transitions")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--transitions-json", required=True,
+                   help="JSON object mapping CANONICAL -> {status, addLabels?, removeLabels?, assignee?}")
+    s.add_argument("--available-statuses",
+                   help="JSON array of Jira status names; rejects writes whose `status` isn't in the list (unless --force)")
+    s.add_argument("--force", action="store_true",
+                   help="write even if validation reports issues")
+    s.set_defaults(func=cmd_set_transitions)
 
     return p
 

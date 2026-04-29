@@ -38,26 +38,31 @@
             "boardId": { "type": "integer", "minimum": 1 },
             "projectKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
             "agentAccountId": { "type": "string" },
-            "statusMap": {
+            "transitions": {
               "type": "object",
-              "description": "Canonical column -> Jira status display name. Built at /kanban:initjira time.",
+              "description": "Canonical column -> compound transition spec. Each canonical column maps to a Jira status plus optional label add/remove and assignee. Multiple canonicals may share the same Jira status; reader disambiguates by labels (most-specific match wins).",
               "additionalProperties": false,
               "properties": {
-                "TODO": { "type": "string" },
-                "DOING": { "type": "string" },
-                "BLOCKED": { "type": "string" },
-                "REVIEW": { "type": "string" },
-                "DONE": { "type": "string" },
-                "CANCELLED": { "type": "string" }
+                "TODO":      { "$ref": "#/definitions/transitionSpec" },
+                "DOING":     { "$ref": "#/definitions/transitionSpec" },
+                "BLOCKED":   { "$ref": "#/definitions/transitionSpec" },
+                "REVIEW":    { "$ref": "#/definitions/transitionSpec" },
+                "DONE":      { "$ref": "#/definitions/transitionSpec" },
+                "CANCELLED": { "$ref": "#/definitions/transitionSpec" }
               }
+            },
+            "statusMap": {
+              "type": "object",
+              "description": "Deprecated since 0.3.0 — use `transitions`. Readers still accept legacy v0.2.x files and auto-migrate on load.",
+              "additionalProperties": { "type": "string" }
             },
             "partial": {
               "type": "boolean",
-              "description": "True when the Jira workflow lacks one or more canonical statuses; missing columns fall back to label substitution per SPEC §7."
+              "description": "Deprecated since 0.3.0 — see `transitions`."
             },
             "labelFallback": {
               "type": "object",
-              "description": "Canonical column -> Jira label, used only when `partial` is true and the column has no native status.",
+              "description": "Deprecated since 0.3.0 — use `transitions[*].addLabels`.",
               "additionalProperties": { "type": "string" }
             },
             "ap": {
@@ -120,6 +125,36 @@
     }
   },
   "definitions": {
+    "transitionSpec": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Jira status display name to transition to."
+        },
+        "addLabels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Labels to add when transitioning to this canonical column."
+        },
+        "removeLabels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Labels to remove when transitioning to this canonical column."
+        },
+        "assignee": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accountId"],
+          "properties": {
+            "accountId": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "task": {
       "type": "object",
       "required": ["id", "title", "column", "priority", "created", "updated"],

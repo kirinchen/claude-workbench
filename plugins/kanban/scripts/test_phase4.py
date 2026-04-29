@@ -162,11 +162,26 @@ def test_driver_invalidates_cache_on_transition():
         card_cache.put(proj, "AGENT-1", {"col": "TODO"})
         assert card_cache.get(proj, "AGENT-1") is not None
 
-        # transition(DOING) call chain (anti-self-approve only fires for DONE):
-        # 1) get_transitions
-        # 2) transition_issue (POST)
-        # 3) get_task (post-transition refresh)
+        # transition(DOING) call chain in v0.3:
+        # 1) pre-flight get_task (existing status check)
+        # 2) get_transitions
+        # 3) transition_issue (POST)
+        # 4) post-transition get_task refresh
+        pre = {
+            "key": "AGENT-1",
+            "fields": {
+                "summary": "x",
+                "status": {"name": "To Do"},
+                "priority": {"name": "P1"},
+                "assignee": None,
+                "labels": [],
+                "created": "x",
+                "updated": "y",
+                "customfield_10042": {"value": "agent-fin"},
+            },
+        }
         queue = [
+            _Response(200, json.dumps(pre).encode(), {}),
             _Response(
                 200,
                 json.dumps(
