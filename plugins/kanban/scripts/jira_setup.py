@@ -90,7 +90,7 @@ HERE = Path(__file__).resolve()
 PLUGIN_ROOT = HERE.parents[1]
 sys.path.insert(0, str(PLUGIN_ROOT))
 
-from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
+from lib import ap_registry, board_cache, card_cache, credentials, kanban_io  # noqa: E402
 from lib import mcp_conflict_scan, transitions as _tr  # noqa: E402
 from lib.jira_client import JiraClient, JiraError  # noqa: E402
 
@@ -296,7 +296,24 @@ def cmd_write_backend(args: argparse.Namespace) -> int:
     meta = data.setdefault("meta", {})
     meta["columns"] = list(CANONICAL_COLUMNS)
     kanban_io.save(p, data)
-    _emit({"ok": True, "version": data.get("version", "0.2")})
+
+    cached_path: str | None = None
+    if cfg.get("projectKey") and cfg.get("boardId") and cfg.get("transitions"):
+        # Persist the per-machine board cache so sibling repos can pick this up.
+        # `safe_host` derives the hostname from boardUrl; either form works.
+        try:
+            cp = board_cache.write(
+                cfg.get("boardUrl") or "",
+                cfg["projectKey"],
+                cfg["boardId"],
+                cfg,
+                source_repo=p.parent,
+            )
+            cached_path = str(cp)
+        except Exception:
+            cached_path = None
+
+    _emit({"ok": True, "version": data.get("version", "0.2"), "cachePath": cached_path})
     return 0
 
 
@@ -491,6 +508,40 @@ def _resolve_default_context(client: JiraClient, field_id: str) -> int:
     raise RuntimeError("no contexts found for AP field — Jira config is unusual")
 
 
+def cmd_read_board_cache(args: argparse.Namespace) -> int:
+    """Look up a cached `backend.jira` mapping for (baseUrl, projectKey, boardId)."""
+    payload = board_cache.read(args.base_url, args.project, args.board)
+    if payload is None:
+        _emit({"ok": True, "hit": False})
+        return 0
+    _emit(
+        {
+            "ok": True,
+            "hit": True,
+            "key": payload.get("key"),
+            "backend_jira": payload.get("backend_jira"),
+            "fetched_at_unix": payload.get("fetched_at_unix"),
+            "last_repo": payload.get("last_repo", ""),
+            "cachePath": str(board_cache.cache_path(args.base_url, args.project, args.board)),
+        }
+    )
+    return 0
+
+
+def cmd_list_board_cache(_args: argparse.Namespace) -> int:
+    entries = []
+    for raw in board_cache.list_all():
+        entries.append({
+            "key": raw.get("key"),
+            "fetched_at_unix": raw.get("fetched_at_unix"),
+            "last_repo": raw.get("last_repo", ""),
+            "transitionsCount": len((raw.get("backend_jira") or {}).get("transitions") or {}),
+            "registeredAps": ((raw.get("backend_jira") or {}).get("ap") or {}).get("registered") or [],
+        })
+    _emit({"ok": True, "entries": entries})
+    return 0
+
+
 def cmd_register_ap(args: argparse.Namespace) -> int:
     """Add `--name` to the AP field's options + cache in kanban.json#registered."""
     p = Path(args.kanban_path)
@@ -546,7 +597,28 @@ def cmd_register_ap(args: argparse.Namespace) -> int:
     backend["jira"] = jira_cfg
     data["backend"] = backend
     kanban_io.save(p, data)
-    _emit({"ok": True, "name": args.name, "registered": registered})
+
+    # Sync the per-machine board cache so sibling repos see the new AP next
+    # time they look up the same board. Best-effort — failure here doesn't
+    # invalidate the registration itself.
+    cache_synced = False
+    if jira_cfg.get("projectKey") and jira_cfg.get("boardId"):
+        try:
+            cache_synced = board_cache.update_ap_registered(
+                jira_cfg.get("boardUrl") or "",
+                jira_cfg["projectKey"],
+                jira_cfg["boardId"],
+                args.name,
+            )
+        except Exception:
+            cache_synced = False
+
+    _emit({
+        "ok": True,
+        "name": args.name,
+        "registered": registered,
+        "cacheSynced": cache_synced,
+    })
     return 0
 
 
@@ -1143,6 +1215,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-user-lookup", action="store_true",
                    help="skip /user/search resolution for non-'me' assignees")
     s.set_defaults(func=cmd_parse_transitions_dsl)
+
+    s = sub.add_parser("read-board-cache")
+    s.add_argument("--base-url", required=True)
+    s.add_argument("--project", required=True)
+    s.add_argument("--board", required=True, type=int)
+    s.set_defaults(func=cmd_read_board_cache)
+
+    s = sub.add_parser("list-board-cache")
+    s.set_defaults(func=cmd_list_board_cache)
 
     s = sub.add_parser("set-transitions")
     s.add_argument("--kanban-path", required=True)

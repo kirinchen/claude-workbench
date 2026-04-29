@@ -58,9 +58,24 @@ For earlier history, see the git log.
     intent. First write upgrades the file in place; legacy keys dropped.
   - **New CLI subcommands**: `parse-transitions-dsl`, `set-transitions`.
     Existing `build-status-map` returns the richer suggestion shape.
-  - **Tests**: 19 new cases in `test_phase7.py` (DSL parser, suggester,
-    migration, disambiguation, compound write, CLI). All 7 phase suites
-    (77 tests) green.
+  - **Per-machine board cache** — `~/.claude-workbench/kanban-boards/<host>__<KEY>__<id>.json`
+    stores a board's `transitions` block, AP-field config, and AP roster.
+    `/kanban:initjira` step 2.5 looks it up first; on hit the user can
+    reuse without re-entering the DSL. `write-backend` writes the cache
+    as a side-effect; `register-ap` syncs the AP roster so sibling repos
+    pick up newly-registered APs without re-querying Jira. New
+    subcommands `read-board-cache`, `list-board-cache`.
+  - **Security**: removed `--dsl-file` from `parse-transitions-dsl`
+    (would have allowed an LLM-driven misuse to reflect arbitrary file
+    contents — including `~/.claude-workbench/.env` — back into the chat
+    transcript via the parser's verbatim error messages). DSL parser
+    errors now report `line N` plus a 32-char redacted snippet, never
+    the full line.
+  - **Tests**: 28 new cases across `test_phase7.py` (DSL parser,
+    suggester, migration, disambiguation, compound write, CLI) and
+    `test_phase8.py` (board cache: round-trip, AP roster sync,
+    multi-repo sharing, missing/corrupt handling). All 8 phase suites
+    (86 tests) green.
   - Workbench bundle: `0.0.2 → 0.0.3`, kanban dep `^0.2.0 → ^0.3.0`.
 
 ## 2026-04-30
