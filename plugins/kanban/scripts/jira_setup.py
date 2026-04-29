@@ -79,17 +79,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Import package modules with relative path. Plugin layout: scripts/ is a
-# sibling of lib/ and drivers/. Python doesn't auto-import "kanban" in this
-# layout, so we resolve plugins/ as the path root and import as
-# `kanban.lib.*` etc.
+# Plugin layout: scripts/ is a sibling of lib/ and drivers/. Adding the
+# plugin root (the directory containing lib/ and drivers/) to sys.path lets
+# us use absolute imports `from lib import …` and `from drivers import …`,
+# which works under both:
+#   1. Source layout:           plugins/kanban/scripts/jira_setup.py
+#   2. Marketplace install:     <cache>/<repo>/kanban/<version>/scripts/jira_setup.py
+# In both cases `parents[1]` resolves to the directory holding lib/ + drivers/.
 HERE = Path(__file__).resolve()
-PLUGINS_ROOT = HERE.parents[2]   # .../plugins
-sys.path.insert(0, str(PLUGINS_ROOT))
+PLUGIN_ROOT = HERE.parents[1]
+sys.path.insert(0, str(PLUGIN_ROOT))
 
-from kanban.lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
-from kanban.lib import mcp_conflict_scan  # noqa: E402
-from kanban.lib.jira_client import JiraClient, JiraError  # noqa: E402
+from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
+from lib import mcp_conflict_scan  # noqa: E402
+from lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
 # --- helpers --------------------------------------------------------------
@@ -306,8 +309,8 @@ def cmd_list_tasks(args: argparse.Namespace) -> int:
         _fail(f"kanban.json not found at {p}")
         return 1
     data = kanban_io.load(p)
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import TaskFilter
+    from drivers import get_driver
+    from drivers.base import TaskFilter
 
     driver = get_driver(data, p.parent)
     flt = TaskFilter(column=args.column, limit=args.limit)
@@ -539,8 +542,8 @@ def cmd_claim_next(args: argparse.Namespace) -> int:
         _fail("kanban-agent.json present but `ap` is empty")
         return 1
 
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import CommentKind, TaskFilter
+    from drivers import get_driver
+    from drivers.base import CommentKind, TaskFilter
 
     driver = get_driver(data, p.parent)
     todos = driver.list_tasks(TaskFilter(column="TODO", ap=ap, limit=1))
@@ -575,9 +578,9 @@ def cmd_transition(args: argparse.Namespace) -> int:
         _fail(f"kanban.json not found at {p}")
         return 1
     data = kanban_io.load(p)
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import CommentKind
-    from kanban.drivers.jira import SelfApproveRefused
+    from drivers import get_driver
+    from drivers.base import CommentKind
+    from drivers.jira import SelfApproveRefused
 
     driver = get_driver(data, p.parent)
     kwargs: dict[str, Any] = {}
@@ -717,7 +720,7 @@ def cmd_precheck_card(args: argparse.Namespace) -> int:
         )
         return 0
 
-    from kanban.drivers import get_driver
+    from drivers import get_driver
 
     driver = get_driver(data, p.parent)
     try:
@@ -779,8 +782,8 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
     repo_ap = _read_repo_ap(p)
     project_key = (backend.get("jira") or {}).get("projectKey") or ""
 
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import TaskFilter
+    from drivers import get_driver
+    from drivers.base import TaskFilter
 
     driver = get_driver(data, p.parent)
     open_columns = ("TODO", "DOING", "BLOCKED", "REVIEW")
@@ -863,8 +866,8 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
     else:
         mapping = {}
 
-    from kanban.drivers import get_driver
-    from kanban.drivers.base import TaskInput
+    from drivers import get_driver
+    from drivers.base import TaskInput
 
     driver = get_driver(data, p.parent)
 
@@ -925,7 +928,7 @@ def cmd_health(args: argparse.Namespace) -> int:
         _fail(f"kanban.json not found at {p}")
         return 1
     data = kanban_io.load(p)
-    from kanban.drivers import get_driver
+    from drivers import get_driver
 
     driver = get_driver(data, p.parent)
     h = driver.health()

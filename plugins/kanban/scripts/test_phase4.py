@@ -26,9 +26,9 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
-sys.path.insert(0, str(REPO / "plugins"))
+sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
-from kanban.lib.jira_client import JiraClient, _Response  # noqa: E402
+from lib.jira_client import JiraClient, _Response  # noqa: E402
 
 
 def _mk_data(*, registered=("agent-fin",), partial=False):
@@ -88,7 +88,7 @@ def _setup_cmd(*args, env_extra=None):
 
 
 def test_card_parser():
-    from kanban.lib import card_parser
+    from lib import card_parser
 
     assert card_parser.extract_keys("see AGENT-42 and FIN-103") == ["AGENT-42", "FIN-103"]
     assert card_parser.extract_keys("AGENT-42 AGENT-42") == ["AGENT-42"]
@@ -107,7 +107,7 @@ def test_card_parser():
 
 
 def test_card_cache():
-    from kanban.lib import card_cache
+    from lib import card_cache
 
     with tempfile.TemporaryDirectory() as td:
         p = pathlib.Path(td)
@@ -126,8 +126,8 @@ def test_card_cache():
 
 
 def _patched_driver(data, project_root):
-    from kanban.drivers.jira import JiraDriver
-    from kanban.lib import credentials
+    from drivers.jira import JiraDriver
+    from lib import credentials
 
     orig = credentials.read
     credentials.read = lambda prefix=None: {
@@ -152,7 +152,7 @@ def _attach_mock(drv, queue, calls):
 
 
 def test_driver_invalidates_cache_on_transition():
-    from kanban.lib import card_cache
+    from lib import card_cache
 
     with tempfile.TemporaryDirectory() as td:
         proj = _seed_repo(td, ap="agent-quant")
@@ -208,7 +208,7 @@ def test_driver_invalidates_cache_on_transition():
 
 def test_precheck_card_ap_mismatch():
     """precheck-card emits ap-mismatch when the cached card is owned by another AP."""
-    from kanban.lib import card_cache, kanban_io
+    from lib import card_cache, kanban_io
 
     with tempfile.TemporaryDirectory() as td:
         proj = _seed_repo(td, ap="agent-fin")
@@ -293,7 +293,7 @@ def test_sync_summary_local_skipped():
 
 def test_card_detect_hook_emits_context():
     """kanban-card-detect.sh injects a context block when a card key is in the prompt."""
-    from kanban.lib import card_cache
+    from lib import card_cache
 
     with tempfile.TemporaryDirectory() as td:
         proj = _seed_repo(td)

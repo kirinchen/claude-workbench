@@ -15,6 +15,43 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30
+
+### Fixed
+- **kanban 0.2.2** — `/kanban:initjira` no longer fails with
+  `ModuleNotFoundError: No module named 'kanban'` under the marketplace
+  install layout (`<cache>/<repo>/kanban/<version>/...`). Both helpers
+  now anchor `sys.path` at `parents[1]` (the directory holding `lib/`
+  and `drivers/`) and use absolute imports `from lib import …` /
+  `from drivers import …`. The driver modules' relative imports
+  (`from ..lib import …`) — which fail when `drivers` is loaded as a
+  top-level package — are converted to absolute. Tests updated to the
+  same canonical sys.path. Verified end-to-end against a synthetic
+  marketplace layout. Closes Bug B in #3.
+- **kanban 0.2.1** — two bugs filed in #3:
+
+  - **(Bug A)** local-mode mutation commands (`/kanban:init`,
+    `/kanban:next`, `/kanban:done`, `/kanban:block`) no longer trip
+    `kanban-guard.sh` and recover via Bash. They now route through a new
+    `scripts/kanban_local.py` helper that writes via atomic `os.replace`
+    through `kanban_io.save()` — same architecture pattern as the
+    Jira-mode commands' `jira_setup.py`. Result: clean execution, no
+    PreToolUse rejection messages mid-flow. The helper enforces
+    dependency / priority / DONE-immutability rules in one place; slash
+    commands shrink to thin orchestrators. New `scripts/test_phase6.py`
+    (11 cases) covers init / next / done / block / status end-to-end.
+
+  - **(Bug B)** `/kanban:initjira` no longer fails with
+    `ModuleNotFoundError: No module named 'kanban'` under the marketplace
+    install layout (`<cache>/<repo>/kanban/<version>/...`). Both helpers
+    now anchor `sys.path` at `parents[1]` (the directory holding `lib/`
+    and `drivers/`) and use absolute imports `from lib import …` /
+    `from drivers import …`. The driver modules' relative imports
+    (`from ..lib import …`) — which fail when `drivers` is loaded as a
+    top-level package — are converted to absolute. Tests updated to the
+    same canonical sys.path. Verified end-to-end against a synthetic
+    marketplace layout.
+
 ## 2026-04-29
 
 ### Added

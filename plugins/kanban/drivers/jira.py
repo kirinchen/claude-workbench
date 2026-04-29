@@ -16,9 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..lib import card_cache, credentials
-from ..lib.jira_client import JiraClient, JiraError, adf_to_text, text_to_adf
-from .base import (
+from lib import card_cache, credentials
+from lib.jira_client import JiraClient, JiraError, adf_to_text, text_to_adf
+from drivers.base import (
     AgentRef,
     Comment,
     CommentKind,

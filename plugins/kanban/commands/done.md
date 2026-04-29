@@ -1,7 +1,7 @@
 ---
 description: Mark a task (default: current DOING) as DONE.
 argument-hint: [<task-id>] [--note=<text>]
-allowed-tools: Read, Write, Bash(date:*), Bash(jq:*)
+allowed-tools: Read, Bash(python3:*), Bash(date:*)
 ---
 
 # /kanban:done
@@ -12,47 +12,52 @@ Close out a task. The Skill `kanban-workflow` governs the rules.
 
 ## 0. Driver check
 
-Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If `"jira"`, follow the Jira flow at the end of this file.
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`.
+If `"jira"`, follow the Jira flow at the end of this file.
 
-## 1. Resolve target task (local driver)
+## 1. Parse arguments (local driver)
 
-Parse `$ARGUMENTS`:
-- If an explicit `task-NNN` is present: target is that task.
-- Otherwise: find the single task with `column == "DOING"` and `assignee == "claude-code"`. If there are 0 or multiple, list them and ask the user which one.
+- `<task-id>` — explicit task to close. If omitted, the helper finds the
+  single DOING task with `assignee == "claude-code"`. If 0 or >1, the
+  helper returns an error listing the candidates; ask the user which one.
+- `--note=<text>` — optional closing comment. Quoted values supported.
 
-Parse `--note=<text>`: optional closing comment. Support quoted values.
+## 2. Run the helper
 
-## 2. Validate
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py done \
+  --kanban-path '<kanban.json path>' \
+  [--task-id task-NNN] [--note '<text>']
+```
 
-Re-read `kanban.json` fresh. Confirm:
-- Target task exists.
-- `column == "DOING"`. If it's already DONE, say so and stop. If TODO/BLOCKED, refuse and explain.
+The helper enforces DONE-only-from-DOING, sets `completed`, appends the
+note as a comment, and writes atomically. **Do not** call Write/Edit on
+`kanban.json`.
 
-## 3. Move to DONE
+## 3. Report
 
-1. `date -Iseconds` → now.
-2. Produce new kanban.json:
-   - Target task: `column = "DONE"`, `completed = <now>`, `updated = <now>`.
-   - If `--note=<text>` was passed: append a comment `{author: "claude-code", ts: <now>, text: <note>}` to `comments`.
-   - `meta.updated_at = <now>`.
-3. Write.
+| Shape | Action |
+|---|---|
+| `{ok: true, id, title, completed, unblocked: [...]}` | print done line; if `unblocked` is non-empty, list those task ids |
+| `{ok: false, error, doing: [...]}` | the user has multiple DOING tasks. Show the list and ask which one. |
+| `{ok: false, error}` | surface and stop |
 
-## 4. Report
+Format:
 
-> ✓ task-042 "<title>" → DONE.
-> Unblocked: task-050 (was waiting on task-042).
+> ✓ <id> "<title>" → DONE.
+> Unblocked: <id-1>, <id-2> (was waiting on <id>).
 
-Compute "unblocked" by finding any task in TODO whose `depends` included the closed task and are now fully satisfied. List their ids.
+Omit the "Unblocked" line when none.
 
 ## Jira flow
 
-In Jira mode, `/kanban:done` transitions DOING → REVIEW. The actual DONE
-transition is reserved for a human reviewer (or another agent) — anti-self-
-approve will refuse if the same AP tries to push to DONE.
+In Jira mode, `/kanban:done` transitions DOING → REVIEW. The DONE step is
+reserved for a human reviewer — anti-self-approve refuses if the same AP
+tries to push to DONE.
 
 Identify the target key from `$ARGUMENTS`. If absent, find the single DOING
-card with this repo's AP set (use `/kanban:status` to enumerate; if there is
-not exactly one, ask the user to specify).
+card with this repo's AP set (use `/kanban:status` to enumerate; if there
+is not exactly one, ask the user).
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py transition \
@@ -61,17 +66,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py transition \
 
 On success print `✓ <KEY> → In Review (awaiting reviewer)`.
 
-If the user explicitly asks to mark DONE — for example a one-person team
-where the human owner uses Jira UI normally — they should approve via the
-Jira UI from a different account, not via this slash command. The plugin
-deliberately refuses self-approval; do not search for workarounds.
-
 If the helper exits with `kind: self-approve`, surface the error verbatim
-and explain that another reviewer is required.
+and explain another reviewer is required. Do NOT search for workarounds.
 
 ## Absolute rules
 
-- Never close a task that isn't DOING (local mode).
+- Never close a task that isn't DOING (local mode — helper enforces).
 - Never retroactively edit `created` or `started`.
-- Never close multiple tasks in one invocation — one at a time keeps the commit log clean.
-- Jira mode: never push REVIEW → DONE for a card whose AP equals this repo's AP. The plugin refuses; do not retry with `--force` or hand-rolled API calls.
+- Never close multiple tasks in one invocation.
+- Never call Write/Edit on `kanban.json` — go through the helper.
+- Jira mode: never push REVIEW → DONE for a card whose AP equals this
+  repo's AP. The plugin refuses; do not retry.

@@ -26,9 +26,9 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "plugins" / "kanban"
-sys.path.insert(0, str(REPO / "plugins"))
+sys.path.insert(0, str(REPO / "plugins" / "kanban"))
 
-from kanban.lib.jira_client import (  # noqa: E402
+from lib.jira_client import (  # noqa: E402
     JiraClient,
     JiraError,
     _Response,
@@ -144,8 +144,8 @@ def _mk_kanban_data(*, partial=False, label_fallback=None, ap_field=None):
 def _patched_driver(data, monkeypatch_creds=None):
     """Build a JiraDriver with credentials mocked in via monkey-patch on
     credentials.read."""
-    from kanban.lib import credentials
-    from kanban.drivers.jira import JiraDriver
+    from lib import credentials
+    from drivers.jira import JiraDriver
 
     orig_read = credentials.read
     creds = monkeypatch_creds or {
@@ -171,15 +171,15 @@ def _attach_mock(drv, queue, calls):
 
 
 def test_dispatch_to_jira_driver():
-    from kanban.drivers import get_driver
-    from kanban.drivers.jira import JiraDriver
+    from drivers import get_driver
+    from drivers.jira import JiraDriver
 
     data = _mk_kanban_data()
     with tempfile.TemporaryDirectory() as td:
         drv = _patched_driver(data)
         # _patched_driver builds a fresh driver with td root; here we just
         # verify get_driver returns the right class.
-        from kanban.lib import credentials
+        from lib import credentials
         orig = credentials.read
         credentials.read = lambda prefix=None: {"JIRA_BASE_URL": "https://x", "JIRA_AGENT_EMAIL": "a@b", "JIRA_API_TOKEN": "tok"}
         try:
@@ -220,7 +220,7 @@ def test_list_tasks_builds_jql():
     calls = []
     _attach_mock(drv, queue, calls)
 
-    from kanban.drivers.base import TaskFilter
+    from drivers.base import TaskFilter
 
     tasks = drv.list_tasks(TaskFilter(column="TODO", limit=10))
     assert len(tasks) == 1
@@ -297,7 +297,7 @@ def test_post_comment_prefixes():
     calls = []
     _attach_mock(drv, queue, calls)
 
-    from kanban.drivers.base import CommentKind
+    from drivers.base import CommentKind
 
     drv.post_comment("AGENT-1", "Body of question?", CommentKind.QUESTION)
     sent = json.loads(calls[0]["body"])

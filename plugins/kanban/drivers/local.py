@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..lib import kanban_io
-from .base import (
+from lib import kanban_io
+from drivers.base import (
     AgentRef,
     Comment,
     CommentKind,
