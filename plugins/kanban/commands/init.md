@@ -1,51 +1,68 @@
 ---
 description: Initialize kanban.json + kanban.schema.json in the current project.
 argument-hint: [--with-examples]
-allowed-tools: Read, Write, Bash(date:*), Bash(cp:*), Bash(test:*), Bash(ls:*)
+allowed-tools: Read, Bash(python3:*), Bash(test:*), Bash(ls:*)
 ---
 
 # /kanban:init
 
 Arguments: `$ARGUMENTS`
 
-You are initialising kanban in the project root (`$CLAUDE_PROJECT_DIR` or cwd if unset). Follow these steps exactly:
+Scaffold `kanban.json` (v0.2 shape, `backend.driver=local`) and the matching
+`kanban.schema.json` at the project root.
 
-## 1. Pre-flight checks
+The actual work — copying templates, substituting timestamps, atomic write —
+runs in `${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py`. The helper writes
+through `kanban_io.save()` (atomic `os.replace`), so the `kanban-guard.sh`
+PreToolUse hook does NOT fire and there is no Write-tool error to recover
+from. **Do not** call the Write or Edit tool directly on `kanban.json`.
 
-Run these checks. If any fail, stop and report:
+## 1. Locate project root
 
-- If `kanban.json` already exists in the project root, STOP. Ask the user whether to overwrite (`rm kanban.json && re-run`) rather than silently clobbering.
-- Confirm we are at the project root (look for `.git` or common markers). If unsure, ask before proceeding.
+`$CLAUDE_PROJECT_DIR` if set, else `git rev-parse --show-toplevel`, else
+the current working directory. The kanban file lives at
+`<project-root>/kanban.json`.
 
-## 2. Choose template
+## 2. Pre-flight
 
-- If `$ARGUMENTS` contains `--with-examples`: use `${CLAUDE_PLUGIN_ROOT}/templates/kanban.example.json`.
-- Otherwise: use `${CLAUDE_PLUGIN_ROOT}/templates/kanban.empty.json`.
+If `kanban.json` already exists, stop and ask the user whether to overwrite.
+The helper supports `--force` for the destructive case; pass it through
+only after explicit user confirmation.
 
-## 3. Copy schema
+## 3. Run the helper
 
-Copy `${CLAUDE_PLUGIN_ROOT}/templates/kanban.schema.json` to `<project-root>/kanban.schema.json`.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py init \
+  --kanban-path '<project-root>/kanban.json' \
+  [--with-examples]   # only if $ARGUMENTS contains --with-examples
+  [--force]           # only after the user said yes to overwriting
+```
 
-## 4. Materialise kanban.json
+The helper prints a JSON object:
 
-1. Read the chosen template file.
-2. Generate a current ISO 8601 timestamp with timezone via Bash: `date -Iseconds`. Capture the output exactly.
-3. Replace **every** occurrence of `__CREATED_AT__` and `__UPDATED_AT__` with that timestamp.
-4. Write the result to `<project-root>/kanban.json`.
+```json
+{ "ok": true, "kanban_path": "...", "schema_path": "...", "tasks": 0, "with_examples": false }
+```
 
-## 5. Verify
+On `ok: false`, surface the `error` field and stop.
 
-- Read back `kanban.json` and confirm no `__CREATED_AT__` / `__UPDATED_AT__` placeholders remain.
-- Report what was created, e.g.:
+## 4. Report
 
-> ✓ Created kanban.json v0.2 (local driver, empty / with 4 example tasks) and kanban.schema.json.
-> Next: try `/kanban:status` or `/kanban:next`.
+```
+✓ Created kanban.json v0.2 (local driver, 0 tasks) and kanban.schema.json.
+  Next: try /kanban:status or /kanban:next.
+```
+
+If `--with-examples` was used, mention the 4 example tasks. If `--force`
+overwrote an existing file, mention that previous tasks were discarded.
 
 The template ships with `backend: { driver: "local" }`. To switch to the
-Jira backend later, run `/kanban:initjira` (added in plugin v0.2.0+).
+Jira backend later, run `/kanban:initjira`.
 
 ## Absolute rules
 
+- Do NOT use the Write or Edit tool on `kanban.json` — the helper is the
+  only sanctioned mutation path.
 - Do NOT create extra files beyond `kanban.json` and `kanban.schema.json`.
 - Do NOT commit. Let the `kanban-autocommit.sh` hook or the user decide.
 - Do NOT populate tasks yourself — templates are the only source.

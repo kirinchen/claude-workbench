@@ -15,6 +15,21 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30
+
+### Fixed
+- **kanban 0.2.1** — local-mode mutation commands (`/kanban:init`,
+  `/kanban:next`, `/kanban:done`, `/kanban:block`) no longer trip
+  `kanban-guard.sh` and recover via Bash. They now route through a new
+  `scripts/kanban_local.py` helper that writes via atomic `os.replace`
+  through `kanban_io.save()` — same architecture pattern as the Jira-mode
+  commands' `jira_setup.py`. Result: clean execution, no PreToolUse
+  rejection messages mid-flow. The helper enforces dependency / priority
+  / DONE-immutability rules in one place; slash commands shrink to thin
+  orchestrators that parse arguments and report results. New
+  `scripts/test_phase6.py` (11 cases) covers init / next / done / block /
+  status end-to-end against real filesystem.
+
 ## 2026-04-29
 
 ### Added
