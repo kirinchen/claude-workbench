@@ -39,6 +39,35 @@ Subcommands:
 
   list-tasks --kanban-path P [--column COL] [--limit N]
        -> {"tasks": [{...}, ...]}   # driver-dispatched, no token argv
+
+  Phase 3 — AP routing:
+
+  find-ap-field
+       -> {"candidates": [{"id": "customfield_10042", "name": "Claude Agent"}, ...]}
+
+  create-ap-field [--name "Claude Agent"]
+       -> {"ok": true, "fieldId": "customfield_10042", "fieldName": "Claude Agent"}
+       (requires Jira admin; surfaces 403 with a clear hint)
+
+  set-ap-field --kanban-path P --field-id customfield_X --field-name N
+       -> {"ok": true, ...}   # writes backend.jira.ap to kanban.json
+
+  register-ap --kanban-path P --name N [--force]
+       -> {"ok": true, "registered": [...]}                # success
+       -> {"ok": false, "fuzzyMatch": true, "similar": [...]}   # caller must --force
+
+  assign-ap --kanban-path P --name N
+       -> {"ok": true, "ap": N, "path": ".../.claude/kanban-agent.json"}
+
+  read-agent-ap --kanban-path P
+       -> {"ap": N | null, "path": "..."}
+
+  claim-next --kanban-path P
+       -> {"ok": true, "claimed": {"id":..., "title":..., "priority":..., "ap":...}}
+
+  transition --kanban-path P --key K --to COLUMN [--reason R]
+       -> {"ok": true, "key": K, "column": COLUMN, "raw_status": "..."}
+       -> exit 2 with kind=self-approve when SPEC §8 anti-self-approve fires
 """
 from __future__ import annotations
 
@@ -57,7 +86,7 @@ HERE = Path(__file__).resolve()
 PLUGINS_ROOT = HERE.parents[2]   # .../plugins
 sys.path.insert(0, str(PLUGINS_ROOT))
 
-from kanban.lib import credentials, kanban_io  # noqa: E402
+from kanban.lib import ap_registry, credentials, kanban_io  # noqa: E402
 from kanban.lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
@@ -105,6 +134,16 @@ def _read_token() -> str:
 
 def _client(base_url: str, email: str, token: str) -> JiraClient:
     return JiraClient(base_url, email, token)
+
+
+def _client_from_env() -> JiraClient:
+    env = credentials.read("JIRA_")
+    base = env.get("JIRA_BASE_URL")
+    email = env.get("JIRA_AGENT_EMAIL")
+    tok = env.get("JIRA_API_TOKEN")
+    if not (base and email and tok):
+        _fail("Jira credentials missing — run /kanban:initjira or /kanban:reset-credentials")
+    return JiraClient(base, email, tok)
 
 
 def _emit(obj: dict[str, Any]) -> None:
@@ -297,6 +336,263 @@ def cmd_list_tasks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_find_ap_field(_args: argparse.Namespace) -> int:
+    """List custom fields whose name suggests an agent property."""
+    client = _client_from_env()
+    try:
+        fields = client.list_fields() or []
+    except JiraError as e:
+        _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+        return 1
+    candidates = []
+    for f in fields:
+        if not f.get("custom"):
+            continue
+        name = (f.get("name") or "").lower()
+        if "agent" in name or "claude" in name or "ap" == name:
+            candidates.append({"id": f.get("id"), "name": f.get("name")})
+    _emit({"candidates": candidates})
+    return 0
+
+
+def cmd_create_ap_field(args: argparse.Namespace) -> int:
+    client = _client_from_env()
+    try:
+        result = client.create_custom_field(
+            name=args.name,
+            description="Distinguishes which AI agent owns this card. Managed by claude-workbench kanban plugin.",
+        )
+    except JiraError as e:
+        if e.status_code == 403:
+            _fail(
+                "permission denied — creating a custom field requires Jira admin. "
+                "Ask an admin to create a single-select field once, then re-run "
+                "/kanban:initjira and pick [a] use existing field.",
+                statusCode=e.status_code,
+            )
+            return 1
+        _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+        return 1
+    _emit({"ok": True, "fieldId": result.get("id"), "fieldName": result.get("name")})
+    return 0
+
+
+def cmd_set_ap_field(args: argparse.Namespace) -> int:
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.setdefault("backend", {"driver": "jira"})
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira' before configuring AP")
+        return 1
+    jira_cfg = backend.setdefault("jira", {})
+    ap_block = jira_cfg.setdefault("ap", {})
+    ap_block["fieldId"] = args.field_id
+    ap_block["fieldName"] = args.field_name
+    ap_block.setdefault("registered", [])
+    kanban_io.save(p, data)
+    _emit({"ok": True, "fieldId": args.field_id, "fieldName": args.field_name})
+    return 0
+
+
+def _resolve_default_context(client: JiraClient, field_id: str) -> int:
+    ctxs = client.list_field_contexts(field_id) or {}
+    values = ctxs.get("values") or []
+    for v in values:
+        if v.get("isGlobalContext") or v.get("default") or len(values) == 1:
+            return int(v["id"])
+    if values:
+        return int(values[0]["id"])
+    raise RuntimeError("no contexts found for AP field — Jira config is unusual")
+
+
+def cmd_register_ap(args: argparse.Namespace) -> int:
+    """Add `--name` to the AP field's options + cache in kanban.json#registered."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    try:
+        ap_registry.validate_ap_name(args.name)
+    except ap_registry.APValidationError as e:
+        _fail(str(e))
+        return 1
+
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira'")
+        return 1
+    jira_cfg = backend.get("jira") or {}
+    ap_block = jira_cfg.get("ap") or {}
+    field_id = ap_block.get("fieldId")
+    if not field_id:
+        _fail("AP field unconfigured — run /kanban:initjira step 4")
+        return 1
+    registered = list(ap_block.get("registered") or [])
+
+    if ap_registry.is_exact_collision(args.name, registered):
+        _emit({"ok": True, "alreadyRegistered": True, "name": args.name})
+        return 0
+
+    hits = ap_registry.fuzzy_collisions(args.name, registered)
+    if hits and not args.force:
+        _emit(
+            {
+                "ok": False,
+                "fuzzyMatch": True,
+                "name": args.name,
+                "similar": [{"name": h.name, "distance": h.distance} for h in hits],
+            }
+        )
+        return 0  # caller decides; not an error
+
+    client = _client_from_env()
+    try:
+        ctx_id = _resolve_default_context(client, field_id)
+        client.add_field_option(field_id, ctx_id, args.name)
+    except JiraError as e:
+        _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+        return 1
+
+    registered.append(args.name)
+    ap_block["registered"] = registered
+    jira_cfg["ap"] = ap_block
+    backend["jira"] = jira_cfg
+    data["backend"] = backend
+    kanban_io.save(p, data)
+    _emit({"ok": True, "name": args.name, "registered": registered})
+    return 0
+
+
+def cmd_assign_ap(args: argparse.Namespace) -> int:
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira'")
+        return 1
+    registered = ((backend.get("jira") or {}).get("ap") or {}).get("registered") or []
+    if args.name not in registered:
+        _fail(
+            f"AP {args.name!r} is not registered. Register it first via "
+            f"/kanban:register-ap {args.name}",
+            registered=list(registered),
+        )
+        return 1
+
+    repo_root = p.parent
+    claude_dir = repo_root / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    target = claude_dir / "kanban-agent.json"
+    target.write_text(
+        json.dumps({"ap": args.name}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _emit({"ok": True, "ap": args.name, "path": str(target)})
+    return 0
+
+
+def cmd_read_agent_ap(args: argparse.Namespace) -> int:
+    p = Path(args.kanban_path)
+    repo_root = p.parent
+    target = repo_root / ".claude" / "kanban-agent.json"
+    if not target.exists():
+        _emit({"ap": None})
+        return 0
+    try:
+        ap = json.loads(target.read_text()).get("ap")
+    except Exception as e:  # noqa: BLE001
+        _fail(f"corrupt kanban-agent.json: {e}")
+        return 1
+    _emit({"ap": ap, "path": str(target)})
+    return 0
+
+
+def cmd_claim_next(args: argparse.Namespace) -> int:
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira'")
+        return 1
+    target = repo_root_ap = ((p.parent / ".claude" / "kanban-agent.json"))
+    if not target.exists():
+        _fail("this repo has no AP set — run /kanban:assign-ap <name> first")
+        return 1
+    try:
+        ap = json.loads(target.read_text()).get("ap")
+    except Exception as e:  # noqa: BLE001
+        _fail(f"corrupt kanban-agent.json: {e}")
+        return 1
+    if not ap:
+        _fail("kanban-agent.json present but `ap` is empty")
+        return 1
+
+    from kanban.drivers import get_driver
+    from kanban.drivers.base import CommentKind, TaskFilter
+
+    driver = get_driver(data, p.parent)
+    todos = driver.list_tasks(TaskFilter(column="TODO", ap=ap, limit=1))
+    if not todos:
+        _emit({"ok": True, "claimed": None, "reason": "no TODO cards for this AP"})
+        return 0
+    pick = todos[0]
+    try:
+        driver.transition(pick.id, "DOING")
+    except Exception as e:  # noqa: BLE001
+        _fail(f"transition: {type(e).__name__}: {e}")
+        return 1
+    driver.post_comment(pick.id, "claimed", kind=CommentKind.SYSTEM)
+    refreshed = driver.get_task(pick.id)
+    _emit(
+        {
+            "ok": True,
+            "claimed": {
+                "id": refreshed.id,
+                "title": refreshed.title,
+                "priority": refreshed.priority,
+                "ap": refreshed.ap,
+            },
+        }
+    )
+    return 0
+
+
+def cmd_transition(args: argparse.Namespace) -> int:
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    from kanban.drivers import get_driver
+    from kanban.drivers.base import CommentKind
+    from kanban.drivers.jira import SelfApproveRefused
+
+    driver = get_driver(data, p.parent)
+    kwargs: dict[str, Any] = {}
+    if args.reason:
+        kwargs["reason"] = args.reason
+    try:
+        t = driver.transition(args.key, args.to, **kwargs)
+    except SelfApproveRefused as e:
+        _fail(str(e), code=2, kind="self-approve")
+        return 2
+    except Exception as e:  # noqa: BLE001
+        _fail(f"{type(e).__name__}: {e}")
+        return 1
+    _emit({"ok": True, "key": t.id, "column": t.column, "raw_status": t.custom.get("raw_status")})
+    return 0
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     p = Path(args.kanban_path)
     if not p.exists():
@@ -362,6 +658,49 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--column")
     s.add_argument("--limit", type=int)
     s.set_defaults(func=cmd_list_tasks)
+
+    s = sub.add_parser("find-ap-field")
+    s.set_defaults(func=cmd_find_ap_field)
+
+    s = sub.add_parser("create-ap-field")
+    s.add_argument("--name", default="Claude Agent")
+    s.set_defaults(func=cmd_create_ap_field)
+
+    s = sub.add_parser("set-ap-field")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--field-id", required=True)
+    s.add_argument("--field-name", required=True)
+    s.set_defaults(func=cmd_set_ap_field)
+
+    s = sub.add_parser("register-ap")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--name", required=True)
+    s.add_argument(
+        "--force",
+        action="store_true",
+        help="acknowledge fuzzy-similar names and proceed with registration",
+    )
+    s.set_defaults(func=cmd_register_ap)
+
+    s = sub.add_parser("assign-ap")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--name", required=True)
+    s.set_defaults(func=cmd_assign_ap)
+
+    s = sub.add_parser("read-agent-ap")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_read_agent_ap)
+
+    s = sub.add_parser("claim-next")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_claim_next)
+
+    s = sub.add_parser("transition")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--to", required=True, choices=("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"))
+    s.add_argument("--reason")
+    s.set_defaults(func=cmd_transition)
 
     return p
 

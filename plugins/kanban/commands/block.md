@@ -12,9 +12,9 @@ Move a task out of the active flow into `BLOCKED` with a mandatory reason. The S
 
 ## 0. Driver check
 
-Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If the value is `"jira"`, stop and tell the user: "Jira-mode `/kanban:block` requires AP routing, which lands in Phase 3."
+Read `kanban.json`. Look at `backend.driver`. If absent, treat as `"local"`. If `"jira"`, follow the Jira flow at the end of this file.
 
-## 1. Parse arguments
+## 1. Parse arguments (local driver)
 
 Required:
 - `<task-id>` — a bare `task-NNN` token.
@@ -46,9 +46,22 @@ Read `kanban.json` fresh. Confirm:
 
 If any other task's `depends` references the blocked task, list them (downstream impact).
 
+## Jira flow
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py transition \
+  --kanban-path '<kanban.json path>' --key '<KEY>' --to BLOCKED \
+  --reason '<reason text>'
+```
+
+The driver posts a `[<ap>] [S] Blocked: <reason>` system comment alongside
+the transition. In `partial` mode (workflow lacks a Blocked status), the
+plugin substitutes the `kanban:blocked` label and posts the same audit
+comment.
+
 ## Absolute rules
 
 - Never move a task to BLOCKED without a reason.
 - Never move from DONE to BLOCKED — DONE is terminal.
-- Never silently drop the old `started` timestamp.
+- Never silently drop the old `started` timestamp (local mode).
 - To return a task to active work, use an edit through `/kanban:*` commands that clear `custom.blocked_reason` and move back to TODO (today: manual fix via a future `/kanban:unblock` command; v0.2.0).

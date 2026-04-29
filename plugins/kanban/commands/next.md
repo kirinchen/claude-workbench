@@ -12,9 +12,9 @@ Pick the next eligible TODO task, move it to DOING, then begin executing it. The
 
 ## 0. Driver check
 
-Read `kanban.json` first. Look at `backend.driver`. If absent, treat as `"local"`. If the value is `"jira"`, stop and tell the user: "Jira-mode `/kanban:next` requires AP routing and anti-self-approve enforcement, both of which land in Phase 3. For now use `/kanban:status` to see live Jira state."
+Read `kanban.json` first. Look at `backend.driver`. If absent, treat as `"local"`. If `"jira"`, follow the Jira flow at the end of this file.
 
-## 1. Load state
+## 1. Load state (local driver)
 
 Read `kanban.json` fresh. Do not rely on earlier reads from this session.
 
@@ -64,8 +64,32 @@ Briefly report:
 
 Then begin executing the task described in `description`. Treat `description` as the brief — ask the user for clarification if anything is ambiguous rather than guessing.
 
+## Jira flow
+
+Pick the highest-priority TODO card scoped to this repo's AP, transition it
+to `In Progress`, and post a `[<ap>] [S] claimed` system comment. The driver
+honours the `statusMap` configured at init time.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py claim-next \
+  --kanban-path '<kanban.json path>'
+```
+
+Parse the response:
+
+| Shape | Action |
+|---|---|
+| `{ok: true, claimed: {id, title, priority, ap}}` | print `Claiming <id> "<title>" (P<n>, ap=<ap>)`, then begin executing the card |
+| `{ok: true, claimed: null, reason}` | print `No TODO cards for AP <ap>` and stop |
+| `{ok: false, error}` | surface verbatim and stop. If error mentions `kanban-agent.json`, suggest `/kanban:assign-ap`. |
+
+Then read the card details if you need them (`get_task` via the helper or by
+asking Jira directly through `/kanban:status`) — the description there is
+your brief.
+
 ## Absolute rules
 
-- Never start a task whose deps are not all DONE.
+- Never start a task whose deps are not all DONE (local mode).
 - Never start a task in DONE or BLOCKED.
 - Never start more than one task at a time in the same session. If a DOING task already exists with assignee `claude-code`, confirm with the user before starting a new one.
+- Jira mode: never bypass `claim-next` — it enforces AP routing.

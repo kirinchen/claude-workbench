@@ -1,5 +1,5 @@
 ---
-description: Switch the current project from local kanban.json to Jira-backed kanban (steps 1–3 of setup).
+description: Switch the current project from local kanban.json to Jira-backed kanban.
 argument-hint: [--partial]
 allowed-tools: Read, Bash(python3:*), Bash(test:*), Bash(ls:*), AskUserQuestion
 ---
@@ -8,11 +8,10 @@ allowed-tools: Read, Bash(python3:*), Bash(test:*), Bash(ls:*), AskUserQuestion
 
 Arguments: `$ARGUMENTS`
 
-This command switches a project to **Jira mode**. v0.2.0-dev / Phase 2 covers
-steps 1–3 (credentials, board, workflow check). Steps 4–5 (Agent Property
-custom field, AP registration) land in Phase 3 — until then, the project is
-usable for read-only Jira list/get and human-only assignments, but agent-AP
-routing is NOT yet active.
+This command switches a project to **Jira mode** end-to-end: credentials,
+board, workflow check, Agent Property (AP) custom field, and the first AP
+registration. After it completes, `/kanban:next`, `/kanban:done`, and
+`/kanban:block` operate against Jira with anti-self-approve enforcement.
 
 The helper `${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py` does the network +
 file work; this command orchestrates the prompts and surfaces results.
@@ -165,23 +164,98 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
   --jira-config-json '<json>'
 ```
 
+## Step 4/5 — Agent Property (AP) custom field
+
+Decide whether to use an existing custom field or create a new one. Ask the
+user via `AskUserQuestion`:
+
+> The AP field is what distinguishes which AI agent owns a card.
+>   [a] Use an existing custom field   (browse candidates)
+>   [b] Create a new field "Claude Agent" (recommended; requires Jira admin)
+> Choice:
+
+### Option [a] — use existing field
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py find-ap-field
+```
+
+Returns `{candidates: [{id, name}, ...]}`. If the list is empty, tell the
+user "no fields look like an AP candidate — switch to [b] or have a Jira
+admin create one and rerun". Otherwise, print the candidates and ask the
+user to pick one by `id`.
+
+Persist the choice:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py set-ap-field \
+  --kanban-path '<kanban.json path>' \
+  --field-id '<customfield_X>' --field-name '<name>'
+```
+
+### Option [b] — create new field
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py create-ap-field \
+  --name 'Claude Agent'
+```
+
+On `ok=true`, persist the new field:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py set-ap-field \
+  --kanban-path '<kanban.json path>' \
+  --field-id '<returned fieldId>' --field-name 'Claude Agent'
+```
+
+On `403` (admin permission missing), surface the helper's error verbatim
+and tell the user to either ask their Jira admin to create a single-select
+custom field once, then re-run `/kanban:initjira` and choose `[a]`. Stop —
+do NOT silently fall back to `[a]`; the choice is the user's.
+
+## Step 5/5 — First AP registration
+
+Ask for the AP name for *this* repo (regex `^[a-z][a-z0-9-]{2,40}$`).
+Examples: `agent-fin-exchange`, `agent-quant-bot`. The user can register
+more APs later via `/kanban:register-ap` and switch the active one via
+`/kanban:assign-ap`.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py register-ap \
+  --kanban-path '<kanban.json path>' --name '<ap-name>'
+```
+
+If `{ok: false, fuzzyMatch: true, similar: [...]}`, this is the first AP
+and the registry should be empty — surface the response anyway and ask the
+user to confirm proceeding with `--force`. (Realistically this only fires
+on idempotent re-run of init.)
+
+After successful registration, set this repo's AP:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py assign-ap \
+  --kanban-path '<kanban.json path>' --name '<ap-name>'
+```
+
 ## Done
 
 Print:
 
 ```
-✓ /kanban:initjira complete (Phase 2 partial: AP setup pending).
+✓ /kanban:initjira complete.
 
 Project:    <projectName> (<projectKey>)
 Board:      <boardName> (#<boardId>)
 Driver:     jira
 Workflow:   full | partial (label fallback: <list>)
+AP field:   <fieldName> (<fieldId>)
+This repo:  <ap-name>
+Roster:     <comma-list of registered APs>
 
-Next:
-  • /kanban:whoami         — check current state
-  • /kanban:reset-credentials — rotate the API token
-  • Steps 4–5 (AP custom field + first registration) land in v0.2 Phase 3.
-    Until then, agent-AP routing is not active.
+Try:
+  • /kanban:whoami       — confirm current state
+  • /kanban:status       — read live Jira state for this AP
+  • /kanban:next         — claim the next TODO for this AP
 ```
 
 ## Absolute rules

@@ -7,7 +7,7 @@
     {
       "name": "kanban",
       "source": "./plugins/kanban",
-      "version": "0.2.0-dev.1",
+      "version": "0.2.0-dev.2",
       "description": "Kanban workflow for Claude Code — task lifecycle through kanban.json",
       "category": "productivity",
       "keywords": ["kanban", "tasks", "workflow"]

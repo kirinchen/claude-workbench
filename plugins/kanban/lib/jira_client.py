@@ -239,6 +239,69 @@ class JiraClient:
     def list_comments(self, key: str) -> dict[str, Any]:
         return self._request("GET", f"/rest/api/3/issue/{key}/comment")
 
+    # --- custom-field endpoints (Phase 3) -----------------------------
+
+    def list_fields(self) -> list[dict[str, Any]]:
+        """All fields visible to this account, including custom fields.
+
+        Used by /kanban:initjira step 4 [a] (browse existing fields).
+        """
+        return self._request("GET", "/rest/api/3/field")
+
+    def create_custom_field(
+        self,
+        name: str,
+        description: str = "",
+        type_key: str = "com.atlassian.jira.plugin.system.customfieldtypes:select",
+        searcher_key: str = "com.atlassian.jira.plugin.system.customfieldtypes:multiselectsearcher",
+    ) -> dict[str, Any]:
+        """Create a single-select custom field. Requires Jira admin privileges.
+
+        Returns the new field object including `id` (e.g. `customfield_10042`).
+        """
+        return self._request(
+            "POST",
+            "/rest/api/3/field",
+            body={
+                "name": name,
+                "description": description,
+                "type": type_key,
+                "searcherKey": searcher_key,
+            },
+        )
+
+    def list_field_contexts(self, field_id: str) -> dict[str, Any]:
+        """List contexts for a custom field. The default context is the
+        scope where adding an option makes that option available everywhere.
+        """
+        return self._request("GET", f"/rest/api/3/field/{field_id}/context")
+
+    def list_field_options(self, field_id: str, context_id: int) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/rest/api/3/field/{field_id}/context/{context_id}/option",
+        )
+
+    def add_field_option(
+        self, field_id: str, context_id: int, value: str
+    ) -> dict[str, Any]:
+        """Add a single-select option to a custom field's context."""
+        return self._request(
+            "POST",
+            f"/rest/api/3/field/{field_id}/context/{context_id}/option",
+            body={"options": [{"value": value}]},
+        )
+
+    def update_issue(self, key: str, fields: dict[str, Any]) -> None:
+        """PUT /issue/{key} with `fields` payload. Used by AgentRef assign
+        to write the AP custom field directly.
+        """
+        self._request(
+            "PUT",
+            f"/rest/api/3/issue/{key}",
+            body={"fields": fields},
+        )
+
 
 # -------- helpers ----------------------------------------------------------
 

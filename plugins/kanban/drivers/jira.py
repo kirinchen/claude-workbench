@@ -36,6 +36,14 @@ from .base import (
 
 CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED")
 
+
+class SelfApproveRefused(RuntimeError):
+    """Raised when an agent tries to transition its own card to DONE.
+
+    SPEC §8 invariant — the plugin enforces this client-side as well as
+    delegating to Jira workflow conditions when admin can configure them.
+    """
+
 # SPEC §9 prefix grammar.
 _PREFIX_RE = re.compile(
     r"^\*\*\[(?P<ap>[a-z][a-z0-9-]+)\]\s+\[(?P<kind>Q|A|C|S)\]\*\*\s*\n*(?P<rest>.*)$",
@@ -244,6 +252,18 @@ class JiraDriver:
                 f"unknown canonical column {to_column!r}; expected one of "
                 f"{CANONICAL_COLUMNS}"
             )
+        # Anti-self-approve (SPEC §8). Refuse client-side when the current
+        # repo's AP would approve a card it owns.
+        if to_column == "DONE":
+            current_ap = self._current_repo_ap()
+            if current_ap:
+                existing = self.get_task(key)
+                if existing.ap and existing.ap == current_ap:
+                    raise SelfApproveRefused(
+                        f"anti-self-approve: agent {current_ap!r} cannot "
+                        f"transition its own card {key} to DONE — ask another "
+                        "agent or a human reviewer to approve"
+                    )
         client = self._client_or_raise()
         target_status = self._canonical_to_status(to_column)
 
@@ -311,28 +331,55 @@ class JiraDriver:
         return [self._parse_comment(c) for c in (raw.get("comments") or [])]
 
     def assign(self, key: str, member: MemberRef) -> Task:
-        if member.kind != "human":
-            raise NotSupported(
-                "Jira agent assignment by AP is a Phase 3 feature — "
-                "use a human accountId here"
-            )
         client = self._client_or_raise()
-        client._request(
-            "PUT",
-            f"/rest/api/3/issue/{key}/assignee",
-            body={"accountId": member.accountId},  # type: ignore[union-attr]
-        )
+        if member.kind == "human":
+            client._request(
+                "PUT",
+                f"/rest/api/3/issue/{key}/assignee",
+                body={"accountId": member.accountId},  # type: ignore[union-attr]
+            )
+        else:  # AgentRef — write the AP custom field, leave assignee alone.
+            if not self.ap_field_id:
+                raise NotSupported(
+                    "AP field is not configured — run /kanban:initjira step 4"
+                )
+            ap_value = member.ap  # type: ignore[union-attr]
+            client.update_issue(
+                key,
+                {self.ap_field_id: {"value": ap_value}},
+            )
+            # Also set assignee to the shared agent account so notifications
+            # land somewhere visible. No-op if agentAccountId is unset.
+            if self.agent_account_id:
+                client._request(
+                    "PUT",
+                    f"/rest/api/3/issue/{key}/assignee",
+                    body={"accountId": self.agent_account_id},
+                )
         return self.get_task(key)
 
     def list_members(self) -> list[Member]:
-        # Phase 3 surfaces /user/assignable + AP registry. Phase 2 returns [].
-        return []
+        # Returns the registered AP roster as agent members. Human members
+        # come from Jira directly via UI; we don't shadow that here.
+        out: list[Member] = []
+        for ap in self.list_aps():
+            out.append(Member(ref=AgentRef(ap=ap), displayName=ap))
+        return out
 
     def list_aps(self) -> list[str]:
-        raise NotSupported("AP operations land in Phase 3")
+        return list((self.cfg.get("ap") or {}).get("registered") or [])
 
     def register_ap(self, name: str) -> None:
-        raise NotSupported("AP operations land in Phase 3")
+        """Append `name` to backend.jira.ap.registered. Caller is expected to
+        have already added the option in Jira and validated uniqueness — this
+        only persists the cached registry. The full flow lives in
+        scripts/jira_setup.py to keep network ops out of the driver fast path.
+        """
+        ap_block = self.cfg.setdefault("ap", {})
+        registered = list(ap_block.get("registered") or [])
+        if name not in registered:
+            registered.append(name)
+        ap_block["registered"] = registered
 
     # --- repo identity ------------------------------------------------
 

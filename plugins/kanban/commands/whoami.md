@@ -53,8 +53,14 @@ Token row maps from health.status:
 - `unreachable` → `? unknown (network)`
 - `degraded` → `? degraded — <detail>`
 
-If `.claude/kanban-agent.json` exists, read its `ap` value. Also pull
-`backend.jira.ap.registered` if present (Phase 3+ writes it).
+Read this repo's AP via the helper (it parses `.claude/kanban-agent.json`):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-agent-ap \
+  --kanban-path '<kanban.json path>'
+```
+
+Also pull `backend.jira.ap.registered` from `kanban.json` for the AP roster.
 
 Render:
 
@@ -65,8 +71,9 @@ Base URL:         <baseUrl>
 Email:            <email>
 Project:          <projectKey>
 Board:            #<boardId>
-AP (this repo):   <ap or "(unset — run /kanban:assign-ap when Phase 3 lands)">
-AP (registered):  <comma-list or "(none — Phase 3 will populate this)">
+AP field:         <fieldName> (<fieldId> — or "(unconfigured — run /kanban:initjira)")
+AP (this repo):   <ap or "(unset — run /kanban:assign-ap <name>)">
+AP (registered):  <comma-list or "(empty — run /kanban:register-ap <name>)">
 Token:            <validity row>
 Workflow:         full | partial (fallback: BLOCKED, REVIEW, CANCELLED)
 ```
