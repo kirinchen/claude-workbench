@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..lib import credentials
+from ..lib import card_cache, credentials
 from ..lib.jira_client import JiraClient, JiraError, adf_to_text, text_to_adf
 from .base import (
     AgentRef,
@@ -303,6 +303,8 @@ class JiraDriver:
             reason = kwargs.get("reason")
             if reason:
                 self.post_comment(key, f"Blocked: {reason}", CommentKind.SYSTEM)
+        # Any successful transition invalidates the cache for that key.
+        card_cache.invalidate(self.project_root, key)
         return self.get_task(key)
 
     def post_comment(
@@ -312,6 +314,8 @@ class JiraDriver:
         ap = self._current_repo_ap()
         adf = self._agent_comment_body(body, kind, ap)
         raw = client.add_comment(key, adf)
+        # Comment write changes the card's "last update" — drop the cache.
+        card_cache.invalidate(self.project_root, key)
         return Comment(
             author=ap or self.email,
             ts=raw.get("created") or _now_iso(),
@@ -356,6 +360,7 @@ class JiraDriver:
                     f"/rest/api/3/issue/{key}/assignee",
                     body={"accountId": self.agent_account_id},
                 )
+        card_cache.invalidate(self.project_root, key)
         return self.get_task(key)
 
     def list_members(self) -> list[Member]:

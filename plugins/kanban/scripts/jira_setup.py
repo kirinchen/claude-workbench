@@ -86,7 +86,7 @@ HERE = Path(__file__).resolve()
 PLUGINS_ROOT = HERE.parents[2]   # .../plugins
 sys.path.insert(0, str(PLUGINS_ROOT))
 
-from kanban.lib import ap_registry, credentials, kanban_io  # noqa: E402
+from kanban.lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
 from kanban.lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
@@ -593,6 +593,227 @@ def cmd_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_repo_ap(p: Path) -> str | None:
+    """Return AP value from .claude/kanban-agent.json next to `p`, else None."""
+    target = p.parent / ".claude" / "kanban-agent.json"
+    if not target.exists():
+        return None
+    try:
+        return json.loads(target.read_text()).get("ap")
+    except Exception:
+        return None
+
+
+def _build_precheck_block(
+    key: str,
+    task_data: dict[str, Any] | None,
+    repo_ap: str | None,
+) -> tuple[list[str], str]:
+    """Return (warnings, context_block_text) per SPEC §5.3."""
+    warnings: list[str] = []
+    if task_data is None:
+        return (
+            ["card not found in this project"],
+            f"[kanban context for {key}]\n  Status: not found in this project — ignore",
+        )
+
+    column = task_data.get("column") or "?"
+    raw_status = (task_data.get("custom") or {}).get("raw_status") or column
+    ap = task_data.get("ap")
+    title = task_data.get("title") or ""
+
+    rows: list[str] = []
+    rows.append(f"[kanban context for {key}]")
+    rows.append(f'  Title:        {title}')
+    rows.append(f"  Status:       {raw_status}")
+
+    if not ap:
+        rows.append("  AP:           (unassigned)")
+    elif repo_ap and ap == repo_ap:
+        rows.append(f"  AP:           {ap}  (you)")
+    else:
+        rows.append(f"  AP:           {ap}   ⚠ NOT YOU (you are {repo_ap or 'unassigned'})")
+        warnings.append("ap-mismatch")
+
+    if column in {"DONE", "CANCELLED"}:
+        rows.append(f"  ⚠ This card is closed ({column}). Do not modify it.")
+        warnings.append(f"closed-{column.lower()}")
+
+    if column == "REVIEW" and repo_ap and ap == repo_ap:
+        rows.append(
+            "  ⚠ This card is awaiting human review and is owned by you. "
+            "Do not push it to DONE — anti-self-approve will refuse."
+        )
+        warnings.append("awaiting-review-self")
+
+    last_q = task_data.get("last_open_question")
+    if last_q:
+        rows.append(f'  Open question: "{last_q}"')
+        rows.append("  Consider answering before continuing.")
+        warnings.append("open-question")
+
+    if "ap-mismatch" in warnings:
+        rows.append(
+            "  Suggested action: do NOT modify this card. To take it over, "
+            f"reassign in Jira UI or run /kanban:assign-ap to switch your AP."
+        )
+
+    return warnings, "\n".join(rows)
+
+
+def _detect_open_question(comments: list) -> str | None:
+    """Latest unanswered Q-kind comment text, or None.
+
+    Walks backwards: a Q is "open" if the last comment after it (if any) is
+    not an A.
+    """
+    last_q_text: str | None = None
+    last_q_index = -1
+    for i, c in enumerate(comments):
+        if getattr(c.kind, "value", None) == "Q":
+            last_q_text = c.text
+            last_q_index = i
+    if last_q_index == -1:
+        return None
+    # Scan after last_q for an A.
+    for c in comments[last_q_index + 1 :]:
+        if getattr(c.kind, "value", None) == "A":
+            return None
+    return last_q_text
+
+
+def cmd_precheck_card(args: argparse.Namespace) -> int:
+    """Fetch (with cache) + render context block per SPEC §5.3."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _emit({"key": args.key, "found": False, "context_block": ""})
+        return 0
+
+    project_key = (backend.get("jira") or {}).get("projectKey") or ""
+    if project_key and not args.key.startswith(f"{project_key}-"):
+        # Not in this project — silently ignore.
+        _emit({"key": args.key, "found": False, "context_block": "", "ignored": True})
+        return 0
+
+    repo_ap = _read_repo_ap(p)
+    cached = card_cache.get(p.parent, args.key)
+    if cached is not None:
+        warnings, block = _build_precheck_block(args.key, cached, repo_ap)
+        _emit(
+            {
+                "key": args.key,
+                "found": True,
+                "warnings": warnings,
+                "context_block": block,
+                "from_cache": True,
+            }
+        )
+        return 0
+
+    from kanban.drivers import get_driver
+
+    driver = get_driver(data, p.parent)
+    try:
+        task = driver.get_task(args.key)
+    except JiraError as e:
+        if e.status_code == 404:
+            warnings, block = _build_precheck_block(args.key, None, repo_ap)
+            _emit({"key": args.key, "found": False, "warnings": warnings, "context_block": block})
+            return 0
+        _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+        return 1
+    except Exception as e:  # noqa: BLE001
+        _fail(f"{type(e).__name__}: {e}")
+        return 1
+
+    open_q: str | None = None
+    if not args.skip_comments:
+        try:
+            comments = driver.list_comments(args.key)
+            open_q = _detect_open_question(comments)
+        except Exception:
+            open_q = None
+
+    task_data = {
+        "id": task.id,
+        "title": task.title,
+        "column": task.column,
+        "ap": task.ap,
+        "priority": task.priority,
+        "custom": task.custom,
+        "last_open_question": open_q,
+    }
+    card_cache.put(p.parent, args.key, task_data)
+    warnings, block = _build_precheck_block(args.key, task_data, repo_ap)
+    _emit(
+        {
+            "key": args.key,
+            "found": True,
+            "warnings": warnings,
+            "context_block": block,
+            "from_cache": False,
+        }
+    )
+    return 0
+
+
+def cmd_sync_summary(args: argparse.Namespace) -> int:
+    """Render an open-cards summary for the current repo's AP."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _emit({"summary": "", "skip": "not in jira mode"})
+        return 0
+
+    repo_ap = _read_repo_ap(p)
+    project_key = (backend.get("jira") or {}).get("projectKey") or ""
+
+    from kanban.drivers import get_driver
+    from kanban.drivers.base import TaskFilter
+
+    driver = get_driver(data, p.parent)
+    open_columns = ("TODO", "DOING", "BLOCKED", "REVIEW")
+    rows: list[str] = []
+    counts: dict[str, int] = {c: 0 for c in open_columns}
+    try:
+        for col in open_columns:
+            tasks = driver.list_tasks(
+                TaskFilter(column=col, ap=repo_ap, limit=20) if repo_ap else TaskFilter(column=col, limit=20)
+            )
+            counts[col] = len(tasks)
+            for t in tasks:
+                raw = (t.custom or {}).get("raw_status") or t.column
+                rows.append(f"  {t.id:<14}{raw:<14}{t.title}")
+    except Exception as e:  # noqa: BLE001
+        _fail(f"{type(e).__name__}: {e}")
+        return 1
+
+    if not rows:
+        summary = (
+            f"[kanban Jira sync — {project_key} · ap={repo_ap or '(unset)'}]\n"
+            f"  No open cards."
+        )
+    else:
+        header = (
+            f"[kanban Jira sync — {project_key} · ap={repo_ap or '(unset)'}]\n"
+            f"  TODO {counts['TODO']} · DOING {counts['DOING']} · "
+            f"BLOCKED {counts['BLOCKED']} · REVIEW {counts['REVIEW']}\n"
+        )
+        summary = header + "\n".join(rows)
+
+    _emit({"summary": summary, "counts": counts, "ap": repo_ap, "projectKey": project_key})
+    return 0
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     p = Path(args.kanban_path)
     if not p.exists():
@@ -701,6 +922,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--to", required=True, choices=("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"))
     s.add_argument("--reason")
     s.set_defaults(func=cmd_transition)
+
+    s = sub.add_parser("precheck-card")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--skip-comments", action="store_true",
+                   help="skip the open-question scan (saves an API call)")
+    s.set_defaults(func=cmd_precheck_card)
+
+    s = sub.add_parser("sync-summary")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_sync_summary)
 
     return p
 
