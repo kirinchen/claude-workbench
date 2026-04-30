@@ -452,6 +452,107 @@ def cmd_find_ap_field(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _candidate_screens(
+    client: JiraClient, project_key: str
+) -> list[dict[str, Any]]:
+    """Return screens likely to need the AP field.
+
+    Strategy:
+    1. Query screens whose name contains the project key (Jira's
+       project-scoped screens conventionally embed the key in the name,
+       e.g. "DMI: Kanban Default Issue Screen").
+    2. Always include the default screen (id=1) as a global fallback.
+    3. Dedupe by id.
+    """
+    screens: dict[int, dict[str, Any]] = {}
+    try:
+        listing = client.list_screens(query=project_key) or {}
+        for s in listing.get("values") or []:
+            sid = s.get("id")
+            if isinstance(sid, int):
+                screens[sid] = s
+    except JiraError:
+        pass
+    # Default screen — almost always present, used by simple project schemes.
+    screens.setdefault(
+        1, {"id": 1, "name": "Default Screen", "_default_fallback": True}
+    )
+    return list(screens.values())
+
+
+def _associate_field_with_screens(
+    client: JiraClient, field_id: str, project_key: str
+) -> dict[str, Any]:
+    """Attach `field_id` to the first tab of every candidate screen.
+
+    Returns:
+        {
+          "attempted": [...screens tried...],
+          "attached":  [...succeeded or already-present...],
+          "denied":    [...403s — admin needed...],
+          "errors":    [...other failures...],
+        }
+    """
+    out: dict[str, Any] = {
+        "attempted": [],
+        "attached": [],
+        "denied": [],
+        "errors": [],
+    }
+    for screen in _candidate_screens(client, project_key):
+        sid = screen.get("id")
+        sname = screen.get("name", "")
+        out["attempted"].append({"id": sid, "name": sname})
+        try:
+            tabs = client.list_screen_tabs(sid) or []
+        except JiraError as e:
+            if e.status_code in (403, 404):
+                # 404 on the default screen is not unusual — some workflow
+                # schemes don't share screen 1 with the project.
+                if e.status_code == 403:
+                    out["denied"].append({"id": sid, "name": sname, "phase": "list_tabs"})
+                else:
+                    out["errors"].append({"id": sid, "name": sname,
+                                          "phase": "list_tabs", "detail": e.detail or str(e)})
+                continue
+            out["errors"].append(
+                {"id": sid, "name": sname, "phase": "list_tabs",
+                 "detail": e.detail or str(e), "status": e.status_code}
+            )
+            continue
+        if not tabs:
+            out["errors"].append({"id": sid, "name": sname,
+                                  "phase": "list_tabs", "detail": "no tabs"})
+            continue
+        tab = tabs[0]
+        tid = tab.get("id")
+
+        # Idempotency: skip if the field is already on this tab.
+        try:
+            existing = client.list_screen_tab_fields(sid, tid) or []
+            if any((f or {}).get("id") == field_id for f in existing):
+                out["attached"].append({"id": sid, "name": sname,
+                                        "tab": tab.get("name", ""),
+                                        "alreadyPresent": True})
+                continue
+        except JiraError:
+            pass  # if listing fields fails, fall through to add and let it 200/error
+
+        try:
+            client.add_field_to_screen_tab(sid, tid, field_id)
+            out["attached"].append({"id": sid, "name": sname,
+                                    "tab": tab.get("name", "")})
+        except JiraError as e:
+            if e.status_code == 403:
+                out["denied"].append({"id": sid, "name": sname, "phase": "add_field"})
+            else:
+                out["errors"].append(
+                    {"id": sid, "name": sname, "phase": "add_field",
+                     "detail": e.detail or str(e), "status": e.status_code}
+                )
+    return out
+
+
 def cmd_create_ap_field(args: argparse.Namespace) -> int:
     client = _client_from_env()
     try:
@@ -470,7 +571,111 @@ def cmd_create_ap_field(args: argparse.Namespace) -> int:
             return 1
         _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
         return 1
-    _emit({"ok": True, "fieldId": result.get("id"), "fieldName": result.get("name")})
+
+    field_id = result.get("id")
+    field_name = result.get("name")
+
+    # Fixes #6: a freshly-created custom field is not on any screen, so
+    # `customfield_X cannot be set` for create/edit. Attach to project
+    # screens immediately. Best-effort — admin perms may be needed; if
+    # any individual screen association fails the user can run
+    # /kanban:fix-ap-screen manually.
+    screens_summary: dict[str, Any] | None = None
+    if field_id and args.project:
+        try:
+            screens_summary = _associate_field_with_screens(
+                client, field_id, args.project
+            )
+        except Exception as e:  # noqa: BLE001 — last-resort net catch
+            screens_summary = {"error": f"{type(e).__name__}: {e}"}
+
+    _emit(
+        {
+            "ok": True,
+            "fieldId": field_id,
+            "fieldName": field_name,
+            "screens": screens_summary,
+        }
+    )
+    return 0
+
+
+def cmd_associate_ap_field_screens(args: argparse.Namespace) -> int:
+    """Re-run screen association for an existing AP field.
+
+    Useful when /kanban:initjira ran on 0.3.1 (which didn't associate
+    screens) or when the user adds new project-scoped screens later.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey")
+    field_id = ((cfg.get("ap") or {}).get("fieldId"))
+    if not project_key or not field_id:
+        return _fail(
+            "kanban.json is missing projectKey or backend.jira.ap.fieldId — "
+            "run /kanban:initjira first"
+        )
+    client = _client_from_env()
+    summary = _associate_field_with_screens(client, field_id, project_key)
+    _emit({"ok": True, "fieldId": field_id, "screens": summary})
+    return 0
+
+
+def cmd_verify_ap_field_screens(args: argparse.Namespace) -> int:
+    """Report which candidate screens currently carry the AP field.
+
+    Read-only. Returns:
+        {
+          "ok": true,
+          "fieldId": "customfield_X",
+          "present": [{id, name}, ...],
+          "missing": [{id, name}, ...],
+        }
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey")
+    field_id = ((cfg.get("ap") or {}).get("fieldId"))
+    if not project_key or not field_id:
+        return _fail("kanban.json is missing projectKey or ap.fieldId")
+    client = _client_from_env()
+
+    present: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    for screen in _candidate_screens(client, project_key):
+        sid, sname = screen.get("id"), screen.get("name", "")
+        try:
+            tabs = client.list_screen_tabs(sid) or []
+        except JiraError:
+            missing.append({"id": sid, "name": sname, "reason": "tabs unreachable"})
+            continue
+        found = False
+        for tab in tabs:
+            try:
+                fields = client.list_screen_tab_fields(sid, tab.get("id")) or []
+            except JiraError:
+                continue
+            if any((f or {}).get("id") == field_id for f in fields):
+                found = True
+                break
+        if found:
+            present.append({"id": sid, "name": sname})
+        else:
+            missing.append({"id": sid, "name": sname})
+
+    _emit({"ok": True, "fieldId": field_id, "present": present, "missing": missing})
     return 0
 
 
@@ -1294,7 +1499,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("create-ap-field")
     s.add_argument("--name", default="Claude Agent")
+    s.add_argument(
+        "--project",
+        help="project key — used to find project-scoped screens for "
+             "automatic field association (fixes #6). When omitted, "
+             "the field is created but not attached to any screen.",
+    )
     s.set_defaults(func=cmd_create_ap_field)
+
+    s = sub.add_parser("associate-ap-field-screens")
+    s.add_argument("--kanban-path", required=True,
+                   help="reads projectKey + ap.fieldId from this kanban.json")
+    s.set_defaults(func=cmd_associate_ap_field_screens)
+
+    s = sub.add_parser("verify-ap-field-screens")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_verify_ap_field_screens)
 
     s = sub.add_parser("set-ap-field")
     s.add_argument("--kanban-path", required=True)

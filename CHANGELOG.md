@@ -15,6 +15,38 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30 (later still)
+
+### Fixed
+- **kanban 0.3.2** — closes #6. `/kanban:initjira` option `[b] create new
+  field` now attaches the new AP custom field to project screens
+  automatically. Previously the field was created and option values added,
+  but never associated with any screen, so Jira refused all writes
+  (`customfield_X cannot be set. It is not on the appropriate screen, or
+  unknown.`). Symptom was silent — `/kanban:next` returned no work even
+  with cards present.
+
+  - `lib/jira_client.py` gains `list_screens` (with query filter),
+    `list_screen_tabs`, `list_screen_tab_fields`, `add_field_to_screen_tab`.
+  - `scripts/jira_setup.py:create-ap-field` accepts `--project <KEY>` and
+    runs `_associate_field_with_screens` after the create call. Strategy:
+    list project-named screens via `queryString`, plus the global default
+    screen id=1; for each, add the field to the first tab. Idempotent
+    (already-attached returns silently; 403 routed to a dedicated
+    `denied` bucket so the user can ask their admin).
+  - New `associate-ap-field-screens` and `verify-ap-field-screens`
+    subcommands for re-running or auditing the association after init.
+  - New `/kanban:fix-ap-screen` slash command — recovery path for
+    installs that ran on 0.3.1 (or earlier), or whose admin grants screen
+    permission later.
+  - `commands/initjira.md` step 4 option [b] now passes `--project`,
+    surfaces the screens summary, and runs `verify-ap-field-screens`
+    before continuing to step 5.
+  - `test_phase9.py`: 12 new mocked cases covering endpoint payloads,
+    candidate-screen selection (project + default fallback), happy path,
+    idempotency, 403 handling, CLI integration. All 9 phase suites
+    (99 tests) green.
+
 ## 2026-04-30 (later)
 
 ### Added
