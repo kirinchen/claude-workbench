@@ -272,10 +272,39 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py set-ap-field \
 
 ### Option [b] — create new field
 
+Pass the project key so the helper can attach the new field to project
+screens automatically (closes #6 — without this, the field exists but no
+issue can carry its value):
+
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py create-ap-field \
-  --name 'Claude Agent'
+  --name 'Claude Agent' --project '<KEY>'
 ```
+
+The response now includes a `screens` summary:
+
+```json
+{
+  "ok": true, "fieldId": "customfield_10042", "fieldName": "Claude Agent",
+  "screens": {
+    "attempted": [{"id": 1, "name": "Default Screen"},
+                  {"id": 42, "name": "DMI: Kanban Default Issue Screen"}],
+    "attached":  [{"id": 1, "name": "Default Screen"},
+                  {"id": 42, "name": "DMI: Kanban Default Issue Screen"}],
+    "denied": [], "errors": []
+  }
+}
+```
+
+If `screens.denied` is non-empty, the field exists but Jira refused to
+attach it to one or more screens (admin permission needed). Surface the
+list verbatim and suggest:
+
+> ⚠ AP field created, but couldn't attach it to: `<screen names>`.
+> Ask a Jira admin to add `<fieldName>` to those screens, or run
+> `/kanban:fix-ap-screen` after they grant you permission. **Until at
+> least one screen carries the field, `/kanban:next` will return no
+> work even if cards exist.**
 
 On `ok=true`, persist the new field:
 
@@ -285,10 +314,22 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py set-ap-field \
   --field-id '<returned fieldId>' --field-name 'Claude Agent'
 ```
 
-On `403` (admin permission missing), surface the helper's error verbatim
-and tell the user to either ask their Jira admin to create a single-select
-custom field once, then re-run `/kanban:initjira` and choose `[a]`. Stop —
-do NOT silently fall back to `[a]`; the choice is the user's.
+Then verify the association is healthy before moving on:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py verify-ap-field-screens \
+  --kanban-path '<kanban.json path>'
+```
+
+If `missing` is non-empty, print the same warning as above and continue —
+don't abort init, but make sure the user knows the next step is to run
+`/kanban:fix-ap-screen` (or have an admin do it).
+
+On `403` from `create-ap-field` itself (the create step, not screen
+association), surface the helper's error verbatim and tell the user to
+either ask their Jira admin to create a single-select custom field once,
+then re-run `/kanban:initjira` and choose `[a]`. Stop — do NOT silently
+fall back to `[a]`; the choice is the user's.
 
 ## Step 5/5 — First AP registration
 

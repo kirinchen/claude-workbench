@@ -302,6 +302,51 @@ class JiraClient:
             body={"fields": fields},
         )
 
+    # --- screens (Phase 9: AP-field association) ---------------------
+
+    def list_screens(self, *, query: str | None = None) -> dict[str, Any]:
+        """GET /rest/api/3/screens, optionally filtered by `queryString`.
+
+        Used to find project-scoped screens that should carry the AP
+        custom field. Most teams have screens whose names mention the
+        project key or name; passing the project key as the query is
+        a reasonable heuristic.
+        """
+        params = {"queryString": query} if query else None
+        return self._request("GET", "/rest/api/3/screens", query=params)
+
+    def list_screen_tabs(self, screen_id: int | str) -> list[dict[str, Any]]:
+        """GET /rest/api/3/screens/{id}/tabs."""
+        return self._request("GET", f"/rest/api/3/screens/{screen_id}/tabs")
+
+    def list_screen_tab_fields(
+        self, screen_id: int | str, tab_id: int | str
+    ) -> list[dict[str, Any]]:
+        """GET /rest/api/3/screens/{id}/tabs/{tab_id}/fields."""
+        return self._request(
+            "GET", f"/rest/api/3/screens/{screen_id}/tabs/{tab_id}/fields"
+        )
+
+    def add_field_to_screen_tab(
+        self,
+        screen_id: int | str,
+        tab_id: int | str,
+        field_id: str,
+    ) -> dict[str, Any]:
+        """POST /rest/api/3/screens/{id}/tabs/{tab_id}/fields.
+
+        Adds a custom field to a screen tab so issues can have its value
+        set at create / edit time. Idempotent on the server side: adding
+        an already-present field returns 200 with the existing record.
+        Requires Jira global admin (a 403 here is a real authorization
+        signal, not a bug).
+        """
+        return self._request(
+            "POST",
+            f"/rest/api/3/screens/{screen_id}/tabs/{tab_id}/fields",
+            body={"fieldId": field_id},
+        )
+
 
 # -------- helpers ----------------------------------------------------------
 
