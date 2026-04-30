@@ -91,6 +91,7 @@ PLUGIN_ROOT = HERE.parents[1]
 sys.path.insert(0, str(PLUGIN_ROOT))
 
 from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
+from lib import conventions as _cv  # noqa: E402
 from lib import mcp_conflict_scan, transitions as _tr  # noqa: E402
 from lib.jira_client import JiraClient, JiraError  # noqa: E402
 
@@ -786,7 +787,7 @@ def cmd_emit_jira_code(args: argparse.Namespace) -> int:
         return _fail("no transitions defined — run /kanban:initjira first")
 
     code: dict[str, Any] = {
-        "schema": "kanban-jira-code/1",
+        "schema": "kanban-jira-code/2",
         "boardUrl": cfg.get("boardUrl"),
         "boardId": cfg.get("boardId"),
         "projectKey": cfg.get("projectKey"),
@@ -798,6 +799,9 @@ def cmd_emit_jira_code(args: argparse.Namespace) -> int:
     if ap.get("fieldId"):
         code["ap"] = {"fieldId": ap["fieldId"], "fieldName": ap.get("fieldName", "")}
         # `registered` deliberately omitted — that's live state on Jira.
+    # Always include the conventions block (empty by default — the slot
+    # itself nudges teams to write their rules down). v1 receivers ignore it.
+    code["conventions"] = _cv.normalize(cfg.get("conventions"))
 
     _emit({"ok": True, "code": code})
     return 0
@@ -814,9 +818,11 @@ def cmd_import_jira_code(args: argparse.Namespace) -> int:
         return _fail(f"code is not valid JSON: {e}")
     if not isinstance(code, dict):
         return _fail("code must be a JSON object")
-    if code.get("schema") != "kanban-jira-code/1":
+    schema = code.get("schema")
+    if schema not in ("kanban-jira-code/1", "kanban-jira-code/2"):
         return _fail(
-            f"unsupported code schema {code.get('schema')!r}; expected kanban-jira-code/1"
+            f"unsupported code schema {schema!r}; "
+            "expected kanban-jira-code/1 or /2"
         )
 
     transitions = code.get("transitions")
@@ -850,13 +856,94 @@ def cmd_import_jira_code(args: argparse.Namespace) -> int:
             "fieldName": code["ap"].get("fieldName", ""),
             "registered": [],   # populated live via cmd_live_list_aps when needed
         }
+    # Conventions arrive only on /2 codes. Normalize so unknown future
+    # fields are dropped and `notes` is always a list.
+    incoming_conv = code.get("conventions") if schema == "kanban-jira-code/2" else None
+    cfg["conventions"] = _cv.normalize(incoming_conv)
     cfg = {k: v for k, v in cfg.items() if v is not None}
 
     data["backend"] = {"driver": "jira", "jira": cfg}
     meta = data.setdefault("meta", {})
     meta["columns"] = list(CANONICAL_COLUMNS)
     kanban_io.save(p, data)
-    _emit({"ok": True, "imported": cfg})
+    _emit({
+        "ok": True,
+        "imported": cfg,
+        "schema": schema,
+        "conventions": cfg["conventions"],
+        "ackRequired": not _cv.is_empty(cfg["conventions"])
+                       and not _cv.has_recent_ack(p.parent, cfg["conventions"]),
+    })
+    return 0
+
+
+def cmd_set_conventions(args: argparse.Namespace) -> int:
+    """Persist `backend.jira.conventions` to kanban.json.
+
+    Accepts a full conventions block (notes + per-team toggles) as JSON.
+    Validation is advisory — guardrails surface as `warnings`, never
+    block the write.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    try:
+        incoming = json.loads(args.conventions_json)
+    except json.JSONDecodeError as e:
+        return _fail(f"--conventions-json is not valid JSON: {e}")
+    if not isinstance(incoming, dict):
+        return _fail("--conventions-json must be a JSON object")
+
+    normalized = _cv.normalize(incoming)
+    warnings = _cv.validate(normalized)
+
+    data = kanban_io.load(p)
+    backend = data.setdefault("backend", {"driver": "jira"})
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    jira_cfg = backend.setdefault("jira", {})
+    jira_cfg["conventions"] = normalized
+    kanban_io.save(p, data)
+    _emit({"ok": True, "conventions": normalized, "warnings": warnings})
+    return 0
+
+
+def cmd_read_conventions(args: argparse.Namespace) -> int:
+    """Read backend.jira.conventions from kanban.json. Includes `ackHash`
+    so callers can decide whether to re-prompt.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    cfg = (data.get("backend") or {}).get("jira") or {}
+    norm = _cv.normalize(cfg.get("conventions"))
+    _emit(
+        {
+            "ok": True,
+            "conventions": norm,
+            "isEmpty": _cv.is_empty(norm),
+            "ackHash": _cv.hash_conventions(norm),
+            "alreadyAcked": _cv.has_recent_ack(p.parent, norm),
+        }
+    )
+    return 0
+
+
+def cmd_record_conventions_ack(args: argparse.Namespace) -> int:
+    """Record that the user has acknowledged the current conventions.
+
+    Reads conventions from kanban.json so the slash command can't pass
+    a forged ack for a different convention set.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    cfg = (data.get("backend") or {}).get("jira") or {}
+    norm = _cv.normalize(cfg.get("conventions"))
+    target = _cv.record_ack(p.parent, norm)
+    _emit({"ok": True, "ackHash": _cv.hash_conventions(norm), "path": str(target)})
     return 0
 
 
@@ -1092,8 +1179,10 @@ def cmd_transition(args: argparse.Namespace) -> int:
     kwargs: dict[str, Any] = {}
     if args.reason:
         kwargs["reason"] = args.reason
+
+    # Comma-separated list of Jira keys; trim whitespace, drop empties.
+    blockers: list[str] = []
     if args.blocked_by:
-        # Comma-separated list of Jira keys; trim whitespace, drop empties.
         blockers = [k.strip() for k in args.blocked_by.split(",") if k.strip()]
         if args.to != "BLOCKED" and blockers:
             _fail(
@@ -1102,6 +1191,23 @@ def cmd_transition(args: argparse.Namespace) -> int:
             )
             return 1
         kwargs["blocked_by"] = blockers
+
+    # Per-team convention: blockedRequiresLink. When opted in by the team
+    # (set via /kanban:edit-conventions), refuse to transition to BLOCKED
+    # without --blocked-by. The flag lives on the team's shared mapping
+    # so the rule travels with the kanban-jira-code/2 payload.
+    if args.to == "BLOCKED":
+        cfg = (data.get("backend") or {}).get("jira") or {}
+        if _cv.blocked_requires_link(cfg.get("conventions")) and not blockers:
+            _fail(
+                "team convention `blockedRequiresLink` is enabled — pass "
+                "--blocked-by KEY[,KEY,...] when transitioning to BLOCKED. "
+                "(see /kanban:show-conventions; the team can disable this "
+                "via /kanban:edit-conventions)",
+                code=1,
+                kind="convention",
+            )
+            return 1
     try:
         t = driver.transition(args.key, args.to, **kwargs)
     except SelfApproveRefused as e:
@@ -1629,6 +1735,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("live-list-aps")
     s.add_argument("--kanban-path", required=True)
     s.set_defaults(func=cmd_live_list_aps)
+
+    s = sub.add_parser("set-conventions")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument(
+        "--conventions-json", required=True,
+        help='JSON object: {"notes": ["..."], "blockedRequiresLink": bool}',
+    )
+    s.set_defaults(func=cmd_set_conventions)
+
+    s = sub.add_parser("read-conventions")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_read_conventions)
+
+    s = sub.add_parser("record-conventions-ack")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_record_conventions_ack)
 
     s = sub.add_parser("set-transitions")
     s.add_argument("--kanban-path", required=True)

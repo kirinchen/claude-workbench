@@ -15,6 +15,47 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30 (conventions)
+
+### Added
+- **kanban 0.3.4** — share-code carries team conventions. Closes #10.
+  The `/kanban:showjira-code` payload now travels with a small block
+  of soft team agreements alongside the existing hard wiring
+  (transitions / AP / board). Schema bumped to `kanban-jira-code/2`;
+  receivers still accept v1 codes for back-compat.
+
+  Scope is deliberately narrow — narrative-only plus one opt-in toggle.
+  `summaryPrefix` / `defaultEpic` / `requiredLabels` / `commentTemplates`
+  / `reviewerAccountId` were considered and **rejected** in this round
+  to avoid slippery-slope / overlap with existing config (each can be
+  re-proposed individually if a real use case lands).
+
+  Highlights:
+  - `lib/conventions.py` — normalize / validate / hash_conventions /
+    record_ack / has_recent_ack. Length guardrails (200 chars × 10
+    notes) are advisory; helpers warn but never reject.
+  - `backend.jira.conventions = { notes: [string],
+    blockedRequiresLink: bool }` (schema additive).
+  - `/kanban:edit-conventions` — interactive author flow (per-note
+    keep/edit/delete, length checks, toggle prompt).
+  - `/kanban:show-conventions` — read-only render with ack status.
+  - `/kanban:initjira-by-code` — when imported code carries non-empty
+    notes, requires the literal phrase `I have read these` before
+    init completes (no `yes`/`Y`/etc. — the friction is the feature,
+    matching #10 §Receiver UX). Ack persists as a hash + timestamp in
+    `.claude/kanban-agent.json`; same conventions on re-import skips
+    the prompt.
+  - `blockedRequiresLink: true` (per-team opt-in) — when set,
+    `cmd_transition` refuses BLOCKED transitions without `--blocked-by`.
+    Pairs with the `--blocked-by` shipped in 0.3.3 (#8); each team
+    decides whether to enforce.
+  - New helper subcommands: `set-conventions`, `read-conventions`,
+    `record-conventions-ack`.
+  - `test_phase11.py`: 15 mocked cases covering normalize / validate /
+    hash / ack persistence / emit/import roundtrip with both v1 and v2
+    schemas / set-and-warn / record-and-read / blockedRequiresLink
+    enforcement on and off. All 11 phase suites (114 tests) green.
+
 ## 2026-04-30 (issue links)
 
 ### Added

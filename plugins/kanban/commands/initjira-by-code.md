@@ -42,8 +42,9 @@ Ask the user via `AskUserQuestion` to paste the JSON code emitted by
 whitespace and any surrounding code-fence backticks (the user is likely
 copy-pasting from a chat).
 
-Validate the structure: must be a JSON object with
-`schema == "kanban-jira-code/1"`. Surface any parse error verbatim.
+Validate the structure: must be a JSON object with `schema` equal to
+`kanban-jira-code/1` or `kanban-jira-code/2`. Surface any parse error
+verbatim.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py import-jira-code \
@@ -53,10 +54,51 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py import-jira-code \
 
 | Response | Action |
 |---|---|
-| `{ok: true, imported: {...}}` | print one-line summary: imported `<projectKey>/<boardId>`, `<N>` transitions, AP field `<fieldName>` |
+| `{ok: true, imported: {...}, schema, conventions, ackRequired}` | print one-line summary: imported `<projectKey>/<boardId>`, `<N>` transitions, AP field `<fieldName>`. If `ackRequired` is true, proceed to step 2.5. |
 | `{ok: false, error: ..., errors?: [...]}` | surface the error(s); ask the user to re-paste |
 
 After two validation failures, abort.
+
+## Step 2.5/3 — Acknowledge team conventions (only if `ackRequired`)
+
+When the imported code carries a non-empty `conventions` block (notes
+the team agreed to share), the user must read them before init can
+complete. The friction is intentional — pasting code is not the same as
+having read it.
+
+Render the notes as a numbered list, then ask via `AskUserQuestion`:
+
+```
+⚠ Team conventions you should know before starting work:
+
+  1. <note 1>
+  2. <note 2>
+  3. <note 3>
+
+If `blockedRequiresLink` is true:
+  ⚙ This team requires `--blocked-by KEY` on every /kanban:block call.
+
+Type the literal phrase 'I have read these' to acknowledge and continue:
+```
+
+The ack must be the **exact** string `I have read these` (case-sensitive,
+trim leading/trailing whitespace). Other answers (`yes`, `Y`, `ok`,
+`sure`, `已讀`, etc.) are **not** accepted — re-prompt once. After two
+mismatches, abort init with:
+
+> Init aborted — conventions not acknowledged. Re-run when ready, or run
+> `/kanban:show-conventions` to read them outside the init flow.
+
+Once the literal phrase is entered, persist the ack:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py record-conventions-ack \
+  --kanban-path '<kanban.json path>'
+```
+
+This writes a hash + timestamp to `.claude/kanban-agent.json` so future
+re-runs of `/kanban:initjira-by-code` (with the same conventions) skip
+this step.
 
 ## Step 3/3 — Assign this repo's AP
 

@@ -77,6 +77,22 @@
                   "uniqueItems": true
                 }
               }
+            },
+            "conventions": {
+              "type": "object",
+              "description": "Soft team agreements — narrative notes that travel with the board mapping (kanban-jira-code/2 schema). Length guardrails are advisory; helpers warn but don't reject.",
+              "additionalProperties": false,
+              "properties": {
+                "notes": {
+                  "type": "array",
+                  "description": "Short prose notes shown to anyone importing the board code. Receivers are required to acknowledge before /kanban:initjira-by-code completes.",
+                  "items": { "type": "string" }
+                },
+                "blockedRequiresLink": {
+                  "type": "boolean",
+                  "description": "If true, /kanban:block refuses transitions to BLOCKED that don't pass --blocked-by. Per-team opt-in convention."
+                }
+              }
             }
           }
         }

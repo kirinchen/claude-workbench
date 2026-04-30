@@ -14,11 +14,17 @@ everywhere.
 
 ## What's in the code
 
+- `schema`: `"kanban-jira-code/2"` (writers default to /2; receivers
+  accept both /1 and /2)
 - `boardUrl`, `boardId`, `projectKey`
 - `transitions` (the entire compound mapping from
   `/kanban:initjira` step 3)
 - `ap.fieldId`, `ap.fieldName` (so the receiver maps to the same Jira
   custom field)
+- `conventions` (since /2): team narrative notes + per-team toggles
+  (e.g. `blockedRequiresLink`). Empty by default — author via
+  `/kanban:edit-conventions`. Receivers must acknowledge non-empty
+  notes before `/kanban:initjira-by-code` completes.
 
 ## What's deliberately excluded
 
