@@ -93,7 +93,8 @@ def test_emit_strips_agent_and_registered():
         j = json.loads(out.stdout)
         assert j["ok"] is True
         code = j["code"]
-        assert code["schema"] == "kanban-jira-code/1"
+        # 0.3.4+ writers emit /2 by default; reader still accepts /1 (forward-compat).
+        assert code["schema"] == "kanban-jira-code/2"
         assert code["projectKey"] == "AGENT"
         assert code["boardId"] == 1
         # Defaults strip these:
