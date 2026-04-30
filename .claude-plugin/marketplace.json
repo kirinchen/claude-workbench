@@ -7,7 +7,7 @@
     {
       "name": "kanban",
       "source": "./plugins/kanban",
-      "version": "0.2.2",
+      "version": "0.3.1",
       "description": "Kanban workflow for Claude Code — local kanban.json or Jira Cloud as the storage backend",
       "category": "productivity",
       "keywords": ["kanban", "tasks", "workflow"]
@@ -39,7 +39,7 @@
     {
       "name": "workbench",
       "source": "./plugins/workbench",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "description": "★ Core bundle — kanban + notify + memory (meta, stub)",
       "category": "productivity",
       "keywords": ["bundle", "meta"]

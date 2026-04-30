@@ -1,7 +1,6 @@
 ---
 description: Switch the current project from local kanban.json to Jira-backed kanban.
-argument-hint: [--partial]
-allowed-tools: Read, Bash(python3:*), Bash(test:*), Bash(ls:*), AskUserQuestion
+allowed-tools: Read, Bash(python3:*), Bash(test:*), Bash(ls:*), Write, AskUserQuestion
 ---
 
 # /kanban:initjira
@@ -119,50 +118,128 @@ echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
 
 Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)`.
 
-## Step 3/3 — Workflow check
+> **Tip — already configured the same board in another repo or machine?**
+> Skip this entire flow: run `/kanban:showjira-code` in the source repo,
+> copy the printed JSON, then run `/kanban:initjira-by-code` in this repo
+> and paste it. Jumps straight from credentials to step 5 (assign AP).
 
-Pull the project's statuses and build the canonical → Jira-status map:
+## Step 3/5 — Compound transitions (canonical → Jira)
+
+This is the heart of Jira mode. For each canonical column
+(`TODO / DOING / BLOCKED / REVIEW / DONE / CANCELLED`) you must define a
+**compound transition spec**: which Jira status to move to, plus optional
+labels to add/remove and an optional pinned assignee. Multiple canonicals
+can share the same Jira status — the reader disambiguates by labels.
+
+### 3a. Auto-suggest from the project's workflow
 
 ```bash
 echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
   build-status-map --base-url '<URL>' --email '<EMAIL>' --project '<KEY>'
 ```
 
-Result includes `map`, `missing`, `partial`, `labelFallback`.
-
-- If `missing` is empty: print `✓ workflow has all 6 canonical statuses`.
-- If non-empty AND `--partial` is NOT set: print the missing list and stop.
-  Tell the user to either (a) add the missing statuses in Jira project
-  settings and re-run `/kanban:initjira`, or (b) re-run with `--partial` to
-  accept label-fallback substitutions for the missing columns.
-- If non-empty AND `--partial` IS set: warn loudly, list which columns will
-  be substituted via labels (`kanban:blocked`, `kanban:review`,
-  `kanban:cancelled`), proceed.
-
-## Step 4 — Persist `backend.jira`
-
-Compose the JSON payload and write it:
+Returns:
 
 ```json
 {
-  "boardUrl": "<URL>",
-  "boardId": <ID>,
-  "projectKey": "<KEY>",
-  "agentAccountId": "<accountId from validate-credentials>",
-  "statusMap": { ... from build-status-map },
-  "partial": <true|false>,
-  "labelFallback": { ... when partial }
+  "found": [{"name":"進行中","category":"indeterminate"}, ...],
+  "suggestions": {
+     "DOING": {"status":"進行中", "confidence":0.95, "reason":"statusCategory=indeterminate"},
+     "DONE":  {"status":"完成",   "confidence":0.95, "reason":"statusCategory=done"}
+  },
+  "unmapped": ["TODO","BLOCKED","REVIEW","CANCELLED"],
+  "ambiguous": ["TODO"]
 }
 ```
 
-Use Bash to call `write-backend` (single-quote the JSON; do NOT pass via Edit/Write
-since `kanban-guard.sh` blocks those):
+Print this to the user as a starting point. Format:
+
+```
+Found Jira statuses:
+  • Selected for Development  (category: new)
+  • Backlog                   (category: new)
+  • 進行中                     (category: indeterminate)
+  • 完成                       (category: done)
+
+Auto-suggested mapping (confidence in parens):
+  DOING → 進行中    (0.95, statusCategory=indeterminate)
+  DONE  → 完成      (0.95, statusCategory=done)
+
+Unmapped: TODO, BLOCKED, REVIEW, CANCELLED
+Ambiguous: TODO (multiple "new"-category statuses — pick one explicitly)
+```
+
+### 3b. Capture the user's compound mapping
+
+Show the user a **DSL prompt** they can paste into. This is more
+expressive than a flat status map — it supports `+ Label[ name]` and
+`+ Assignee to me|<displayName>`.
+
+> Please define each canonical column. The auto-suggestions above are a
+> starting point, but you almost certainly need to override at least the
+> unmapped ones. Format (one line per canonical):
+>
+>     CANONICAL > <Jira status> [+ Label [name]] [+ Assignee to me|<name>]
+>
+> Examples:
+>
+>     TODO > Selected for Development
+>     DOING > In Progress
+>     BLOCKED > In Progress + Label                       # adds kanban:blocked
+>     REVIEW > In Progress + label + Assignee to me       # adds kanban:review + assigns to current user
+>     DONE > Done
+>     CANCELLED > DONE + label                            # same Jira status as canonical DONE, plus kanban:cancelled
+>
+> - `Label` / `label` (no name) defaults to `kanban:<canonical-lower>`.
+> - `Label some-name` lets you choose the label text.
+> - `Assignee to me` resolves to your current Jira accountId; `Assignee to <name>` queries `/user/search`.
+> - An UPPERCASE word on the right (e.g. `DONE`) refers to another canonical's resolved Jira status — useful when several canonicals share a status.
+> - Lines starting with `#` are comments.
+
+Use `AskUserQuestion` to capture the multi-line DSL block.
+
+### 3c. Parse the DSL
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
-  write-backend --kanban-path '<KANBAN_PATH>' \
-  --jira-config-json '<json>'
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py parse-transitions-dsl \
+  --dsl-text '<USER_DSL_BLOCK>' \
+  --current-user-account-id '<accountId from Step 1>'
 ```
+
+Returns `{"ok": true, "transitions": {...}}` or `{"ok": false, "error": "..."}`.
+
+If parsing fails, surface the error verbatim and re-prompt for the DSL
+block once. After two failures, abort.
+
+### 3d. Persist `backend.jira` (transitions + metadata)
+
+Compose the full backend.jira JSON and write it via `write-backend`:
+
+```json
+{
+  "boardUrl": "<URL from Step 2>",
+  "boardId": <ID>,
+  "projectKey": "<KEY>",
+  "agentAccountId": "<accountId from Step 1's validate-credentials>",
+  "transitions": { ... from 3c ... }
+}
+```
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py write-backend \
+  --kanban-path '<kanban.json path>' \
+  --jira-config-json '<full json above>'
+```
+
+`write-backend` writes atomically and drops any legacy `statusMap` /
+`labelFallback` / `partial` keys (from v0.2.x users re-running init).
+
+> Optional sanity check before writing: call `set-transitions` instead with
+> `--available-statuses '<json array of names from `found`>'`. It validates
+> that each `status` in the transitions exists in the project's workflow
+> and returns errors without writing — useful when the user's DSL might
+> have typos. `set-transitions` only writes the `transitions` field; use it
+> for incremental edits after init, not for first-time setup.
 
 ## Step 4/5 — Agent Property (AP) custom field
 

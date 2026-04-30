@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from lib import card_cache, credentials
+from lib import card_cache, credentials, transitions as _tr
 from lib.jira_client import JiraClient, JiraError, adf_to_text, text_to_adf
 from drivers.base import (
     AgentRef,
@@ -63,12 +63,14 @@ class JiraDriver:
         backend = kanban_data.get("backend") or {}
         if backend.get("driver") != "jira":
             raise ValueError("JiraDriver requires backend.driver == 'jira'")
-        self.cfg: dict[str, Any] = backend.get("jira") or {}
+        # kanban_io auto-migrates legacy backend.jira on load, so by the
+        # time we get here the cfg is in v0.3 transitions form. Be defensive
+        # in case a caller built the config in-memory: run the migration here
+        # too — it is idempotent on already-migrated input.
+        self.cfg: dict[str, Any] = _tr.migrate_legacy(backend.get("jira") or {})
         self.project_key: str = self.cfg.get("projectKey") or ""
         self.board_id: int | None = self.cfg.get("boardId")
-        self.status_map: dict[str, str] = self.cfg.get("statusMap") or {}
-        self.partial: bool = bool(self.cfg.get("partial"))
-        self.label_fallback: dict[str, str] = self.cfg.get("labelFallback") or {}
+        self.transitions_map: dict[str, dict[str, Any]] = self.cfg.get("transitions") or {}
         self.agent_account_id: str | None = self.cfg.get("agentAccountId")
         self.ap_field_id: str | None = (self.cfg.get("ap") or {}).get("fieldId")
 
@@ -90,26 +92,21 @@ class JiraDriver:
             self._client = JiraClient(self.base_url, self.email, self._token)
         return self._client
 
-    def _canonical_to_status(self, column: str) -> str | None:
-        return self.status_map.get(column)
+    def _canonical_spec(self, column: str) -> dict[str, Any] | None:
+        return self.transitions_map.get(column)
 
-    def _status_to_canonical(self, status_name: str) -> str:
-        for canonical, display in self.status_map.items():
-            if display == status_name:
-                return canonical
-        # Unknown — return the raw status as-is so callers see it untranslated.
-        return status_name
+    def _canonical_to_status(self, column: str) -> str | None:
+        spec = self._canonical_spec(column)
+        return spec.get("status") if spec else None
 
     def _issue_to_task(self, issue: dict[str, Any]) -> Task:
         f = issue.get("fields") or {}
         status_name = ((f.get("status") or {}).get("name")) or ""
-        column = self._status_to_canonical(status_name)
-        # Apply label fallback in partial mode.
-        if self.partial and self.label_fallback:
-            for canonical, label in self.label_fallback.items():
-                if label in (f.get("labels") or []):
-                    column = canonical
-                    break
+        labels = list(f.get("labels") or [])
+        column = _tr.disambiguate(self.transitions_map, status_name, labels)
+        if column is None:
+            # Unknown status — surface raw to caller.
+            column = status_name
 
         ap_value: str | None = None
         if self.ap_field_id:
@@ -133,12 +130,12 @@ class JiraDriver:
             created=f.get("created", ""),
             updated=f.get("updated", ""),
             description=adf_to_text(f.get("description")) if f.get("description") else "",
-            tags=list(f.get("labels") or []),
+            tags=labels,
             depends=[],  # epic/issuelink resolution deferred (out of scope v0.2)
             assignee=member,
             ap=ap_value,
             comments=[],
-            custom={"raw_status": status_name},
+            custom={"raw_status": status_name, "raw_labels": labels},
         )
 
     @staticmethod
@@ -252,22 +249,34 @@ class JiraDriver:
                 f"unknown canonical column {to_column!r}; expected one of "
                 f"{CANONICAL_COLUMNS}"
             )
-        # Anti-self-approve (SPEC §8). Refuse client-side when the current
-        # repo's AP would approve a card it owns.
+        spec = self._canonical_spec(to_column)
+        if not spec:
+            raise RuntimeError(
+                f"no transition spec configured for {to_column!r} — "
+                "re-run /kanban:initjira step 3 to define it"
+            )
+        target_status = spec.get("status")
+        if not target_status:
+            raise RuntimeError(f"transition spec for {to_column!r} missing `status`")
+
+        # One pre-flight read serves both anti-self-approve and the
+        # already-in-target-status fast path.
+        existing_for_status = self.get_task(key)
         if to_column == "DONE":
             current_ap = self._current_repo_ap()
-            if current_ap:
-                existing = self.get_task(key)
-                if existing.ap and existing.ap == current_ap:
-                    raise SelfApproveRefused(
-                        f"anti-self-approve: agent {current_ap!r} cannot "
-                        f"transition its own card {key} to DONE — ask another "
-                        "agent or a human reviewer to approve"
-                    )
+            if current_ap and existing_for_status.ap and existing_for_status.ap == current_ap:
+                raise SelfApproveRefused(
+                    f"anti-self-approve: agent {current_ap!r} cannot "
+                    f"transition its own card {key} to DONE — ask another "
+                    "agent or a human reviewer to approve"
+                )
         client = self._client_or_raise()
-        target_status = self._canonical_to_status(to_column)
 
-        if target_status:
+        # Step A — status transition (find the right transition id).
+        # Skip if the issue is already in the target status (avoids the API
+        # rejecting a no-op transition).
+        existing_status = existing_for_status.custom.get("raw_status")
+        if existing_status != target_status:
             transitions = (client.get_transitions(key) or {}).get("transitions", [])
             tid = next(
                 (
@@ -279,30 +288,54 @@ class JiraDriver:
             )
             if not tid:
                 raise RuntimeError(
-                    f"no transition to status {target_status!r} on issue {key} — "
-                    f"check Jira workflow conditions"
+                    f"no Jira workflow transition leads to status {target_status!r} "
+                    f"on issue {key} — check Jira workflow conditions"
                 )
             client.transition_issue(key, tid)
-        elif self.partial and to_column in self.label_fallback:
-            # Apply label substitute via PUT issue.
-            label = self.label_fallback[to_column]
-            client._request(
-                "PUT",
-                f"/rest/api/3/issue/{key}",
-                body={"update": {"labels": [{"add": label}]}},
-            )
-            self._post_system_comment(
-                key, f"label substitute applied: {label} (canonical={to_column})"
-            )
-        else:
-            raise RuntimeError(
-                f"no Jira status or label fallback configured for {to_column!r}"
-            )
 
+        # Step B — labels add/remove. Read existing, mutate, PUT whole list.
+        add_labels = list(spec.get("addLabels") or [])
+        remove_labels = list(spec.get("removeLabels") or [])
+        partial_failure: str | None = None
+        if add_labels or remove_labels:
+            current_labels = list(existing_for_status.custom.get("raw_labels") or [])
+            updated = [l for l in current_labels if l not in remove_labels]
+            for l in add_labels:
+                if l not in updated:
+                    updated.append(l)
+            if updated != current_labels:
+                try:
+                    client.update_issue(key, {"labels": updated})
+                except JiraError as e:
+                    partial_failure = f"label sync failed: {e.detail or e}"
+
+        # Step C — assignee. If the spec pins a specific accountId, set it.
+        spec_assignee = spec.get("assignee") or {}
+        if spec_assignee.get("accountId"):
+            try:
+                client._request(
+                    "PUT",
+                    f"/rest/api/3/issue/{key}/assignee",
+                    body={"accountId": spec_assignee["accountId"]},
+                )
+            except JiraError as e:
+                partial_failure = (
+                    (partial_failure + "; " if partial_failure else "")
+                    + f"assignee set failed: {e.detail or e}"
+                )
+
+        # Audit trail for blocked transitions and partial failures.
         if to_column == "BLOCKED":
             reason = kwargs.get("reason")
             if reason:
                 self.post_comment(key, f"Blocked: {reason}", CommentKind.SYSTEM)
+        if partial_failure:
+            self._post_system_comment(
+                key,
+                f"compound transition partial — status to {target_status!r} OK, but "
+                f"{partial_failure}",
+            )
+
         # Any successful transition invalidates the cache for that key.
         card_cache.invalidate(self.project_root, key)
         return self.get_task(key)

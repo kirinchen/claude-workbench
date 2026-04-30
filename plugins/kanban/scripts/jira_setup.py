@@ -91,7 +91,7 @@ PLUGIN_ROOT = HERE.parents[1]
 sys.path.insert(0, str(PLUGIN_ROOT))
 
 from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
-from lib import mcp_conflict_scan  # noqa: E402
+from lib import mcp_conflict_scan, transitions as _tr  # noqa: E402
 from lib.jira_client import JiraClient, JiraError  # noqa: E402
 
 
@@ -148,6 +148,19 @@ def _client_from_env() -> JiraClient:
     tok = env.get("JIRA_API_TOKEN")
     if not (base and email and tok):
         _fail("Jira credentials missing — run /kanban:initjira or /kanban:reset-credentials")
+    return JiraClient(base, email, tok)
+
+
+def _client_from_env_or_none() -> JiraClient | None:
+    """Non-fatal variant: return None if credentials are missing, instead of
+    exiting the process. Callers that can fall back to a local hint use this.
+    """
+    env = credentials.read("JIRA_")
+    base = env.get("JIRA_BASE_URL")
+    email = env.get("JIRA_AGENT_EMAIL")
+    tok = env.get("JIRA_API_TOKEN")
+    if not (base and email and tok):
+        return None
     return JiraClient(base, email, tok)
 
 
@@ -267,21 +280,15 @@ def cmd_build_status_map(args: argparse.Namespace) -> int:
                 seen.add(n)
                 found.append({"name": n, "category": (status.get("statusCategory") or {}).get("key")})
 
-    canonical_map: dict[str, str] = {}
-    for s in found:
-        canonical = _NAME_RULES.get(_norm(s["name"]))
-        if canonical and canonical not in canonical_map:
-            canonical_map[canonical] = s["name"]
-
-    missing = [c for c in CANONICAL_COLUMNS if c not in canonical_map]
-    label_fallback = {c: f"kanban:{c.lower()}" for c in missing}
+    # Delegate to lib.transitions which understands non-English names (via
+    # statusCategory) and ambiguity tracking.
+    sugg = _tr.suggest_from_jira(found)
     _emit(
         {
             "found": found,
-            "map": canonical_map,
-            "missing": missing,
-            "partial": bool(missing),
-            "labelFallback": label_fallback,
+            "suggestions": sugg.suggestions,
+            "unmapped": sugg.unmapped,
+            "ambiguous": sugg.ambiguous,
         }
     )
     return 0
@@ -294,12 +301,97 @@ def cmd_write_backend(args: argparse.Namespace) -> int:
         _fail(f"kanban.json not found at {p}")
         return 1
     data = kanban_io.load(p)
+    # Run any legacy fields through the migrator so callers can hand us either
+    # v0.2 (statusMap+labelFallback) or v0.3 (transitions) shape.
+    cfg = _tr.migrate_legacy(cfg)
     data["backend"] = {"driver": "jira", "jira": cfg}
     # Adjust columns metadata to match SPEC: jira mode permits all 6.
     meta = data.setdefault("meta", {})
     meta["columns"] = list(CANONICAL_COLUMNS)
     kanban_io.save(p, data)
+
     _emit({"ok": True, "version": data.get("version", "0.2")})
+    return 0
+
+
+def cmd_parse_transitions_dsl(args: argparse.Namespace) -> int:
+    """Parse a DSL block into a backend.jira.transitions dict.
+
+    DSL grammar (per line):
+        CANONICAL > status [+ Label[ name]] [+ Assignee to me|<displayName>]
+
+    Input is taken from --dsl-text only. We deliberately do NOT accept a
+    file path: the parser's error messages would otherwise reflect file
+    line content back into the slash-command transcript, which would leak
+    secrets if the path were ever pointed at a token / credential file.
+    """
+    text = args.dsl_text
+    if not text:
+        return _fail("DSL is empty (pass --dsl-text)")
+
+    user_lookup = None
+    if not args.no_user_lookup:
+        # Make /user/search available so 'Assignee to <displayName>' resolves.
+        try:
+            client = _client_from_env()
+        except SystemExit:
+            client = None  # _client_from_env _fail-exited; user_lookup unavailable
+        if client is not None:
+            def lookup(name: str) -> str | None:
+                try:
+                    res = client._request(
+                        "GET", "/rest/api/3/user/search", query={"query": name}
+                    )
+                except JiraError:
+                    return None
+                if isinstance(res, list) and res:
+                    return (res[0] or {}).get("accountId")
+                return None
+            user_lookup = lookup
+
+    try:
+        out = _tr.parse_dsl(
+            text,
+            current_user_account_id=args.current_user_account_id,
+            user_lookup=user_lookup,
+        )
+    except ValueError as e:
+        return _fail(str(e))
+    _emit({"ok": True, "transitions": out})
+    return 0
+
+
+def cmd_set_transitions(args: argparse.Namespace) -> int:
+    """Persist `backend.jira.transitions` to kanban.json."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    transitions = json.loads(args.transitions_json)
+    if not isinstance(transitions, dict):
+        return _fail("--transitions-json must be a JSON object")
+
+    data = kanban_io.load(p)
+    backend = data.setdefault("backend", {"driver": "jira"})
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    jira_cfg = backend.setdefault("jira", {})
+    # Drop any legacy fields — transitions supersedes them.
+    for k in ("statusMap", "labelFallback", "partial"):
+        jira_cfg.pop(k, None)
+
+    available = []
+    if args.available_statuses:
+        available = json.loads(args.available_statuses)
+    errs = _tr.validate(transitions, available)
+    if errs and not args.force:
+        return _fail(
+            "validation failed; pass --force to write anyway",
+            errors=errs,
+        )
+
+    jira_cfg["transitions"] = transitions
+    kanban_io.save(p, data)
+    _emit({"ok": True, "transitions": transitions, "warnings": errs})
     return 0
 
 
@@ -413,6 +505,156 @@ def _resolve_default_context(client: JiraClient, field_id: str) -> int:
     raise RuntimeError("no contexts found for AP field — Jira config is unusual")
 
 
+def _fetch_jira_ap_options(client: JiraClient, field_id: str) -> list[str]:
+    """Return the live list of AP custom-field option values from Jira.
+
+    Source of truth for AP membership lives on the Jira side (the field's
+    options list). The local `kanban.json#registered` is just a stale hint.
+    Callers should use this for validation; on network failure they may fall
+    back to the local list with a warning.
+    """
+    try:
+        ctx_id = _resolve_default_context(client, field_id)
+    except Exception:
+        return []
+    payload = client.list_field_options(field_id, ctx_id) or {}
+    out: list[str] = []
+    for opt in payload.get("values", []) or []:
+        v = opt.get("value")
+        if isinstance(v, str) and v:
+            out.append(v)
+    return out
+
+
+def cmd_live_list_aps(args: argparse.Namespace) -> int:
+    """Live-query Jira for the AP field's current options. Used by
+    /kanban:whoami and /kanban:assign-ap as the source of truth (the local
+    cached `registered` list is informational only).
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    field_id = ((backend.get("jira") or {}).get("ap") or {}).get("fieldId")
+    if not field_id:
+        return _fail("AP field unconfigured — run /kanban:initjira step 4")
+
+    client = _client_from_env()
+    try:
+        live = _fetch_jira_ap_options(client, field_id)
+    except JiraError as e:
+        # Best-effort fall back to the local hint list.
+        local = list(((backend.get("jira") or {}).get("ap") or {}).get("registered") or [])
+        _emit(
+            {
+                "ok": False,
+                "error": f"jira: {e.detail or e}",
+                "statusCode": e.status_code,
+                "fallback": local,
+            }
+        )
+        return 1
+    _emit({"ok": True, "registered": live, "fieldId": field_id})
+    return 0
+
+
+def cmd_emit_jira_code(args: argparse.Namespace) -> int:
+    """Print the shareable backend.jira block as compact JSON.
+
+    Strips per-machine / per-repo specifics (`registered` AP roster,
+    `agentAccountId` if --include-agent-account is not set). The output is
+    safe to share via Slack / wiki / pasted into another machine's
+    /kanban:initjira-by-code.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    cfg = dict(backend.get("jira") or {})
+    if not cfg.get("transitions"):
+        return _fail("no transitions defined — run /kanban:initjira first")
+
+    code: dict[str, Any] = {
+        "schema": "kanban-jira-code/1",
+        "boardUrl": cfg.get("boardUrl"),
+        "boardId": cfg.get("boardId"),
+        "projectKey": cfg.get("projectKey"),
+        "transitions": cfg.get("transitions"),
+    }
+    if args.include_agent_account and cfg.get("agentAccountId"):
+        code["agentAccountId"] = cfg["agentAccountId"]
+    ap = cfg.get("ap") or {}
+    if ap.get("fieldId"):
+        code["ap"] = {"fieldId": ap["fieldId"], "fieldName": ap.get("fieldName", "")}
+        # `registered` deliberately omitted — that's live state on Jira.
+
+    _emit({"ok": True, "code": code})
+    return 0
+
+
+def cmd_import_jira_code(args: argparse.Namespace) -> int:
+    """Import a shareable code into this repo's kanban.json."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    try:
+        code = json.loads(args.code_json)
+    except json.JSONDecodeError as e:
+        return _fail(f"code is not valid JSON: {e}")
+    if not isinstance(code, dict):
+        return _fail("code must be a JSON object")
+    if code.get("schema") != "kanban-jira-code/1":
+        return _fail(
+            f"unsupported code schema {code.get('schema')!r}; expected kanban-jira-code/1"
+        )
+
+    transitions = code.get("transitions")
+    if not isinstance(transitions, dict) or not transitions:
+        return _fail("code is missing `transitions`")
+    errs = _tr.validate(transitions)
+    if errs:
+        return _fail("transitions invalid", errors=errs)
+
+    project_key = code.get("projectKey")
+    board_id = code.get("boardId")
+    if not project_key or not isinstance(board_id, int):
+        return _fail("code is missing `projectKey` or `boardId`")
+
+    # Build the new backend.jira. Pull agentAccountId from the existing
+    # kanban.json if not present in the code (the agentAccountId is shared
+    # per-Atlassian-account, not per-board, but a fresh repo may already
+    # have it from /kanban:initjira-by-code's credential step).
+    data = kanban_io.load(p)
+    existing_cfg = (data.get("backend") or {}).get("jira") or {}
+    cfg: dict[str, Any] = {
+        "boardUrl": code.get("boardUrl") or existing_cfg.get("boardUrl"),
+        "boardId": board_id,
+        "projectKey": project_key,
+        "agentAccountId": code.get("agentAccountId") or existing_cfg.get("agentAccountId"),
+        "transitions": transitions,
+    }
+    if code.get("ap") and isinstance(code["ap"], dict) and code["ap"].get("fieldId"):
+        cfg["ap"] = {
+            "fieldId": code["ap"]["fieldId"],
+            "fieldName": code["ap"].get("fieldName", ""),
+            "registered": [],   # populated live via cmd_live_list_aps when needed
+        }
+    cfg = {k: v for k, v in cfg.items() if v is not None}
+
+    data["backend"] = {"driver": "jira", "jira": cfg}
+    meta = data.setdefault("meta", {})
+    meta["columns"] = list(CANONICAL_COLUMNS)
+    kanban_io.save(p, data)
+    _emit({"ok": True, "imported": cfg})
+    return 0
+
+
 def cmd_register_ap(args: argparse.Namespace) -> int:
     """Add `--name` to the AP field's options + cache in kanban.json#registered."""
     p = Path(args.kanban_path)
@@ -436,13 +678,22 @@ def cmd_register_ap(args: argparse.Namespace) -> int:
     if not field_id:
         _fail("AP field unconfigured — run /kanban:initjira step 4")
         return 1
-    registered = list(ap_block.get("registered") or [])
 
-    if ap_registry.is_exact_collision(args.name, registered):
+    # Live-query Jira's options as the source of truth for collision detection.
+    # Falls back to the local hint list if creds are missing or the network is down.
+    live_options = list(ap_block.get("registered") or [])
+    client = _client_from_env_or_none()
+    if client is not None:
+        try:
+            live_options = _fetch_jira_ap_options(client, field_id)
+        except JiraError:
+            pass  # keep local fallback
+
+    if ap_registry.is_exact_collision(args.name, live_options):
         _emit({"ok": True, "alreadyRegistered": True, "name": args.name})
         return 0
 
-    hits = ap_registry.fuzzy_collisions(args.name, registered)
+    hits = ap_registry.fuzzy_collisions(args.name, live_options)
     if hits and not args.force:
         _emit(
             {
@@ -454,7 +705,15 @@ def cmd_register_ap(args: argparse.Namespace) -> int:
         )
         return 0  # caller decides; not an error
 
-    client = _client_from_env()
+    if client is None:
+        # We did the fuzzy/collision check against local data, but the
+        # actual write requires Jira. Fail explicitly so the user knows
+        # to run /kanban:reset-credentials.
+        return _fail(
+            "Jira credentials missing — fuzzy check passed against local "
+            "hint, but the new option must be added in Jira. Run "
+            "/kanban:initjira or /kanban:reset-credentials first."
+        )
     try:
         ctx_id = _resolve_default_context(client, field_id)
         client.add_field_option(field_id, ctx_id, args.name)
@@ -462,13 +721,21 @@ def cmd_register_ap(args: argparse.Namespace) -> int:
         _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
         return 1
 
-    registered.append(args.name)
+    # Update the local hint list (read-only mirror of Jira's options).
+    registered = list(ap_block.get("registered") or [])
+    if args.name not in registered:
+        registered.append(args.name)
     ap_block["registered"] = registered
     jira_cfg["ap"] = ap_block
     backend["jira"] = jira_cfg
     data["backend"] = backend
     kanban_io.save(p, data)
-    _emit({"ok": True, "name": args.name, "registered": registered})
+
+    _emit({
+        "ok": True,
+        "name": args.name,
+        "registered": registered,
+    })
     return 0
 
 
@@ -482,14 +749,48 @@ def cmd_assign_ap(args: argparse.Namespace) -> int:
     if backend.get("driver") != "jira":
         _fail("backend.driver must be 'jira'")
         return 1
-    registered = ((backend.get("jira") or {}).get("ap") or {}).get("registered") or []
-    if args.name not in registered:
+    field_id = ((backend.get("jira") or {}).get("ap") or {}).get("fieldId")
+    if not field_id:
+        _fail("AP field unconfigured — run /kanban:initjira step 4")
+        return 1
+
+    # Live-query Jira options as the source of truth. The local
+    # `registered` list is a stale hint and must not be relied on for
+    # access control — a sibling repo on another machine may have
+    # registered new APs since this kanban.json was last touched.
+    fallback_used = False
+    client = _client_from_env_or_none()
+    if client is None:
+        live_options = list(((backend.get("jira") or {}).get("ap") or {}).get("registered") or [])
+        fallback_used = True
+    else:
+        try:
+            live_options = _fetch_jira_ap_options(client, field_id)
+        except JiraError as e:
+            live_options = list(((backend.get("jira") or {}).get("ap") or {}).get("registered") or [])
+            fallback_used = True
+            sys.stderr.write(
+                f"warning: Jira live query failed ({e.detail or e}); "
+                f"falling back to local hint list\n"
+            )
+
+    if args.name not in live_options:
         _fail(
             f"AP {args.name!r} is not registered. Register it first via "
             f"/kanban:register-ap {args.name}",
-            registered=list(registered),
+            registered=list(live_options),
+            fallbackUsed=fallback_used,
         )
         return 1
+
+    # Refresh the local hint list with the live values for visibility in
+    # /kanban:whoami and so future invocations have a current snapshot.
+    if not fallback_used:
+        ap_block = (backend.get("jira") or {}).get("ap") or {}
+        ap_block["registered"] = sorted(set(live_options))
+        backend.setdefault("jira", {})["ap"] = ap_block
+        data["backend"] = backend
+        kanban_io.save(p, data)
 
     repo_root = p.parent
     claude_dir = repo_root / ".claude"
@@ -1054,6 +1355,47 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--include-done", action="store_true",
                    help="also import DONE / CANCELLED tasks (default: skip)")
     s.set_defaults(func=cmd_import_tasks)
+
+    s = sub.add_parser("parse-transitions-dsl")
+    s.add_argument("--dsl-text", required=True,
+                   help="DSL block as a string (file paths are deliberately "
+                        "not accepted — the parser surfaces errors verbatim "
+                        "and a file path would risk leaking secrets)")
+    s.add_argument("--current-user-account-id",
+                   help="accountId to use when DSL says 'Assignee to me'")
+    s.add_argument("--no-user-lookup", action="store_true",
+                   help="skip /user/search resolution for non-'me' assignees")
+    s.set_defaults(func=cmd_parse_transitions_dsl)
+
+    s = sub.add_parser("emit-jira-code")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument(
+        "--include-agent-account",
+        action="store_true",
+        help="include `agentAccountId` in the code (only meaningful when "
+             "the receiving machine uses the same shared agent Atlassian account)",
+    )
+    s.set_defaults(func=cmd_emit_jira_code)
+
+    s = sub.add_parser("import-jira-code")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--code-json", required=True,
+                   help="the JSON code emitted by /kanban:showjira-code on the source machine")
+    s.set_defaults(func=cmd_import_jira_code)
+
+    s = sub.add_parser("live-list-aps")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_live_list_aps)
+
+    s = sub.add_parser("set-transitions")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--transitions-json", required=True,
+                   help="JSON object mapping CANONICAL -> {status, addLabels?, removeLabels?, assignee?}")
+    s.add_argument("--available-statuses",
+                   help="JSON array of Jira status names; rejects writes whose `status` isn't in the list (unless --force)")
+    s.add_argument("--force", action="store_true",
+                   help="write even if validation reports issues")
+    s.set_defaults(func=cmd_set_transitions)
 
     return p
 

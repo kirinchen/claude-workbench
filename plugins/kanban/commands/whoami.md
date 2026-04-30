@@ -60,7 +60,19 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-agent-ap \
   --kanban-path '<kanban.json path>'
 ```
 
-Also pull `backend.jira.ap.registered` from `kanban.json` for the AP roster.
+For the live AP roster, ask Jira directly (the local
+`backend.jira.ap.registered` is a stale hint — Jira is the source of
+truth for which AP options actually exist):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py live-list-aps \
+  --kanban-path '<kanban.json path>'
+```
+
+| Response | AP roster row reads |
+|---|---|
+| `{ok: true, registered: [...]}` | `<comma list>` (live) |
+| `{ok: false, error, fallback}` | `<comma list> (offline — local hint)` |
 
 Run the MCP conflict scan:
 
@@ -83,9 +95,9 @@ Project:          <projectKey>
 Board:            #<boardId>
 AP field:         <fieldName> (<fieldId> — or "(unconfigured — run /kanban:initjira)")
 AP (this repo):   <ap or "(unset — run /kanban:assign-ap <name>)">
-AP (registered):  <comma-list or "(empty — run /kanban:register-ap <name>)">
+AP (registered):  <live comma-list or "(empty — run /kanban:register-ap <name>)" or "<list> (offline — local hint)">
 Token:            <validity row>
-Workflow:         full | partial (fallback: BLOCKED, REVIEW, CANCELLED)
+Transitions:      <count> defined  (e.g. TODO→..., DOING→..., ...)
 Jira MCP:         <conflict row>
 ```
 

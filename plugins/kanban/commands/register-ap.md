@@ -13,11 +13,12 @@ custom-field value that distinguishes which AI agent owns a card. The
 operation:
 
 1. Validates the AP name (`^[a-z][a-z0-9-]{2,40}$`).
-2. Refuses exact duplicates (case-insensitive). Already-registered names exit ok.
-3. Warns on fuzzy collisions (Levenshtein ≤ 2). The user decides whether to
+2. Live-queries Jira's existing options as the source of truth.
+3. Refuses exact duplicates (case-insensitive). Already-registered names exit ok.
+4. Warns on fuzzy collisions (Levenshtein ≤ 2). The user decides whether to
    proceed via `--force`.
-4. Adds the option to Jira's custom-field context.
-5. Caches the name in `kanban.json#backend.jira.ap.registered`.
+5. Adds the option to Jira's custom-field context.
+6. Updates the local hint cache in `kanban.json#backend.jira.ap.registered`.
 
 ## 0. Pre-flight
 
