@@ -122,6 +122,20 @@ class JiraDriver:
         if assignee_obj.get("accountId"):
             member = HumanRef(accountId=assignee_obj["accountId"])
 
+        # Surface "is blocked by" links as the canonical `depends` list, so
+        # downstream code (read-only display, /kanban:next dep checks) gets
+        # parity with local-mode `depends`. We pull the inwardIssue.key of
+        # every `Blocks` link — that's the issue that blocks us.
+        depends: list[str] = []
+        for link in f.get("issuelinks") or []:
+            ltype = (link.get("type") or {}).get("name")
+            if ltype != "Blocks":
+                continue
+            inward = link.get("inwardIssue") or {}
+            inward_key = inward.get("key")
+            if inward_key:
+                depends.append(inward_key)
+
         return Task(
             id=issue.get("key", ""),
             title=f.get("summary", ""),
@@ -131,11 +145,15 @@ class JiraDriver:
             updated=f.get("updated", ""),
             description=adf_to_text(f.get("description")) if f.get("description") else "",
             tags=labels,
-            depends=[],  # epic/issuelink resolution deferred (out of scope v0.2)
+            depends=depends,
             assignee=member,
             ap=ap_value,
             comments=[],
-            custom={"raw_status": status_name, "raw_labels": labels},
+            custom={
+                "raw_status": status_name,
+                "raw_labels": labels,
+                "raw_issuelinks": f.get("issuelinks") or [],
+            },
         )
 
     @staticmethod
@@ -203,7 +221,7 @@ class JiraDriver:
 
         jql = " AND ".join(clauses) + " ORDER BY priority DESC, created ASC"
         fields = ["summary", "status", "priority", "assignee", "labels",
-                  "created", "updated", "description"]
+                  "created", "updated", "description", "issuelinks"]
         if self.ap_field_id:
             fields.append(self.ap_field_id)
         max_results = filter.limit if filter and filter.limit else 50
@@ -214,7 +232,7 @@ class JiraDriver:
     def get_task(self, key: str) -> Task:
         client = self._client_or_raise()
         fields = ["summary", "status", "priority", "assignee", "labels",
-                  "created", "updated", "description"]
+                  "created", "updated", "description", "issuelinks"]
         if self.ap_field_id:
             fields.append(self.ap_field_id)
         issue = client.get_issue(key, fields=fields)
@@ -259,8 +277,8 @@ class JiraDriver:
         if not target_status:
             raise RuntimeError(f"transition spec for {to_column!r} missing `status`")
 
-        # One pre-flight read serves both anti-self-approve and the
-        # already-in-target-status fast path.
+        # One pre-flight read serves anti-self-approve, the already-in-
+        # target-status fast path, and the blocked_by idempotency check.
         existing_for_status = self.get_task(key)
         if to_column == "DONE":
             current_ap = self._current_repo_ap()
@@ -271,6 +289,14 @@ class JiraDriver:
                     "agent or a human reviewer to approve"
                 )
         client = self._client_or_raise()
+
+        # Step 0 — blocked_by issue links (only meaningful when transitioning
+        # TO a BLOCKED column). Done BEFORE the status transition so a bad
+        # blocker key (404) leaves the card in its current state instead of
+        # half-blocked. See SPEC §10 / issue #8.
+        blocked_by = kwargs.get("blocked_by") or []
+        if to_column == "BLOCKED" and blocked_by:
+            self._link_blockers(client, key, blocked_by, existing_for_status)
 
         # Step A — status transition (find the right transition id).
         # Skip if the issue is already in the target status (avoids the API
@@ -355,6 +381,76 @@ class JiraDriver:
             text=body,
             kind=kind,
         )
+
+    _BLOCKER_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]+-\d+$")
+
+    def _existing_blocker_keys(self, task: Task) -> set[str]:
+        """Return the set of inwardIssue keys whose link type is `Blocks`."""
+        out: set[str] = set()
+        for link in task.custom.get("raw_issuelinks") or []:
+            ltype = (link.get("type") or {}).get("name")
+            if ltype != "Blocks":
+                continue
+            inward = link.get("inwardIssue") or {}
+            inward_key = inward.get("key")
+            if isinstance(inward_key, str):
+                out.add(inward_key)
+        return out
+
+    def _link_blockers(
+        self,
+        client: JiraClient,
+        key: str,
+        blocked_by: list[str],
+        existing: Task,
+    ) -> None:
+        """Validate + create `Blocks` links from each blocker to `key`.
+
+        Done before the status transition. Raises RuntimeError on any
+        validation failure so the slash command surfaces the error and
+        the card stays in its previous state.
+
+        Idempotent: skips blockers that already have an inward `Blocks`
+        link to this card.
+        """
+        # Validate format and self-link rule first — purely local checks
+        # so we fail fast without any network round-trips.
+        for raw in blocked_by:
+            if not isinstance(raw, str) or not self._BLOCKER_KEY_RE.match(raw):
+                raise RuntimeError(
+                    f"invalid blocker key {raw!r} — expected format like "
+                    "'AGENT-42' (uppercase project + dash + digits)"
+                )
+            if raw == key:
+                raise RuntimeError(
+                    f"refusing self-block: {key} cannot be blocked by itself"
+                )
+
+        # Dedup the input list (case the caller passed duplicates) and
+        # filter out blockers already linked.
+        seen_existing = self._existing_blocker_keys(existing)
+        seen_local: set[str] = set()
+        to_link: list[str] = []
+        for raw in blocked_by:
+            if raw in seen_existing or raw in seen_local:
+                continue
+            seen_local.add(raw)
+            to_link.append(raw)
+
+        for blocker in to_link:
+            try:
+                client.create_issue_link(
+                    type_name="Blocks",
+                    inward_key=blocker,
+                    outward_key=key,
+                )
+            except JiraError as e:
+                # 404 most likely — blocker key doesn't exist or no view
+                # permission. Surface verbatim so the user can fix.
+                raise RuntimeError(
+                    f"blocker {blocker} could not be linked: "
+                    f"{e.detail or e} (status {e.status_code})"
+                ) from e
 
     def _post_system_comment(self, key: str, body: str) -> None:
         try:
