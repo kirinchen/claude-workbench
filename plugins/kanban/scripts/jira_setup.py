@@ -1092,6 +1092,16 @@ def cmd_transition(args: argparse.Namespace) -> int:
     kwargs: dict[str, Any] = {}
     if args.reason:
         kwargs["reason"] = args.reason
+    if args.blocked_by:
+        # Comma-separated list of Jira keys; trim whitespace, drop empties.
+        blockers = [k.strip() for k in args.blocked_by.split(",") if k.strip()]
+        if args.to != "BLOCKED" and blockers:
+            _fail(
+                "--blocked-by is only valid when --to=BLOCKED; transitioning "
+                f"to {args.to!r} won't create links",
+            )
+            return 1
+        kwargs["blocked_by"] = blockers
     try:
         t = driver.transition(args.key, args.to, **kwargs)
     except SelfApproveRefused as e:
@@ -1100,7 +1110,13 @@ def cmd_transition(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         _fail(f"{type(e).__name__}: {e}")
         return 1
-    _emit({"ok": True, "key": t.id, "column": t.column, "raw_status": t.custom.get("raw_status")})
+    _emit({
+        "ok": True,
+        "key": t.id,
+        "column": t.column,
+        "raw_status": t.custom.get("raw_status"),
+        "depends": list(t.depends or []),
+    })
     return 0
 
 
@@ -1550,6 +1566,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--key", required=True)
     s.add_argument("--to", required=True, choices=("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"))
     s.add_argument("--reason")
+    s.add_argument(
+        "--blocked-by",
+        help="(BLOCKED only) comma-separated list of Jira keys (e.g. "
+             "DMI-1099,INFRA-7) to attach as `is blocked by` issue links "
+             "before applying the transition. Idempotent — already-linked "
+             "blockers are skipped.",
+    )
     s.set_defaults(func=cmd_transition)
 
     s = sub.add_parser("precheck-card")

@@ -302,7 +302,7 @@ class JiraClient:
             body={"fields": fields},
         )
 
-    # --- screens (Phase 9: AP-field association) ---------------------
+    # --- screens (0.3.2: AP-field association, #6) -------------------
 
     def list_screens(self, *, query: str | None = None) -> dict[str, Any]:
         """GET /rest/api/3/screens, optionally filtered by `queryString`.
@@ -345,6 +345,31 @@ class JiraClient:
             "POST",
             f"/rest/api/3/screens/{screen_id}/tabs/{tab_id}/fields",
             body={"fieldId": field_id},
+        )
+
+    # --- issue links (0.3.3: /kanban:block --blocked-by, #8) ---------
+
+    def create_issue_link(
+        self, type_name: str, inward_key: str, outward_key: str
+    ) -> None:
+        """POST /rest/api/3/issueLink — link two issues.
+
+        Jira link types are bidirectional. `type_name="Blocks"` reads as
+        `inwardIssue` blocks `outwardIssue`; equivalently `outwardIssue`
+        is blocked by `inwardIssue`. So when /kanban:block creates a
+        link, the *blocker* is `inwardIssue` and the card we're
+        transitioning is `outwardIssue`.
+
+        Returns 201 No Content on success. 404 if either key is missing.
+        """
+        self._request(
+            "POST",
+            "/rest/api/3/issueLink",
+            body={
+                "type": {"name": type_name},
+                "inwardIssue": {"key": inward_key},
+                "outwardIssue": {"key": outward_key},
+            },
         )
 
 

@@ -15,6 +15,38 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-04-30 (issue links)
+
+### Added
+- **kanban 0.3.3** — `/kanban:block` accepts `--blocked-by KEY[,KEY,...]`.
+  Closes #8. Creates Jira native "is blocked by" issue links before
+  applying the BLOCKED transition, so the dependency surfaces in Jira's
+  "Linked work items" panel and JQL `issueLinkType` queries — instead of
+  being buried in a free-text `blocked_reason` comment.
+
+  Highlights:
+  - `lib/jira_client.py` gains `create_issue_link(type_name, inward_key,
+    outward_key)` mapping to `POST /rest/api/3/issueLink`.
+  - `drivers/jira.py:_link_blockers` validates blocker key format
+    (`^[A-Z][A-Z0-9_]+-\d+$`), refuses self-block, dedupes, skips
+    already-linked blockers (idempotent), and runs **before** the status
+    transition so a 404 leaves the card in its previous state instead of
+    half-blocked.
+  - `_issue_to_task` now reads `issuelinks` and surfaces inward `Blocks`
+    keys as `Task.depends`, giving Jira mode parity with local mode's
+    `depends[]` field.
+  - `cmd_transition` accepts `--blocked-by` (comma-separated). Rejects
+    use with `--to != BLOCKED`. Response gains `depends[]` reflecting
+    the post-operation link state.
+  - `commands/block.md` documents the Jira flow: pass `--blocked-by`
+    explicitly, or confirm extraction from prose via `AskUserQuestion`
+    (no silent inference). Multi-blocker, cross-project links supported.
+  - `test_phase10.py`: 12 new mocked cases covering endpoint payload,
+    `depends` extraction from `issuelinks`, format/self-block rejection,
+    idempotency, atomicity (link-failure aborts before transition),
+    full transition integration, CLI roundtrip. All 10 phase suites
+    (111 tests) green.
+
 ## 2026-04-30 (later still)
 
 ### Fixed
