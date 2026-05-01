@@ -15,6 +15,50 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-01 (clickable doc links)
+
+### Added
+- **kanban 0.3.7** — `resolve-doc-link` helper turns a repo-relative
+  doc path into a clickable GitHub URL for Jira comments. First piece
+  of the `kanban × mentor` integration line from SPEC §13.
+
+  Motivation: when the agent posts `please see epic/AGENT-001-foo.md`
+  to Jira, the human reading the comment can't click — they have to
+  navigate GitHub manually. With this helper, the agent posts
+  `https://github.com/<owner>/<repo>/blob/main/epic/AGENT-001-foo.md`
+  instead. The skill (`kanban-jira-agent`) carries the rule.
+
+  Highlights:
+  - New CLI subcommand:
+    ```
+    resolve-doc-link --kanban-path P --doc-path 'epic/X.md' [--branch B]
+    ```
+    Returns `{ok, url, exists, branch, host, owner, repo, docPath}`.
+  - Reads `git remote get-url origin`, parses both HTTPS and SSH GitHub
+    forms (`https://github.com/owner/repo` and
+    `git@github.com:owner/repo.git`).
+  - Branch resolution: explicit `--branch` > current git branch > `main`.
+  - Doc-path strips leading `/` and `./`; refuses `..` traversal even
+    though GitHub itself would 404.
+  - `exists` flag reflects whether the file is present locally — the
+    URL is still returned for uncommitted files (skill explains how
+    to handle).
+  - **Non-GitHub origins** (GitLab, Bitbucket, internal): returns
+    `ok=false` with `host: "other"` so the LLM can fall back to a
+    relative path with a one-line explanation. Other hosts can land
+    later when the URL formats stabilise.
+  - `kanban-jira-agent` SKILL.md gains a "Linking to repo docs"
+    section with the four response branches (exists / not-exists /
+    other-host / no-origin).
+  - **No automatic comment rewriting** — the LLM decides when to use
+    a URL vs a relative path. Plugin provides primitive, LLM decides;
+    same philosophy as the mention-reply work in 0.3.5.
+  - `test_phase14.py`: 12 cases covering origin parsers (HTTPS / SSH /
+    non-GitHub / malformed), happy-path resolution, leading-slash
+    handling, traversal rejection, exists flag, branch override, no
+    origin, non-GitHub host, empty doc-path. All 14 phase suites
+    (148 tests) green.
+
 ## 2026-05-01 (sync stale + Q checks)
 
 ### Added
