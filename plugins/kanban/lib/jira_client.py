@@ -137,6 +137,15 @@ class JiraClient:
         headers = {
             "Authorization": self._auth_header(),
             "Accept": "application/json",
+            # Force English responses regardless of the agent account's UI
+            # locale. The plugin's DSL stores status / priority / issue-type
+            # names in English; without this, a zh-TW (or any non-English)
+            # account causes Jira to return localized names like `進行中` for
+            # `In Progress`, and transition lookup / priority validation
+            # silently fail. Closes #17. Workflows whose underlying source
+            # names are non-English are unaffected — there's no English
+            # source to translate from in that case.
+            "Accept-Language": "en-US",
         }
         body_bytes: Optional[bytes] = None
         if body is not None:
