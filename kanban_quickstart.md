@@ -196,6 +196,53 @@ full v0.2 design.
 
 ---
 
+## 8b. Multi-machine / multi-repo setup (kanban v0.3+)
+
+The biggest source of friction is "I set this up on machine A — does
+machine B / repo B / teammate C have to redo all five steps?"
+
+Setup splits into three layers, each with a different lifecycle:
+
+| Layer | What | When you redo it |
+|---|---|---|
+| **Per-board** (shareable) | `transitions`, AP custom-field id, board metadata, `conventions` notes | Once. Then `/kanban:showjira-code` and any teammate / repo can `/kanban:initjira-by-code` paste the JSON to inherit it. |
+| **Per-machine** | Jira credentials in `~/.claude-workbench/.env` (base URL, agent email, API token) | Once per machine. After that all repos on that machine share the credentials. |
+| **Per-repo** | This repo's AP in `.claude/kanban-agent.json` | Once per repo. Each repo picks its own AP from the live Jira options list. |
+
+### Cheatsheet
+
+| Scenario | What you run on the new side |
+|---|---|
+| **All-new machine + all-new repo** | `/kanban:init` → `/kanban:initjira-by-code` (does credentials + paste code + assign AP in one flow) |
+| **Same machine, new repo** | `/kanban:init` → `/kanban:initjira-by-code` (credentials auto-skipped — already on this machine; only paste code + assign AP run interactively) |
+| **Existing repo already in Jira mode** | Nothing — already set up. `/kanban:whoami` to verify. |
+
+### How it works
+
+On the source machine:
+
+```
+> /kanban:showjira-code
+```
+
+prints a JSON code (`kanban-jira-code/2`) containing the per-board config — `transitions`, `ap.fieldId`, `boardId`, `projectKey`, `conventions`. Tokens are NOT in the code; they stay per-machine in `~/.claude-workbench/.env`.
+
+On any other machine / repo:
+
+```
+> /kanban:init                  # scaffold kanban.json (local mode)
+> /kanban:initjira-by-code      # paste the JSON; runs credentials (if needed) + assign AP
+```
+
+The receiver asks for Jira credentials only the first time on a given machine. If `conventions.notes` is non-empty, the receiver also has to type `I have read these` to acknowledge before init completes (the friction is intentional — see issue #10).
+
+Versions to be aware of:
+- `kanban-jira-code/1` (v0.3.0+) — transitions + AP field
+- `kanban-jira-code/2` (v0.3.4+) — adds `conventions` (notes + `blockedRequiresLink`)
+- v0.3.4+ receivers accept both schemas; v0.3.4 senders default to /2
+
+---
+
 ## 9. Uninstall
 
 Inside Claude:
