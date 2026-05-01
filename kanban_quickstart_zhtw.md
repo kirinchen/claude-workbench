@@ -187,6 +187,52 @@ init 完之後：
 
 ---
 
+## 8b. 多機器 / 多 repo setup（kanban v0.3+）
+
+最常見的卡關：「我在 A 機器設好了——B 機器 / B repo / 同事 C 是不是要把五步 init 全跑一次？」
+
+Setup 拆成**三層**，每層有自己的生命週期：
+
+| 層級 | 內容 | 何時要重跑 |
+|---|---|---|
+| **Per-board（可分享）** | `transitions`、AP custom field id、board metadata、`conventions` 規則 | **一次**。然後 `/kanban:showjira-code`，任何同事 / repo 用 `/kanban:initjira-by-code` 貼 JSON 就繼承 |
+| **Per-machine（每台必做）** | Jira 憑證（`~/.claude-workbench/.env`：base URL、agent email、API token） | 每台機器一次。之後該台所有 repo 共用 |
+| **Per-repo（每個 repo 必做）** | 這個 repo 用哪個 AP（`.claude/kanban-agent.json`） | 每個 repo 一次。各自從 Jira live options 挑 |
+
+### Cheatsheet
+
+| 情境 | 新 receiver 端要跑的 |
+|---|---|
+| **全新機器 + 全新 repo** | `/kanban:init` → `/kanban:initjira-by-code`（一個指令做完憑證 + 貼 code + 選 AP） |
+| **同機器 + 新 repo** | `/kanban:init` → `/kanban:initjira-by-code`（憑證自動跳過——本機已有；只剩貼 code + 選 AP 互動） |
+| **既有 repo 已是 jira mode** | 啥都不用——已 setup。`/kanban:whoami` 可驗證 |
+
+### 運作原理
+
+來源端：
+
+```
+> /kanban:showjira-code
+```
+
+印出 `kanban-jira-code/2` 格式 JSON，含 per-board 設定——`transitions`、`ap.fieldId`、`boardId`、`projectKey`、`conventions`。**Token 不在 code 內**——憑證永遠 per-machine 留在 `~/.claude-workbench/.env`。
+
+接收端（任何另一台機器 / 另一個 repo）：
+
+```
+> /kanban:init                  # scaffold kanban.json (local mode)
+> /kanban:initjira-by-code      # 貼 JSON；視情況跑憑證 + 選 AP
+```
+
+第一次在某台機器跑時會問憑證；同台第二個 repo 時自動跳過。如果 code 帶 `conventions.notes` 非空，接收端必須輸入 `I have read these` 才能完成 init（這個 friction 是刻意的——詳見 issue #10）。
+
+版本相容性：
+- `kanban-jira-code/1`（v0.3.0+）—— transitions + AP field
+- `kanban-jira-code/2`（v0.3.4+）—— 加上 `conventions`（notes + `blockedRequiresLink`）
+- v0.3.4+ 接收端兩種都收；v0.3.4 來源端預設輸出 /2
+
+---
+
 ## 9. 解除安裝
 
 在 Claude 裡：
