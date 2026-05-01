@@ -62,8 +62,13 @@ def test_normalize_fills_defaults_drops_unknown():
 
 
 def test_validate_flags_guardrails():
-    warns = cv.validate({"notes": ["a" * 201, "ok"]})
-    assert any("201 chars" in w for w in warns)
+    # Guardrail bumped 200 → 300 in 0.3.10 (issue #20). 350 chars is
+    # over the new threshold; verify the warning text reflects it.
+    warns = cv.validate({"notes": ["a" * 350, "ok"]})
+    assert any("350 chars" in w for w in warns)
+    # 250 chars is under the new threshold — should NOT warn.
+    warns = cv.validate({"notes": ["a" * 250]})
+    assert all("250 chars" not in w for w in warns)
     warns = cv.validate({"notes": ["x"] * 15})
     assert any("15 entries" in w for w in warns)
     warns = cv.validate({"notes": ["", "   ", "real"]})
@@ -277,7 +282,8 @@ def test_set_conventions_writes_and_warns():
     with tempfile.TemporaryDirectory() as raw:
         td = pathlib.Path(raw)
         kp = _seed_jira(td)
-        notes = ["a" * 250, "ok note"]
+        # 0.3.10 bumped guardrail to 300; use 350 to trigger the warning.
+        notes = ["a" * 350, "ok note"]
         out = _run(
             "set-conventions",
             "--kanban-path", str(kp),
@@ -287,7 +293,7 @@ def test_set_conventions_writes_and_warns():
         assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
         assert j["ok"] is True
-        assert any("250 chars" in w for w in j["warnings"])
+        assert any("350 chars" in w for w in j["warnings"])
         cfg = json.loads(kp.read_text())["backend"]["jira"]
         assert cfg["conventions"]["notes"] == notes
 

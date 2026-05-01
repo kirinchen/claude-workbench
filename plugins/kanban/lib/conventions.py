@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_NOTES_MAX_LEN = 200
+DEFAULT_NOTES_MAX_LEN = 300
 DEFAULT_NOTES_MAX_COUNT = 10
 
 

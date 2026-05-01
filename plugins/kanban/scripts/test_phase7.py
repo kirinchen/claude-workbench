@@ -365,13 +365,18 @@ def test_compound_transition_status_change():
 
 
 def test_self_approve_refused_v03():
+    """Classic anti-self-approve refusal: AP=mine AND assignee is the
+    agent account itself. (#19 in 0.3.10 loosened the rule to allow
+    when assignee differs from agent — see test_phase17 for that
+    branch.)"""
     with tempfile.TemporaryDirectory() as td:
         proj = pathlib.Path(td)
         (proj / ".claude").mkdir()
         (proj / ".claude" / "kanban-agent.json").write_text(json.dumps({"ap": "agent-fin"}))
         drv = _patched_driver(_seed_jira_data(), proj)
         pre = _issue("AGENT-7", "In Progress", labels=["kanban:review"],
-                     assignee="kirin-acct", ap_value="agent-fin")
+                     assignee="shared-agent",  # the agent's own account
+                     ap_value="agent-fin")
         queue = [_Response(200, json.dumps(pre).encode(), {})]
         calls = []
         _attach_mock(drv, queue, calls)
