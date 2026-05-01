@@ -15,6 +15,47 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-01 (sync stale + Q checks)
+
+### Added
+- **kanban 0.3.6** — `/kanban:sync` (and the SessionStart hook that
+  fires it automatically) now surfaces two checks beyond the existing
+  open-cards + mentions blocks:
+
+  - **`[stale DOING — N card(s) idle ≥ 2 day(s)]`** — DOING cards
+    belonging to this AP whose `updated` timestamp is older than 2
+    days. The agent might have forgotten the card sat in DOING; the
+    block prompts them to resume, ask a `/kanban:question`, or close
+    via `/kanban:done`.
+  - **`[unanswered questions — N BLOCKED card(s) waiting on human, ≥24h]`**
+    — BLOCKED cards where this AP posted a Q-prefix comment via
+    `/kanban:question` and no other party has commented since,
+    AND ≥24h have passed (so the human has had time to reply). Helps
+    the agent spot stuck-on-the-human items rather than waiting forever.
+
+  Together with the existing open-cards summary and mentions block,
+  `/kanban:sync` is now the equivalent of "open Jira and look around" —
+  the answer to issue/question #13 ("how does the agent know what to
+  check?"). No new slash command (intentionally — Option A from the
+  thread); both checks are augmentations of the existing primitive.
+
+  Highlights:
+  - `_detect_stale_doing(driver, repo_ap)` reads `Task.updated` from
+    `list_tasks(column=DOING, ap=...)`. No extra network calls beyond
+    the existing list_tasks.
+  - `_detect_unanswered_questions(driver, repo_ap)` does
+    `list_tasks(BLOCKED) + list_comments` per BLOCKED card. The
+    existing prefix-grammar parser (`_parse_comment`) already
+    distinguishes own Q-comments (author == this AP) from anything
+    else; the detector uses that.
+  - Best-effort: detector failures don't block the rest of the sync
+    output.
+  - Thresholds hardcoded for now (2 days / 24 hours) — moved to
+    conventions only when a real use case demands per-team tuning.
+  - `test_phase13.py`: 11 mocked cases covering both detectors,
+    timestamp edge cases, and the cmd_sync_summary integration. All
+    13 phase suites (136 tests) green.
+
 ## 2026-05-01
 
 ### Added

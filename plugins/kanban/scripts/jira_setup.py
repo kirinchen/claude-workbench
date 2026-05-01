@@ -1669,6 +1669,142 @@ def cmd_precheck_card(args: argparse.Namespace) -> int:
     return 0
 
 
+_STALE_DOING_THRESHOLD_DAYS = 2
+_UNANSWERED_Q_THRESHOLD_HOURS = 24
+
+
+def _parse_iso(ts: str | None):
+    """Tolerant ISO-8601 parse. Returns datetime or None."""
+    if not ts or not isinstance(ts, str):
+        return None
+    from datetime import datetime
+    try:
+        # fromisoformat handles "2026-04-30T10:00:00+08:00" + offset variants
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        # Jira sometimes emits trailing "Z" or millis with weird offsets
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+
+def _detect_stale_doing(
+    driver, repo_ap: str | None, *, threshold_days: int = _STALE_DOING_THRESHOLD_DAYS
+) -> list[dict[str, Any]]:
+    """Return DOING cards belonging to repo_ap whose `updated` is older
+    than `threshold_days`. Each entry: {key, title, updated, days_idle}.
+
+    The agent might have forgotten the card sat in DOING; surfacing it
+    on /kanban:sync nudges them to either resume, BLOCKED + question, or
+    transition to REVIEW.
+    """
+    from datetime import datetime, timedelta, timezone
+    from drivers.base import TaskFilter
+
+    try:
+        tasks = driver.list_tasks(
+            TaskFilter(column="DOING", ap=repo_ap, limit=20)
+            if repo_ap
+            else TaskFilter(column="DOING", limit=20)
+        )
+    except Exception:
+        return []
+    now = datetime.now(timezone.utc).astimezone()
+    cutoff = now - timedelta(days=threshold_days)
+    out: list[dict[str, Any]] = []
+    for t in tasks:
+        ts = _parse_iso(t.updated)
+        if ts is None:
+            continue
+        if ts >= cutoff:
+            continue
+        idle_days = (now - ts).days
+        out.append(
+            {
+                "key": t.id,
+                "title": t.title,
+                "updated": t.updated,
+                "days_idle": idle_days,
+                "priority": t.priority,
+            }
+        )
+    return out
+
+
+def _detect_unanswered_questions(
+    driver,
+    repo_ap: str | None,
+    *,
+    threshold_hours: int = _UNANSWERED_Q_THRESHOLD_HOURS,
+) -> list[dict[str, Any]]:
+    """For BLOCKED cards belonging to repo_ap, find ones where this AP
+    posted a Q-prefix comment and no other party has commented since,
+    older than `threshold_hours` (so the human has had time to reply).
+
+    Each entry: {key, title, asked_at, hours_idle, question}.
+
+    Implementation reads comments via driver.list_comments which already
+    parses the SPEC §9 prefix grammar. A Q-comment authored by repo_ap
+    is "ours"; any later comment from a different author counts as a
+    reply (whether human or another agent).
+    """
+    from datetime import datetime, timezone
+    from drivers.base import TaskFilter
+
+    if not repo_ap:
+        return []
+    try:
+        tasks = driver.list_tasks(
+            TaskFilter(column="BLOCKED", ap=repo_ap, limit=20)
+        )
+    except Exception:
+        return []
+
+    now = datetime.now(timezone.utc).astimezone()
+    out: list[dict[str, Any]] = []
+    for t in tasks:
+        try:
+            comments = driver.list_comments(t.id)
+        except Exception:
+            continue
+        latest_q_ts: str | None = None
+        latest_q_text: str | None = None
+        latest_other_ts: str | None = None
+        for c in comments:
+            ts = c.ts or ""
+            if not ts:
+                continue
+            kind = getattr(c.kind, "value", None)
+            if c.author == repo_ap and kind == "Q":
+                if latest_q_ts is None or ts > latest_q_ts:
+                    latest_q_ts = ts
+                    latest_q_text = c.text
+            elif c.author != repo_ap:
+                if latest_other_ts is None or ts > latest_other_ts:
+                    latest_other_ts = ts
+        if latest_q_ts is None:
+            continue  # no own questions
+        if latest_other_ts is not None and latest_other_ts > latest_q_ts:
+            continue  # someone replied
+        q_dt = _parse_iso(latest_q_ts)
+        if q_dt is None:
+            continue
+        idle_hours = (now - q_dt).total_seconds() / 3600.0
+        if idle_hours < threshold_hours:
+            continue  # too recent — give the human time
+        out.append(
+            {
+                "key": t.id,
+                "title": t.title,
+                "asked_at": latest_q_ts,
+                "hours_idle": int(idle_hours),
+                "question": (latest_q_text or "")[:200],
+            }
+        )
+    return out
+
+
 def cmd_sync_summary(args: argparse.Namespace) -> int:
     """Render an open-cards summary for the current repo's AP."""
     p = Path(args.kanban_path)
@@ -1792,6 +1928,44 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
             + "\n  (run /kanban:mentions to mark these read)"
         )
 
+    # Stale DOING + unanswered questions — the "things a human checks
+    # when they open Jira" beyond just open-card counts. Best-effort:
+    # detector failures don't block the rest of the sync.
+    stale_rows: list[dict[str, Any]] = []
+    unanswered_rows: list[dict[str, Any]] = []
+    try:
+        stale_rows = _detect_stale_doing(driver, repo_ap)
+    except Exception:
+        stale_rows = []
+    try:
+        unanswered_rows = _detect_unanswered_questions(driver, repo_ap)
+    except Exception:
+        unanswered_rows = []
+
+    if stale_rows:
+        summary += (
+            f"\n\n[stale DOING — {len(stale_rows)} card(s) idle ≥ "
+            f"{_STALE_DOING_THRESHOLD_DAYS} day(s)]\n"
+            + "\n".join(
+                f"  {r['key']:<14}{r['days_idle']}d idle    "
+                f"{r['title']}"
+                for r in stale_rows
+            )
+            + "\n  (resume, /kanban:question, or /kanban:done to clear)"
+        )
+
+    if unanswered_rows:
+        summary += (
+            f"\n\n[unanswered questions — {len(unanswered_rows)} BLOCKED "
+            f"card(s) waiting on human, ≥{_UNANSWERED_Q_THRESHOLD_HOURS}h]\n"
+            + "\n".join(
+                f"  {r['key']:<14}{r['hours_idle']}h waiting    "
+                f"{r['question'][:60]}"
+                for r in unanswered_rows
+            )
+            + "\n  (consider nudging the owner or escalating)"
+        )
+
     _emit({
         "summary": summary,
         "counts": counts,
@@ -1799,6 +1973,8 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
         "projectKey": project_key,
         "mentions": mentions_count,
         "latestSeen": new_latest_seen,
+        "staleDoing": stale_rows,
+        "unansweredQuestions": unanswered_rows,
     })
     return 0
 
