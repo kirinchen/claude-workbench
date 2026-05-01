@@ -15,6 +15,57 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (import-tasks completeness)
+
+### Fixed
+- **kanban 0.3.8** — `import-tasks` now produces fully-functional Jira
+  cards instead of orphaned ghosts. Closes #16 + #18. Two related bugs
+  surfaced together while migrating 22 local tasks to a real Jira board:
+
+  - **(#16)** Imported issues had `customfield_<APFieldId> = null`,
+    `assignee = null`, and stayed in the project's default initial
+    status (e.g. `Backlog`) — so `/kanban:status` and `/kanban:next`
+    couldn't see them. The migration looked successful but the cards
+    were invisible to the plugin.
+  - **(#18)** Local `P0..P3` priorities were passed verbatim, but
+    Jira's default priority scheme uses `Highest/High/Medium/Low/Lowest`.
+    Every issue failed individually with HTTP 400 before the user saw
+    any signal that the whole batch would fail.
+
+  Fix:
+
+  - **Pre-flight priority validation** via `client.get_priorities()`
+    (`GET /rest/api/3/priority`). Auto-map `P0..P4 → Highest..Lowest`
+    when both ends are valid in the project's scheme. Fail-fast with
+    one actionable error listing unmappable values + valid scheme,
+    BEFORE any issue gets created.
+  - **Post-create AP + assignee** via `driver.assign(AgentRef(ap=repo_ap))`
+    — sets the AP custom field AND the agent assignee account in one
+    API call (existing helper, already does both).
+  - **Post-create transition to TODO** via
+    `driver.transition(key, "TODO")` — moves the new card out of the
+    project default status into the canonical TODO mapped by DSL.
+  - **BLOCKED-origin audit comment** — when a local task was BLOCKED,
+    the imported card lands in TODO (unified target) but a system
+    comment preserves the original `blocked_reason` so context isn't
+    lost.
+  - **Per-task best-effort** — assign / transition failures don't
+    abort the whole batch. Each result entry surfaces `apSet` /
+    `apError` / `transitioned` / `transitionError` flags so the user
+    knows exactly which post-create steps succeeded.
+  - **Dry-run** still skips all writes; pre-flight still runs and
+    surfaces resolved priorities so the user can preview the mapping.
+  - **Pass-through** when credentials are missing — the priority
+    pre-flight is skipped silently and the existing create-time-error
+    path is preserved (so cli use without `~/.claude-workbench/.env`
+    behaves as before).
+  - `test_phase15.py`: 13 new mocked cases covering `_resolve_priority`
+    in all 5 modes, pre-flight rejection (no creates), auto-map
+    P1→High end-to-end, post-create assign + transition, BLOCKED
+    audit comment, per-task best-effort on failures, dry-run, skip
+    logic, no-credentials pass-through. All 15 phase suites
+    (161 tests) green.
+
 ## 2026-05-01 (clickable doc links)
 
 ### Added

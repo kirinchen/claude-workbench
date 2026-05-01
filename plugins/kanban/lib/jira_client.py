@@ -292,6 +292,16 @@ class JiraClient:
             body={"options": [{"value": value}]},
         )
 
+    def get_priorities(self) -> list[dict[str, Any]]:
+        """GET /rest/api/3/priority — list of `{id, name, description}` rows.
+
+        Used by import-tasks pre-flight: validate local priority strings
+        against the actual project / scheme before creating any issues.
+        Different Atlassian sites may have customised priority schemes,
+        so we don't bake a fixed list into the plugin.
+        """
+        return self._request("GET", "/rest/api/3/priority")
+
     def update_issue(self, key: str, fields: dict[str, Any]) -> None:
         """PUT /issue/{key} with `fields` payload. Used by AgentRef assign
         to write the AP custom field directly.
