@@ -2108,12 +2108,65 @@ def cmd_mcp_conflict_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+# P0..P4 → Atlassian default-scheme names. Closes #18: most local-mode
+# users use the industry-standard P0..P3 convention, while Jira's default
+# priority scheme is named Highest/High/Medium/Low/Lowest.
+_PRIORITY_AUTOMAP: dict[str, str] = {
+    "P0": "Highest",
+    "P1": "High",
+    "P2": "Medium",
+    "P3": "Low",
+    "P4": "Lowest",
+}
+
+
+def _resolve_priority(
+    p: str | None, valid_names: set[str]
+) -> str | None | bool:
+    """Resolve a local priority string against a set of valid Jira names.
+
+    Returns:
+        - the priority name to use (str)
+        - None if `p` was None (no priority set on the task)
+        - False if `p` could not be mapped to a valid Jira name
+          (caller should treat as unmappable and fail-fast)
+
+    When `valid_names` is empty (e.g., no credentials), the input
+    passes through unchanged — the caller has no way to validate, so
+    the error surfaces at create time as before.
+    """
+    if p is None:
+        return None
+    if not valid_names:
+        return p  # pre-flight unavailable; pass through
+    if p in valid_names:
+        return p
+    mapped = _PRIORITY_AUTOMAP.get(p)
+    if mapped and mapped in valid_names:
+        return mapped
+    return False
+
+
 def cmd_import_tasks(args: argparse.Namespace) -> int:
     """Migrate local kanban.json#tasks into Jira issues. Idempotent.
 
     Skip strategy:
       - tasks already in `.claude/.migration-map.json` → skip (mapped)
       - column in {DONE, CANCELLED} and not --include-done → skip
+
+    Per-task work (when not --dry-run):
+      1. driver.create_task(TaskInput) — base issue
+      2. driver.assign(AgentRef(ap=repo_ap)) — sets AP custom field
+         + agent assignee so /kanban:next can see the imported card
+      3. driver.transition(key, "TODO") — moves out of project default
+         status (typically Backlog) into the canonical TODO status
+      4. For BLOCKED-origin tasks, post audit comment preserving the
+         original `blocked_reason` (the imported card lands in TODO
+         per the unified target; the blocked context isn't lost)
+
+    Steps 2-4 are best-effort — failure is recorded per-task in
+    skippedDetail/imported entries (apSet, transitioned flags) but
+    doesn't abort the whole batch. Closes #16.
     """
     p = Path(args.kanban_path)
     if not p.exists():
@@ -2138,10 +2191,49 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
     else:
         mapping = {}
 
+    # --- Pre-flight: priority validation (closes #18) -----------------
+    # Fetch live priority list once, fail-fast if any task has an
+    # unmappable priority — better than 22 individual create-time 400s.
+    valid_priority_names: set[str] = set()
+    pre_flight_client = _client_from_env_or_none()
+    if pre_flight_client is not None:
+        try:
+            ps = pre_flight_client.get_priorities() or []
+            valid_priority_names = {
+                str(x.get("name")) for x in ps if isinstance(x, dict) and x.get("name")
+            }
+        except (JiraError, Exception):  # noqa: BLE001
+            valid_priority_names = set()
+
+    unmappable: list[dict[str, Any]] = []
+    resolved: dict[str, str | None] = {}
+    for t in legacy_tasks:
+        local_id = t.get("id")
+        if not local_id or local_id in mapping:
+            continue
+        col = t.get("column")
+        if col in {"DONE", "CANCELLED"} and not args.include_done:
+            continue
+        result = _resolve_priority(t.get("priority"), valid_priority_names)
+        if result is False:
+            unmappable.append({"id": local_id, "priority": t.get("priority")})
+        else:
+            resolved[local_id] = result
+
+    if unmappable and valid_priority_names:
+        return _fail(
+            f"unmappable priorities (auto-map covers P0..P4 → Highest/High/Medium/Low/Lowest): "
+            f"{[u['priority'] for u in unmappable[:5]]}{' …' if len(unmappable) > 5 else ''}; "
+            f"valid Jira priorities = {sorted(valid_priority_names)}",
+            unmappable=unmappable,
+            validPriorities=sorted(valid_priority_names),
+        )
+
     from drivers import get_driver
-    from drivers.base import TaskInput
+    from drivers.base import AgentRef, CommentKind, TaskInput
 
     driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
 
     imported: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -2150,30 +2242,82 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
         if not local_id:
             continue
         if local_id in mapping:
-            skipped.append({"id": local_id, "reason": "already-mapped", "key": mapping[local_id]})
+            skipped.append({"id": local_id, "reason": "already-mapped",
+                            "key": mapping[local_id]})
             continue
         col = t.get("column")
         if col in {"DONE", "CANCELLED"} and not args.include_done:
             skipped.append({"id": local_id, "reason": f"closed-{col.lower()}"})
             continue
         if args.dry_run:
-            imported.append({"id": local_id, "would_create": True})
+            imported.append({
+                "id": local_id, "would_create": True,
+                "resolvedPriority": resolved.get(local_id),
+                "originalColumn": col,
+            })
             continue
+
+        # 1. Create the base issue (resolved priority).
         try:
             new_task = driver.create_task(
                 TaskInput(
                     title=t.get("title") or local_id,
                     description=t.get("description") or "",
-                    priority=t.get("priority"),
+                    priority=resolved.get(local_id),
                     tags=list(t.get("tags") or []) + ["migrated-from-local"],
                     category=t.get("category"),
                 )
             )
         except Exception as e:  # noqa: BLE001
-            skipped.append({"id": local_id, "reason": f"error: {type(e).__name__}: {e}"})
+            skipped.append({"id": local_id,
+                            "reason": f"create failed: {type(e).__name__}: {e}"})
             continue
+
+        # 2. Set AP custom field + agent assignee (best-effort).
+        ap_set = False
+        ap_error: str | None = None
+        if repo_ap:
+            try:
+                driver.assign(new_task.id, AgentRef(ap=repo_ap))
+                ap_set = True
+            except Exception as e:  # noqa: BLE001
+                ap_error = f"{type(e).__name__}: {e}"
+
+        # 3. Transition out of project-default status into canonical TODO
+        # (best-effort).
+        transitioned = False
+        transition_error: str | None = None
+        try:
+            driver.transition(new_task.id, "TODO")
+            transitioned = True
+        except Exception as e:  # noqa: BLE001
+            transition_error = f"{type(e).__name__}: {e}"
+
+        # 4. BLOCKED-origin: preserve the reason via audit comment so the
+        # imported card (now in TODO) doesn't lose context.
+        if col == "BLOCKED":
+            reason = (t.get("custom") or {}).get("blocked_reason") or "(no reason recorded)"
+            try:
+                driver.post_comment(
+                    new_task.id,
+                    f"Originally BLOCKED in local kanban: {reason}",
+                    kind=CommentKind.SYSTEM,
+                )
+            except Exception:
+                pass  # audit-only; non-fatal
+
         mapping[local_id] = new_task.id
-        imported.append({"id": local_id, "key": new_task.id, "title": new_task.title})
+        imported.append({
+            "id": local_id,
+            "key": new_task.id,
+            "title": new_task.title,
+            "resolvedPriority": resolved.get(local_id),
+            "originalColumn": col,
+            "apSet": ap_set,
+            "apError": ap_error,
+            "transitioned": transitioned,
+            "transitionError": transition_error,
+        })
 
     if not args.dry_run:
         tmp = map_path.with_suffix(".json.tmp")
@@ -2189,6 +2333,7 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
             "tasks": imported,
             "skippedDetail": skipped,
             "mapPath": str(map_path),
+            "preFlightPriorities": sorted(valid_priority_names),
         }
     )
     return 0
