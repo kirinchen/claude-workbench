@@ -15,6 +15,58 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-01
+
+### Added
+- **kanban 0.3.5** — @-mention detection + reply primitives. Lets a
+  human in Jira write `@AgentBot 評估一下這個可行性 就開始動工` and
+  the agent's next session sees it, classifies the workload, claims the
+  card or spawns sub-cards, and replies with a notification.
+
+  Plugin's job stops at "surface the mention" and "provide the
+  primitives". Workload classification + decision making + content
+  generation are LLM-side; the skill (`kanban-jira-agent`) carries the
+  playbook for both LLM behaviours.
+
+  Highlights:
+  - **Detection** — `lib/jira_client.adf_extract_mentions(adf, target)`
+    walks the ADF tree for `mention` nodes. New `find-mentions`
+    helper subcommand: JQL bounds candidates by `updated >=`, then
+    walks each issue's description + comments for mentions of
+    `agentAccountId`. Self-mentions (author == agent) filtered out.
+  - **Sync integration** — `cmd_sync_summary` (already wired to
+    `SessionStart` via `kanban-jira-sync.sh`) now appends a
+    `[mentions — N since X]` block when there are unread mentions.
+    Best-effort: detection failures don't block the open-cards summary.
+  - **Ack timestamp** — `.claude/kanban-agent.json#lastMentionSeenAt`
+    tracks what's been shown. New `mark-mentions-read` subcommand
+    advances it; refuses to move backwards. Preserves sibling fields
+    (`ap`, `acknowledgedConventions`).
+  - **Reply primitive** — `lib/jira_client.text_to_adf_with_mention()`
+    builds a comment ADF that begins with a Jira-native `@-mention`
+    node, so the recipient gets a real notification (not just a
+    comment buried in card history). `post_comment` driver method
+    gains optional `mention_account_id` / `mention_display` kwargs;
+    new `post-reply` CLI subcommand routes through it. New
+    `/kanban:reply <KEY> --to <accountId> --body "..."` slash command.
+  - **Sub-card primitive** — `TaskInput` gains `parent_key` /
+    `link_type` (default `Relates`); `create_task` creates the issue
+    then attaches the link via the existing `create_issue_link`. New
+    `create-sub` CLI subcommand spawns N sub-cards in a batch
+    (auto-AP-assigned to the current repo). New
+    `/kanban:create-sub <parent> --title "..." [--title "..."]` slash
+    command. Failed titles tracked separately so the user can retry.
+  - **Skill update** — `kanban-jira-agent` SKILL.md gains a "When
+    you're @-mentioned" section with workload classification heuristic
+    (small/large/ask-first), the "always reply with @-mention to
+    original commenter" rule, and the prohibition on parallel claims.
+  - **3 new slash commands**: `/kanban:mentions`, `/kanban:reply`,
+    `/kanban:create-sub`.
+  - **`test_phase12.py`**: 11 mocked cases — ADF extract/build,
+    self-mention filter, ack roundtrip + preservation, reply routing
+    with mention, sub-card batch + parent linking. All 12 phase
+    suites (125 tests) green.
+
 ## 2026-04-30 (conventions)
 
 ### Added

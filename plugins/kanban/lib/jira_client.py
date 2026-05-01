@@ -418,3 +418,78 @@ def adf_to_text(adf: dict[str, Any] | None) -> str:
 
     walk(adf)
     return "".join(out).strip()
+
+
+def adf_extract_mentions(
+    adf: dict[str, Any] | None,
+    target_account_id: str | None = None,
+) -> list[dict[str, str]]:
+    """Walk an ADF tree and return every `mention` node.
+
+    Each result is `{"accountId": ..., "text": "@..."}`. When
+    `target_account_id` is given, filter to only matching mentions.
+
+    Used by find-mentions to detect when a human has @-mentioned the
+    shared agent account. ADF `mention` node shape:
+        {"type": "mention", "attrs": {"id": "<accountId>", "text": "@Name"}}
+    """
+    out: list[dict[str, str]] = []
+    if not adf:
+        return out
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "mention":
+                attrs = node.get("attrs") or {}
+                acct = attrs.get("id")
+                txt = attrs.get("text", "")
+                if isinstance(acct, str) and (
+                    target_account_id is None or acct == target_account_id
+                ):
+                    out.append({"accountId": acct, "text": str(txt)})
+            for child in node.get("content", []) or []:
+                walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(adf)
+    return out
+
+
+def text_to_adf_with_mention(
+    prefix_text: str,
+    mention_account_id: str,
+    mention_display: str,
+    body_text: str,
+) -> dict[str, Any]:
+    """Build an ADF doc that prepends `prefix_text` (as its own paragraph)
+    then a paragraph that begins with an @-mention node followed by
+    ` body_text`.
+
+    Used by /kanban:reply so the bot's reply notifies the human via
+    Jira's native mention plumbing. Empty `prefix_text` collapses the
+    prefix paragraph (used when caller already wrapped the prefix
+    elsewhere).
+    """
+    content: list[dict[str, Any]] = []
+    if prefix_text:
+        content.append(
+            {"type": "paragraph", "content": [{"type": "text", "text": prefix_text}]}
+        )
+    body_para: dict[str, Any] = {
+        "type": "paragraph",
+        "content": [
+            {
+                "type": "mention",
+                "attrs": {
+                    "id": mention_account_id,
+                    "text": f"@{mention_display}" if mention_display else "@",
+                },
+            },
+        ],
+    }
+    if body_text:
+        body_para["content"].append({"type": "text", "text": " " + body_text})
+    content.append(body_para)
+    return {"type": "doc", "version": 1, "content": content}

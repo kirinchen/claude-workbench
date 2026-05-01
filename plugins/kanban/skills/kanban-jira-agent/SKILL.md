@@ -34,6 +34,60 @@ summary; cards listed are yours. If you suspect stale state, run
   Jira URL, the plugin injects context above your prompt. Read it before
   acting; pay close attention to ⚠ warnings about AP mismatch.
 
+## When you're @-mentioned by a human
+
+`SessionStart` and `/kanban:sync` will surface mentions in this format:
+
+```
+[mentions — N since <timestamp>]
+  DMI-1099  comment  by Kirin (3h ago):
+    @Agent Bot 評估一下這個可行性 就開始動工
+```
+
+Treat each mention as a directive. Process:
+
+1. **Read the card** — fetch `<KEY>` description + recent comments to
+   understand context. Use `/kanban:status` or the precheck context that
+   the auto-detect hook injects when you mention the key in your reply.
+
+2. **Estimate workload** in your head:
+
+   | Signal | Likely workload |
+   |---|---|
+   | Single concern, no architectural unknowns, ≤3 hr | **Small** |
+   | Touches ≥2 components, design decisions needed, >3 hr | **Large** |
+   | Scope unclear from the prose | **Ask first** |
+
+3. **Act based on estimate**:
+
+   - **Small** — claim and execute:
+     ```
+     /kanban:next --task-id <KEY>      # claim, move to DOING
+     # ... do the actual work ...
+     /kanban:done <KEY>                 # transition to REVIEW
+     /kanban:reply <KEY> --to <authorAccountId> --body "<verdict + status>"
+     ```
+   - **Large** — break down without claiming the parent:
+     ```
+     /kanban:create-sub <KEY> --title "..." --title "..." --title "..."
+     /kanban:reply <KEY> --to <authorAccountId> --body "Spawned <N> sub-cards: <list>"
+     # then claim the first sub-card and start
+     /kanban:next --task-id <first-sub-key>
+     ```
+   - **Ask first** — don't claim anything yet:
+     ```
+     /kanban:question <KEY> "<clarifying question>"
+     ```
+     This posts a Q-prefix comment AND transitions the card to BLOCKED.
+     Wait for the human's reply before proceeding.
+
+4. **Always reply with @-mention** to the original commenter. The
+   `authorAccountId` field in the surfaced mention metadata is what you
+   pass to `/kanban:reply --to`. Never invent an accountId.
+
+5. **Never** claim multiple cards in parallel within one session. Even
+   when you spawn sub-cards, work them one at a time.
+
 ## Finishing work
 
 - `/kanban:done` transitions DOING → In Review with a system comment. The
@@ -63,8 +117,10 @@ summary; cards listed are yours. If you suspect stale state, run
 
 ## Reference: SPEC sections
 
-- §3.4 — agent identity (`.claude/kanban-agent.json`)
+- §3.4 — agent identity (`.claude/kanban-agent.json`, also stores
+  `lastMentionSeenAt` and `acknowledgedConventions`)
 - §5 — auto-detect rules (precheck on UserPromptSubmit)
 - §8 — anti-self-approve invariant
 - §9 — comment prefix grammar
+- §10 — team conventions (`/kanban:show-conventions`)
 - §18 — why no other Jira MCP is allowed

@@ -77,6 +77,11 @@ class TaskInput:
     depends: list[str] = field(default_factory=list)
     assignee: MemberRef | None = None
     custom: dict[str, Any] = field(default_factory=dict)
+    # Jira-only: when set, the new issue is linked back to the parent via
+    # an issue link of `link_type` (default "Relates"). Used by
+    # /kanban:create-sub to spawn breakdown cards from a parent.
+    parent_key: str | None = None
+    link_type: str = "Relates"
 
 
 @dataclass

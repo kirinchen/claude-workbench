@@ -17,7 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from lib import card_cache, credentials, transitions as _tr
-from lib.jira_client import JiraClient, JiraError, adf_to_text, text_to_adf
+from lib.jira_client import (
+    JiraClient,
+    JiraError,
+    adf_to_text,
+    text_to_adf,
+    text_to_adf_with_mention,
+)
 from drivers.base import (
     AgentRef,
     Comment,
@@ -259,7 +265,26 @@ class JiraDriver:
         if task.tags:
             body["fields"]["labels"] = list(task.tags)
         resp = client._request("POST", "/rest/api/3/issue", body=body)
-        return self.get_task(resp["key"])
+        new_key = resp["key"]
+
+        # Sub-card linking — best-effort. If link creation fails, log via
+        # an audit comment on the new card but don't undo the create. The
+        # card exists; the user can manually link if needed.
+        if task.parent_key:
+            try:
+                client.create_issue_link(
+                    type_name=task.link_type,
+                    inward_key=task.parent_key,
+                    outward_key=new_key,
+                )
+            except JiraError as e:
+                self._post_system_comment(
+                    new_key,
+                    f"link to parent {task.parent_key} ({task.link_type}) failed: "
+                    f"{e.detail or e}",
+                )
+
+        return self.get_task(new_key)
 
     def transition(self, key: str, to_column: str, **kwargs: Any) -> Task:
         if to_column not in CANONICAL_COLUMNS:
@@ -367,11 +392,35 @@ class JiraDriver:
         return self.get_task(key)
 
     def post_comment(
-        self, key: str, body: str, kind: CommentKind = CommentKind.COMMENT
+        self,
+        key: str,
+        body: str,
+        kind: CommentKind = CommentKind.COMMENT,
+        *,
+        mention_account_id: str | None = None,
+        mention_display: str | None = None,
     ) -> Comment:
+        """Post a comment with the SPEC §9 prefix grammar.
+
+        When `mention_account_id` is supplied, the body is wrapped in an
+        ADF doc that begins with a Jira-native @-mention node — used by
+        /kanban:reply to notify the human who originally @-mentioned the
+        bot. Without it, the comment is plain text (existing behaviour).
+        """
         client = self._client_or_raise()
         ap = self._current_repo_ap()
-        adf = self._agent_comment_body(body, kind, ap)
+        if mention_account_id:
+            # Strip trailing newlines from the agent prefix so the prefix
+            # paragraph reads cleanly above the mention paragraph.
+            prefix = self._agent_prefix(ap, kind).strip()
+            adf = text_to_adf_with_mention(
+                prefix,
+                mention_account_id,
+                mention_display or "user",
+                body,
+            )
+        else:
+            adf = self._agent_comment_body(body, kind, ap)
         raw = client.add_comment(key, adf)
         # Comment write changes the card's "last update" — drop the cache.
         card_cache.invalidate(self.project_root, key)

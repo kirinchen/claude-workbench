@@ -93,7 +93,7 @@ sys.path.insert(0, str(PLUGIN_ROOT))
 from lib import ap_registry, card_cache, credentials, kanban_io  # noqa: E402
 from lib import conventions as _cv  # noqa: E402
 from lib import mcp_conflict_scan, transitions as _tr  # noqa: E402
-from lib.jira_client import JiraClient, JiraError  # noqa: E402
+from lib.jira_client import JiraClient, JiraError, adf_extract_mentions  # noqa: E402
 
 
 # --- helpers --------------------------------------------------------------
@@ -947,6 +947,280 @@ def cmd_record_conventions_ack(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_kanban_agent_field(p: Path, field: str) -> Any:
+    """Read a top-level field from .claude/kanban-agent.json next to `p`.
+    Returns None if file missing / unparseable / field absent.
+    """
+    target = p.parent / ".claude" / "kanban-agent.json"
+    if not target.exists():
+        return None
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data.get(field)
+
+
+def _write_kanban_agent_field(p: Path, field: str, value: Any) -> Path:
+    """Set a top-level field in .claude/kanban-agent.json, preserving the
+    rest of the file. Used for `lastMentionSeenAt` advancement.
+    """
+    target = p.parent / ".claude" / "kanban-agent.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    data[field] = value
+    target.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return target
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def cmd_find_mentions(args: argparse.Namespace) -> int:
+    """List Jira comments / descriptions that @-mention the agent account
+    since `--since` (defaults to .claude/kanban-agent.json#lastMentionSeenAt).
+
+    Strategy:
+      1. JQL: project=<KEY> AND updated >= "<since>" — bounded candidates
+      2. For each issue, fetch description + comments
+      3. Walk ADF for mention nodes whose accountId == agentAccountId
+      4. Filter out self-mentions (author == agentAccountId — bot
+         mentioning itself in its own comment doesn't count)
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    jcfg = backend.get("jira") or {}
+    project_key = jcfg.get("projectKey")
+    agent_acct = jcfg.get("agentAccountId")
+    if not project_key or not agent_acct:
+        return _fail(
+            "kanban.json missing projectKey or agentAccountId — "
+            "run /kanban:initjira first"
+        )
+
+    since = args.since or _read_kanban_agent_field(p, "lastMentionSeenAt")
+    if not since:
+        # First run — surface only "very recent" stuff (last 1d). Avoids
+        # surfacing every old comment ever.
+        from datetime import datetime, timedelta, timezone
+        since = (
+            datetime.now(timezone.utc).astimezone() - timedelta(days=1)
+        ).isoformat(timespec="seconds")
+
+    client = _client_from_env()
+    # JQL: bounded candidate set. The `text ~ "[~accountId]"` operator is
+    # unreliable across Jira Cloud configurations, so we filter only by
+    # `updated` and walk the ADF ourselves to verify the mention.
+    jql = f'project = "{project_key}" AND updated >= "{_jql_quote_ts(since)}"'
+    try:
+        resp = client.search_jql(jql, fields=["updated"], max_results=100)
+    except JiraError as e:
+        return _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+
+    issues = (resp or {}).get("issues", []) or []
+    mentions: list[dict[str, Any]] = []
+    latest_seen = since
+
+    for issue in issues:
+        key = issue.get("key", "")
+        # Pull description + comments in one fetch.
+        try:
+            full = client.get_issue(key, fields=["description", "comment", "updated"])
+        except JiraError:
+            continue
+        f = full.get("fields") or {}
+        upd = f.get("updated") or ""
+        if upd > latest_seen:
+            latest_seen = upd
+
+        # Description mentions
+        desc = f.get("description")
+        for m in adf_extract_mentions(desc, target_account_id=agent_acct):
+            mentions.append({
+                "key": key,
+                "location": "description",
+                "ts": f.get("created") or upd,
+                "author": "(unknown)",  # description authorship isn't a
+                                        # straightforward field in Jira
+                "text": m.get("text", ""),
+            })
+
+        # Comment mentions
+        comments = ((f.get("comment") or {}).get("comments")) or []
+        for c in comments:
+            cts = c.get("created") or ""
+            if since and cts < since:
+                # Older than the since cutoff — already seen
+                continue
+            author = (c.get("author") or {}).get("accountId")
+            # Skip self-mentions (the bot mentioning itself in a comment
+            # it authored).
+            if author == agent_acct:
+                continue
+            body_adf = c.get("body")
+            for m in adf_extract_mentions(body_adf, target_account_id=agent_acct):
+                mentions.append({
+                    "key": key,
+                    "location": "comment",
+                    "commentId": c.get("id"),
+                    "ts": cts,
+                    "author": (c.get("author") or {}).get("displayName") or "?",
+                    "authorAccountId": author,
+                    "text": m.get("text", ""),
+                })
+                break  # one record per comment, even if multi-mentioned
+
+    _emit({
+        "ok": True,
+        "since": since,
+        "latestSeen": latest_seen,
+        "mentions": mentions,
+        "agentAccountId": agent_acct,
+    })
+    return 0
+
+
+def _jql_quote_ts(ts: str) -> str:
+    """Format a timestamp for safe inclusion in a JQL string literal.
+
+    Jira's JQL `updated >= "..."` accepts both yyyy/MM/dd HH:mm and ISO-8601.
+    We pass through ISO if it looks safe; anything with a `"` is rejected
+    (callers should never produce such input — `since` is either a stored
+    timestamp or a freshly-generated ISO string).
+    """
+    if '"' in ts:
+        raise ValueError(f"invalid timestamp {ts!r}")
+    return ts
+
+
+def cmd_mark_mentions_read(args: argparse.Namespace) -> int:
+    """Advance `.claude/kanban-agent.json#lastMentionSeenAt`. Idempotent;
+    refuses to move the timestamp backwards.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    until = args.until or _now_iso()
+    current = _read_kanban_agent_field(p, "lastMentionSeenAt") or ""
+    if current and until < current:
+        _emit({
+            "ok": True,
+            "advanced": False,
+            "lastMentionSeenAt": current,
+            "reason": "given timestamp is older than current — no-op",
+        })
+        return 0
+    target = _write_kanban_agent_field(p, "lastMentionSeenAt", until)
+    _emit({"ok": True, "advanced": True, "lastMentionSeenAt": until, "path": str(target)})
+    return 0
+
+
+def cmd_post_reply(args: argparse.Namespace) -> int:
+    """Post a comment on an issue, optionally @-mentioning a recipient.
+
+    --to-account-id and --display-name come from the surfaced mention's
+    `authorAccountId` and `author` fields, so the reply notifies the
+    person who originally pinged the bot.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    from drivers import get_driver
+    from drivers.base import CommentKind
+
+    driver = get_driver(data, p.parent)
+    try:
+        c = driver.post_comment(
+            args.key,
+            args.body,
+            kind=CommentKind.COMMENT,
+            mention_account_id=args.to_account_id,
+            mention_display=args.display_name,
+        )
+    except Exception as e:  # noqa: BLE001
+        return _fail(f"{type(e).__name__}: {e}")
+    _emit({
+        "ok": True,
+        "key": args.key,
+        "ts": c.ts,
+        "mentioned": args.to_account_id,
+    })
+    return 0
+
+
+def cmd_create_sub(args: argparse.Namespace) -> int:
+    """Create N sub-cards linked back to a parent via `Relates`.
+
+    Each sub-card inherits the parent's project (via driver) and is
+    optionally tagged with the current repo's AP so /kanban:next picks
+    them up.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    from drivers import get_driver
+    from drivers.base import AgentRef, TaskInput
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+    if not args.titles:
+        return _fail("at least one --title is required")
+
+    created: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for title in args.titles:
+        try:
+            t = driver.create_task(TaskInput(
+                title=title,
+                description=args.description or "",
+                priority=args.priority,
+                parent_key=args.parent,
+                link_type=args.link_type,
+            ))
+        except Exception as e:  # noqa: BLE001
+            failed.append({"title": title, "error": f"{type(e).__name__}: {e}"})
+            continue
+        # Best-effort: assign the new sub-card to this repo's AP so the
+        # claiming agent picks it up via /kanban:next.
+        if repo_ap:
+            try:
+                driver.assign(t.id, AgentRef(ap=repo_ap))
+            except Exception:
+                pass  # surfaced via final read; non-fatal
+        created.append({"key": t.id, "title": t.title})
+
+    _emit({
+        "ok": True,
+        "parent": args.parent,
+        "linkType": args.link_type,
+        "created": created,
+        "failed": failed,
+    })
+    return 0
+
+
 def cmd_register_ap(args: argparse.Namespace) -> int:
     """Add `--name` to the AP field's options + cache in kanban.json#registered."""
     p = Path(args.kanban_path)
@@ -1430,6 +1704,73 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
         _fail(f"{type(e).__name__}: {e}")
         return 1
 
+    # Mentions block (issue #11 follow-up). Best-effort — if mention
+    # detection fails we still surface the open-cards summary.
+    mention_rows: list[str] = []
+    mentions_count = 0
+    new_latest_seen: str | None = None
+    agent_acct = (backend.get("jira") or {}).get("agentAccountId")
+    if agent_acct:
+        try:
+            since = _read_kanban_agent_field(p, "lastMentionSeenAt")
+            if not since:
+                from datetime import datetime, timedelta, timezone
+                since = (
+                    datetime.now(timezone.utc).astimezone() - timedelta(days=1)
+                ).isoformat(timespec="seconds")
+            client = _client_from_env_or_none()
+            if client is not None:
+                jql = (
+                    f'project = "{project_key}" AND '
+                    f'updated >= "{_jql_quote_ts(since)}"'
+                )
+                resp = client.search_jql(jql, fields=["updated"], max_results=50)
+                latest = since
+                for issue in (resp or {}).get("issues", []) or []:
+                    key = issue.get("key", "")
+                    try:
+                        full = client.get_issue(
+                            key, fields=["description", "comment", "updated"]
+                        )
+                    except JiraError:
+                        continue
+                    f = full.get("fields") or {}
+                    upd = f.get("updated") or ""
+                    if upd > latest:
+                        latest = upd
+                    # description mentions
+                    for m in adf_extract_mentions(
+                        f.get("description"), target_account_id=agent_acct
+                    ):
+                        mention_rows.append(
+                            f"  {key:<14}description    {m.get('text','')}"
+                        )
+                        mentions_count += 1
+                    # comment mentions (filter self-mentions)
+                    for c in ((f.get("comment") or {}).get("comments")) or []:
+                        cts = c.get("created") or ""
+                        if since and cts < since:
+                            continue
+                        author_acct = (c.get("author") or {}).get("accountId")
+                        if author_acct == agent_acct:
+                            continue
+                        body_adf = c.get("body")
+                        for m in adf_extract_mentions(
+                            body_adf, target_account_id=agent_acct
+                        ):
+                            who = (c.get("author") or {}).get("displayName") or "?"
+                            mention_rows.append(
+                                f"  {key:<14}comment        @{who}: "
+                                f"{adf_to_text(body_adf)[:80]}"
+                            )
+                            mentions_count += 1
+                            break
+                new_latest_seen = latest
+        except Exception:
+            # Don't let mention failures block the sync — log via the
+            # `mentionsError` field for diagnostics.
+            mention_rows = []
+
     if not rows:
         summary = (
             f"[kanban Jira sync — {project_key} · ap={repo_ap or '(unset)'}]\n"
@@ -1443,7 +1784,22 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
         )
         summary = header + "\n".join(rows)
 
-    _emit({"summary": summary, "counts": counts, "ap": repo_ap, "projectKey": project_key})
+    if mention_rows:
+        summary += (
+            f"\n\n[mentions — {mentions_count} since "
+            f"{_read_kanban_agent_field(p, 'lastMentionSeenAt') or 'session start'}]\n"
+            + "\n".join(mention_rows)
+            + "\n  (run /kanban:mentions to mark these read)"
+        )
+
+    _emit({
+        "summary": summary,
+        "counts": counts,
+        "ap": repo_ap,
+        "projectKey": project_key,
+        "mentions": mentions_count,
+        "latestSeen": new_latest_seen,
+    })
     return 0
 
 
@@ -1735,6 +2091,40 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("live-list-aps")
     s.add_argument("--kanban-path", required=True)
     s.set_defaults(func=cmd_live_list_aps)
+
+    s = sub.add_parser("find-mentions")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--since",
+                   help="ISO timestamp; defaults to .claude/kanban-agent.json#lastMentionSeenAt or 1d ago")
+    s.set_defaults(func=cmd_find_mentions)
+
+    s = sub.add_parser("mark-mentions-read")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--until",
+                   help="ISO timestamp; defaults to now")
+    s.set_defaults(func=cmd_mark_mentions_read)
+
+    s = sub.add_parser("post-reply")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True, help="Jira issue key (e.g. DMI-1099)")
+    s.add_argument("--body", required=True)
+    s.add_argument("--to-account-id",
+                   help="accountId to @-mention; if omitted, posts a plain comment")
+    s.add_argument("--display-name", default="user",
+                   help="display name for the @-mention text (default: 'user')")
+    s.set_defaults(func=cmd_post_reply)
+
+    s = sub.add_parser("create-sub")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--parent", required=True, help="parent issue key")
+    s.add_argument("--title", action="append", dest="titles", default=[],
+                   help="title for one sub-card; repeat for multiple")
+    s.add_argument("--description", default="")
+    s.add_argument("--priority")
+    s.add_argument("--link-type", default="Relates",
+                   help="Jira issue-link type for parent←child relation; "
+                        "common values: Relates, Blocks, Sub-task")
+    s.set_defaults(func=cmd_create_sub)
 
     s = sub.add_parser("set-conventions")
     s.add_argument("--kanban-path", required=True)
