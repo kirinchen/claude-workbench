@@ -7,7 +7,7 @@
     {
       "name": "kanban",
       "source": "./plugins/kanban",
-      "version": "0.3.8",
+      "version": "0.3.9",
       "description": "Kanban workflow for Claude Code — local kanban.json or Jira Cloud as the storage backend",
       "category": "productivity",
       "keywords": ["kanban", "tasks", "workflow"]

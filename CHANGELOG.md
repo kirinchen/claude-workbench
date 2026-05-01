@@ -15,6 +15,37 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (locale-stable Jira responses)
+
+### Fixed
+- **kanban 0.3.9** — JiraClient now sends `Accept-Language: en-US` on
+  every request. Closes #17. The plugin's DSL stores status / priority /
+  issue-type names in English; without this header, an agent account
+  with non-English UI locale (e.g. zh-TW) caused Jira to return
+  localized names like `進行中` for `In Progress`, and:
+
+  - `transition --to REVIEW` failed with `no Jira workflow transition
+    leads to status 'Resolved'` (because the response had `已解決`)
+  - `import-tasks` priority validation drifted (returned localized
+    priority names that didn't match user input)
+  - any other lookup that string-matched against status/priority/type
+    names was at risk
+
+  The fix is one line in `lib/jira_client.py:_request` — adding the
+  header. Workflows whose underlying status names are non-English
+  (e.g. an actual zh-TW project where the admin defined statuses in
+  Chinese) are unaffected, because Jira only translates English source
+  names; non-English source has no English to translate to.
+
+  This also affects #18's priority validation, which is now reliable
+  across locales as a bonus.
+
+  - `test_phase16.py`: 7 cases covering header presence on GET / POST /
+    PUT, header coexistence with existing Authorization / Accept /
+    Content-Type, header on 429 retry path, end-to-end transition
+    lookup. All 16 phase suites (168 tests) green.
+  - bumps 0.3.8 → 0.3.9
+
 ## 2026-05-02 (import-tasks completeness)
 
 ### Fixed
