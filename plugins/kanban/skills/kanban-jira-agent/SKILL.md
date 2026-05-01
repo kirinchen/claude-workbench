@@ -96,6 +96,39 @@ Treat each mention as a directive. Process:
 - DO NOT push your own card to Done. The plugin refuses (anti-self-approve);
   the Jira workflow may also reject it. This is intentional.
 
+## Linking to repo docs
+
+When a Jira comment references a file in this repo (mentor's Epic /
+Sprint / Issue / ADR docs in particular, but also any source file the
+human might want to read), **always resolve to a clickable GitHub URL
+before posting**. Don't write `see epic/AGENT-001-foo.md` — Kirin
+can't click that and has to navigate GitHub manually.
+
+Resolve via:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py resolve-doc-link \
+  --kanban-path '<kanban.json>' \
+  --doc-path 'epic/AGENT-001-foo.md'
+```
+
+Returns `{ok, url, exists, branch, host, ...}`. Use the `url` field
+verbatim in the comment body.
+
+Behaviour:
+
+| Response | What to do |
+|---|---|
+| `{ok: true, url, exists: true}` | use the URL in your comment |
+| `{ok: true, url, exists: false}` | use the URL anyway (file may be uncommitted); add a parenthetical "(uncommitted on `<branch>`)" so the reader knows |
+| `{ok: false, host: "other", ...}` | non-GitHub origin (GitLab / Bitbucket). Fall back to the relative path and add a one-line explanation: "see `epic/AGENT-001-foo.md` (clickable link not supported on this repo's host)" |
+| `{ok: false, error: "no git origin", ...}` | repo isn't cloned from a remote. Fall back to relative path; mention the constraint once. |
+
+**Branch handling**: the helper defaults to the current git branch.
+For comments destined to outlive a feature branch (e.g. on long-lived
+parent cards), pass `--branch main` explicitly so the link still works
+after the branch is deleted.
+
 ## Forbidden
 
 - Direct Jira API calls (curl, fetch, any HTTP client)

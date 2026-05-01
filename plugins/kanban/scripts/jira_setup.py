@@ -767,6 +767,118 @@ def cmd_live_list_aps(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- doc-link resolution (kanban × mentor integration, SPEC §13) -------
+
+
+_GITHUB_HTTPS_RE = re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?/?$"
+)
+_GITHUB_SSH_RE = re.compile(
+    r"^git@github\.com:(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$"
+)
+
+
+def _parse_github_origin(origin: str) -> tuple[str, str] | None:
+    """Return (owner, repo) when `origin` is a GitHub URL, else None."""
+    if not origin:
+        return None
+    for rx in (_GITHUB_HTTPS_RE, _GITHUB_SSH_RE):
+        m = rx.match(origin.strip())
+        if m:
+            return m.group("owner"), m.group("repo")
+    return None
+
+
+def _git_origin(repo_root: Path) -> str:
+    """Return `git remote get-url origin` from repo_root, or '' on error."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return ""
+    if out.returncode != 0:
+        return ""
+    return (out.stdout or "").strip()
+
+
+def _git_current_branch(repo_root: Path) -> str:
+    """Return current git branch from repo_root, or '' on error."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_root), "branch", "--show-current"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return ""
+    if out.returncode != 0:
+        return ""
+    return (out.stdout or "").strip()
+
+
+def cmd_resolve_doc_link(args: argparse.Namespace) -> int:
+    """Resolve a repo-relative doc path to a clickable GitHub URL.
+
+    Used when posting Jira comments that reference repo docs (mentor's
+    Epic / Sprint / Issue / ADR docs in particular). Without this, the
+    agent would write "see epic/AGENT-001-foo.md" — not clickable in
+    Jira; the human has to navigate to GitHub manually.
+
+    Detects host from `git remote get-url origin`. Only GitHub
+    (`github.com`) is supported in this version; other hosts return
+    `ok=false` so the LLM can fall back to a relative path with an
+    explanation.
+    """
+    repo_root = Path(args.kanban_path).parent.resolve()
+    origin = _git_origin(repo_root)
+    if not origin:
+        return _fail(
+            "no git origin — repo must be cloned from a remote for "
+            "links to resolve"
+        )
+
+    parsed = _parse_github_origin(origin)
+    if parsed is None:
+        return _fail(
+            f"only github.com origins are supported (got origin={origin!r}); "
+            "fall back to a relative path or paste the URL manually",
+            host="other",
+            origin=origin,
+        )
+    owner, repo = parsed
+
+    # Strip any leading `/` or `./`; reject `..` to avoid traversal-style
+    # URLs even though GitHub itself would 404 them.
+    doc = (args.doc_path or "").strip().lstrip("./").lstrip("/")
+    if not doc:
+        return _fail("--doc-path is required and must be non-empty")
+    if ".." in doc.split("/"):
+        return _fail("--doc-path cannot contain '..' segments")
+
+    # Branch resolution: explicit > current > "main"
+    branch = (args.branch or _git_current_branch(repo_root) or "main").strip()
+    # /blob/ renders markdown nicely in browser; /raw/ would serve plain text.
+    url = f"https://github.com/{owner}/{repo}/blob/{branch}/{doc}"
+
+    file_path = repo_root / doc
+    exists = file_path.is_file()
+
+    _emit({
+        "ok": True,
+        "url": url,
+        "exists": exists,
+        "branch": branch,
+        "host": "github",
+        "owner": owner,
+        "repo": repo,
+        "docPath": doc,
+    })
+    return 0
+
+
 def cmd_emit_jira_code(args: argparse.Namespace) -> int:
     """Print the shareable backend.jira block as compact JSON.
 
@@ -2247,6 +2359,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-user-lookup", action="store_true",
                    help="skip /user/search resolution for non-'me' assignees")
     s.set_defaults(func=cmd_parse_transitions_dsl)
+
+    s = sub.add_parser("resolve-doc-link")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--doc-path", required=True,
+                   help="repo-relative path, e.g. 'epic/AGENT-001-foo.md'")
+    s.add_argument("--branch",
+                   help="git branch for the URL; defaults to current branch then 'main'")
+    s.set_defaults(func=cmd_resolve_doc_link)
 
     s = sub.add_parser("emit-jira-code")
     s.add_argument("--kanban-path", required=True)
