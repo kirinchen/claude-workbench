@@ -30,6 +30,11 @@ agent_behavior:
   auto_retrospective: true
   # Write an ADR when a non-trivial decision is made (development mode)
   require_adr_on_decision: true
+  # Set false to silence the Stop-hook "session-end summary" block that
+  # otherwise prints after every turn boundary (Claude Code fires Stop
+  # per turn, not per process exit). Memory fan-out + review() still
+  # run — those have their own knobs under integration.memory_save_*.
+  # session_end_summary: true
 
 # Template source
 templates:

@@ -208,6 +208,12 @@ class AgentBehavior:
     require_issue_context: bool = True
     auto_retrospective: bool = True
     require_adr_on_decision: bool = True
+    # When False, mentor-finalcheck.py skips its user-visible summary
+    # (touched docs + violations) on every Stop hook firing. Memory
+    # fan-out and review() still run — those have their own knobs under
+    # `integration.memory_save_*`. Default True preserves prior behavior
+    # (#29).
+    session_end_summary: bool = True
 
 
 @dataclass
@@ -251,6 +257,7 @@ class MentorConfig:
             require_issue_context=bool(ab_raw.get("require_issue_context", True)),
             auto_retrospective=bool(ab_raw.get("auto_retrospective", True)),
             require_adr_on_decision=bool(ab_raw.get("require_adr_on_decision", True)),
+            session_end_summary=bool(ab_raw.get("session_end_summary", True)),
         )
         tpl = raw.get("templates") or {}
         integ_raw = raw.get("integration") or {}
@@ -555,6 +562,7 @@ def config_to_dict(cfg: MentorConfig) -> dict:
             "require_issue_context": cfg.agent_behavior.require_issue_context,
             "auto_retrospective": cfg.agent_behavior.auto_retrospective,
             "require_adr_on_decision": cfg.agent_behavior.require_adr_on_decision,
+            "session_end_summary": cfg.agent_behavior.session_end_summary,
         },
         "templates": {
             "source": cfg.templates_source,

@@ -116,6 +116,22 @@ def main() -> int:
     touched = _categorise(changed, cfg)
     violations = review(proj, cfg)
 
+    # Memory fan-out runs regardless of the summary flag — it's gated by
+    # its own `integration.memory_save_*` knobs, and the per-doc status
+    # check inside _fanout_memory means a no-op when nothing's transitioned.
+    try:
+        _fanout_memory(proj, cfg, touched)
+    except Exception:
+        pass
+
+    # Stop hooks fire on every turn boundary in Claude Code, not just at
+    # true session end. Doc-heavy projects see the same summary repeated
+    # many times per session, drowning out the assistant's actual reply.
+    # `agent_behavior.session_end_summary: false` opts out of the user-
+    # visible print while keeping review/memory side effects above (#29).
+    if not cfg.agent_behavior.session_end_summary:
+        return 0
+
     lines: list[str] = []
     lines.append(f"mentor: session-end summary (mode: {cfg.mode}).")
 
@@ -136,12 +152,6 @@ def main() -> int:
             lines.append(f"  - [{v.kind}] {v.path}: {v.detail}")
         if len(violations) > 10:
             lines.append(f"  … {len(violations) - 10} more; run `workbench-mentor review` to see all.")
-
-    # Memory fan-out (best-effort, never fatal)
-    try:
-        _fanout_memory(proj, cfg, touched)
-    except Exception:
-        pass
 
     if len(lines) == 1:  # only the header — nothing interesting
         return 0
