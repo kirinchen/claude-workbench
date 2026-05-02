@@ -42,7 +42,11 @@
         },
         "require_issue_context": { "type": "boolean" },
         "auto_retrospective": { "type": "boolean" },
-        "require_adr_on_decision": { "type": "boolean" }
+        "require_adr_on_decision": { "type": "boolean" },
+        "session_end_summary": {
+          "type": "boolean",
+          "description": "When false, the Stop-hook user-visible summary (touched docs + violations) is suppressed. Memory fan-out and review still run. Default true."
+        }
       }
     },
     "templates": {

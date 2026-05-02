@@ -15,6 +15,33 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (mentor session-end summary opt-out)
+
+### Added
+- **mentor 0.2.3** — `agent_behavior.session_end_summary` flag in
+  `mentor.yaml`. Default `true` preserves prior behavior; set to `false`
+  to silence the Stop-hook user-visible summary. Closes #29.
+
+  Stop hooks fire on every turn boundary in Claude Code, not just at
+  true session end, so `mentor-finalcheck.py` was reprinting the same
+  20-line "Documents touched this session" + violations block after
+  every assistant reply — drowning out the actual end-of-turn message
+  for doc-heavy projects (active Sprint planning, ADR drafting).
+  Previously the only way to silence it was to disable the entire
+  `mentor` plugin, losing SessionStart bootstrap, PreToolUse mentor-
+  guard, and all `/mentor:*` skills along with it.
+
+  The flag gates only the user-visible `systemMessage` print. The
+  side effects in the same hook — `_fanout_memory` (Sprint retro / ADR
+  capture into workbench-memory) and `review()` — keep running, since
+  they're governed by separate knobs (`integration.memory_save_*`) and
+  are no-ops when nothing's transitioned. One knob, one job.
+
+  `mentor.example.yaml` carries a commented-out `session_end_summary:
+  true` line so users discover the knob; the schema declares it under
+  `agent_behavior.properties` (the schema is `additionalProperties:
+  false`, so without the declaration the field would be rejected).
+
 ## 2026-05-02 (locale + JQL + ADF fixes)
 
 ### Fixed
