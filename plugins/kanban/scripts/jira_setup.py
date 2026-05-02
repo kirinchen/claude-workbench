@@ -1930,7 +1930,8 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
         return 0
 
     repo_ap = _read_repo_ap(p)
-    project_key = (backend.get("jira") or {}).get("projectKey") or ""
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey") or ""
 
     from drivers import get_driver
     from drivers.base import TaskFilter
@@ -2078,6 +2079,42 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
             + "\n  (consider nudging the owner or escalating)"
         )
 
+    # Reconcile reminder — one-liner so SessionStart surfaces drift
+    # without forcing the user to remember /kanban:reconcile. Closes
+    # the visibility gap from #21. Best-effort: failures don't break
+    # the rest of the sync.
+    reconcile_unmapped: dict[str, list[str]] = {}
+    reconcile_missing_ap: list[str] = []
+    try:
+        rec_client = _client_from_env_or_none()
+        if rec_client is not None:
+            transitions_map = (cfg or {}).get("transitions") or {}
+            ap_field_id = ((cfg or {}).get("ap") or {}).get("fieldId")
+            reconcile_unmapped, reconcile_missing_ap, _errs = _detect_reconcile(
+                rec_client, project_key, transitions_map, ap_field_id, repo_ap
+            )
+    except Exception:
+        pass
+
+    total_drift = (
+        sum(len(v) for v in reconcile_unmapped.values())
+        + len(reconcile_missing_ap)
+    )
+    if total_drift:
+        unmapped_count = sum(len(v) for v in reconcile_unmapped.values())
+        bits = []
+        if unmapped_count:
+            bits.append(
+                f"{unmapped_count} in unmapped status"
+                + ("es" if len(reconcile_unmapped) > 1 else "")
+            )
+        if reconcile_missing_ap:
+            bits.append(f"{len(reconcile_missing_ap)} with no AP")
+        summary += (
+            f"\n\n[drift — run /kanban:reconcile for details] "
+            + ", ".join(bits)
+        )
+
     _emit({
         "summary": summary,
         "counts": counts,
@@ -2087,6 +2124,162 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
         "latestSeen": new_latest_seen,
         "staleDoing": stale_rows,
         "unansweredQuestions": unanswered_rows,
+    })
+    return 0
+
+
+def _ap_cf_jql_id(ap_field_id: str | None) -> str | None:
+    """Return the numeric portion of a `customfield_NNNNN` id for use in
+    `cf[NNNNN]` JQL clauses. None if the field id is malformed or absent.
+    """
+    if not ap_field_id or not ap_field_id.startswith("customfield_"):
+        return None
+    suffix = ap_field_id[len("customfield_"):]
+    return suffix if suffix.isdigit() else None
+
+
+def _detect_reconcile(
+    client: "JiraClient",
+    project_key: str,
+    transitions: dict[str, dict[str, Any]],
+    ap_field_id: str | None,
+    repo_ap: str | None,
+) -> tuple[dict[str, list[str]], list[str], list[str]]:
+    """Return (unmapped_by_status, missing_ap_keys, errors).
+
+    Two read-only JQL queries:
+      1. project=X AND cf[ap]=repo_ap AND statusCategory!=Done
+         → cards belonging to my AP; group by status; flag those
+         whose status name isn't in transitions[*].status set.
+      2. project=X AND cf[ap] is EMPTY AND statusCategory!=Done
+         → cards in the project with no AP set (invisible to
+         /kanban:next which always filters by AP).
+
+    Best-effort: each query failure goes into `errors[]` and the
+    other still runs.
+    """
+    unmapped: dict[str, list[str]] = {}
+    missing_ap: list[str] = []
+    errors: list[str] = []
+
+    mapped_status_names: set[str] = set()
+    for spec in (transitions or {}).values():
+        st = (spec or {}).get("status")
+        if isinstance(st, str) and st:
+            mapped_status_names.add(st)
+
+    cf_id = _ap_cf_jql_id(ap_field_id)
+
+    # 1. My-AP cards in unmapped statuses
+    if repo_ap and cf_id:
+        jql = (
+            f'project = "{project_key}" '
+            f'AND cf[{cf_id}] = "{repo_ap}" '
+            f'AND statusCategory != Done'
+        )
+        try:
+            resp = client.search_jql(
+                jql, fields=["status"], max_results=200
+            )
+        except JiraError as e:
+            errors.append(f"my-AP search: {e.detail or e}")
+        else:
+            for issue in (resp or {}).get("issues", []) or []:
+                key = issue.get("key", "")
+                status_name = (
+                    ((issue.get("fields") or {}).get("status") or {}).get("name")
+                )
+                if not isinstance(status_name, str) or not status_name:
+                    continue
+                if status_name in mapped_status_names:
+                    continue  # mapped, no problem
+                unmapped.setdefault(status_name, []).append(key)
+
+    # 2. Missing-AP cards (regardless of which AP would have owned them)
+    if cf_id:
+        jql = (
+            f'project = "{project_key}" '
+            f'AND cf[{cf_id}] is EMPTY '
+            f'AND statusCategory != Done'
+        )
+        try:
+            resp = client.search_jql(
+                jql, fields=["status"], max_results=200
+            )
+        except JiraError as e:
+            errors.append(f"missing-AP search: {e.detail or e}")
+        else:
+            for issue in (resp or {}).get("issues", []) or []:
+                key = issue.get("key", "")
+                if key:
+                    missing_ap.append(key)
+
+    return unmapped, missing_ap, errors
+
+
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    """Surface cards invisible to the canonical kanban view.
+
+    Two diagnostic checks:
+      - Unmapped status: card's status not in any DSL transition spec.
+        Cause: workflow has more statuses than DSL maps; cards drift
+        there via UI / automation / mistake.
+      - Missing AP: open card whose AP custom field is null. Cause:
+        manual creation in Jira UI, broken /kanban:initjira step 5
+        on a per-machine setup, etc.
+
+    Closes #21. Read-only — never modifies anything.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey")
+    if not project_key:
+        return _fail("backend.jira.projectKey unconfigured")
+    transitions = cfg.get("transitions") or {}
+    ap_field_id = (cfg.get("ap") or {}).get("fieldId")
+    repo_ap = _read_repo_ap(p)
+
+    client = _client_from_env()
+    unmapped, missing_ap, errors = _detect_reconcile(
+        client, project_key, transitions, ap_field_id, repo_ap
+    )
+
+    total_unmapped = sum(len(v) for v in unmapped.values())
+    total_missing = len(missing_ap)
+
+    if total_unmapped == 0 and total_missing == 0:
+        hint = "All cards visible to the canonical kanban view. No drift detected."
+    else:
+        bits = []
+        if total_unmapped:
+            bits.append(
+                f"{total_unmapped} card(s) in {len(unmapped)} unmapped status(es) — "
+                "either map them via /kanban:initjira (re-run step 3 with extra "
+                "DSL lines) or move them back to a mapped status in Jira UI"
+            )
+        if total_missing:
+            bits.append(
+                f"{total_missing} card(s) with no AP set — assign via "
+                "Jira UI or via /kanban:next once you've claimed them"
+            )
+        hint = "; ".join(bits)
+
+    _emit({
+        "ok": True,
+        "projectKey": project_key,
+        "ap": repo_ap,
+        "unmapped": unmapped,
+        "missingAp": missing_ap,
+        "totalUnmapped": total_unmapped,
+        "totalMissingAp": total_missing,
+        "errors": errors,
+        "hint": hint,
     })
     return 0
 
@@ -2485,6 +2678,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--kanban-path", default=None,
                    help="optional; defaults to current working directory")
     s.set_defaults(func=cmd_mcp_conflict_scan)
+
+    s = sub.add_parser("reconcile")
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_reconcile)
 
     s = sub.add_parser("import-tasks")
     s.add_argument("--kanban-path", required=True)
