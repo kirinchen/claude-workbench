@@ -30,7 +30,7 @@ For each existing note (in order), ask via `AskUserQuestion`:
 > Note <N>: "<existing text>"
 >   [k]eep / [e]dit / [d]elete
 
-On `e`: capture the new text. Validate length ≤ 200 chars. If longer,
+On `e`: capture the new text. Validate length ≤ 1024 chars. If longer,
 warn and ask whether to truncate or re-enter.
 
 After cycling through existing notes, ask:

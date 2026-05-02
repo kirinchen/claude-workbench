@@ -15,6 +15,44 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (kanban health oracle + notes guardrail)
+
+### Fixed
+- **kanban 0.3.13** — `/kanban:initjira-by-code` step 1 was using
+  `health` as the oracle for "are Jira credentials present?", but at
+  that point `kanban.json#backend.driver` is still `"local"` (nothing has
+  switched it to `"jira"` yet) so health runs against `LocalDriver` —
+  which has nothing Jira-related to check and unconditionally returns
+  `ok=true`. Callers silently bypassed credential capture; the failure
+  was masked further by `import-jira-code` succeeding offline (it only
+  writes config), surfacing only at `live-list-aps` several steps later
+  with an empty roster. Closes #31.
+
+  - `commands/initjira-by-code.md` step 1 now uses `read-credentials`
+    + checks `tokenPresent` (the same pattern `initjira.md` was already
+    using). Documents the trap explicitly so future readers don't repeat
+    it: "Do **not** use the `health` helper as the oracle here".
+  - `cmd_health` (`scripts/jira_setup.py`) appends a self-documenting
+    hint to `detail` when the active driver is local: `"local driver —
+    Jira credentials not checked; use read-credentials"`. `ok` stays
+    `true` because the local driver IS healthy in its own right —
+    flipping it would break `/kanban:init`'s legitimate post-init
+    health check. The hint surfaces the misuse to anyone who prints
+    `detail`.
+  - Phase 20 covers the new behavior: `cmd_health` on a local-backend
+    `kanban.json` returns `ok=true` with `local driver` + `read-creden\
+tials` in `detail`; on a `jira` backend the local-driver hint is NOT
+    appended (so it can't pollute real auth-failure messages).
+
+### Changed
+- **kanban 0.3.13** — `conventions.notes[*]` guardrail bumped 300 → 1024
+  chars per note. Notes are increasingly carrying richer narrative
+  (multi-sentence team-pattern descriptions, links to ADRs / SOPs);
+  300 was too tight in practice. The guardrail is still a warning, not
+  an error — reasonable long-form material stays in ADRs, but a single
+  paragraph of context now fits without tripping the linter. Phase 11
+  test thresholds adjusted (1100 chars → over, 900 → under).
+
 ## 2026-05-02 (mentor session-end summary opt-out)
 
 ### Added

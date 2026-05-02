@@ -29,11 +29,22 @@ You still need:
 
 ## Step 1/3 — Credentials
 
-If `~/.claude-workbench/.env` already has valid Jira credentials (run
-`/kanban:whoami` or the `health` helper to check), skip. Otherwise run
-the same Step 1 flow as `/kanban:initjira` (capture base URL, agent
-email, API token; validate via `validate-credentials`; persist via
-`store-credentials`).
+If `~/.claude-workbench/.env` already has valid Jira credentials, skip.
+To check, call `read-credentials` and verify `tokenPresent` is true:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-credentials
+# expect: {"baseUrl": "...", "email": "...", "tokenPresent": true}
+```
+
+Do **not** use the `health` helper as the oracle here — at this point
+`kanban.json#backend.driver` is still `"local"` (nothing has switched it
+to `"jira"` yet), so `health` runs against the local driver and returns
+`ok=true` regardless of whether Jira credentials exist. See #31.
+
+If credentials are missing, run the same Step 1 flow as `/kanban:initjira`
+(capture base URL, agent email, API token; validate via
+`validate-credentials`; persist via `store-credentials`).
 
 ## Step 2/3 — Paste and import the code
 
