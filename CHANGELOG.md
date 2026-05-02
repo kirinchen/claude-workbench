@@ -15,6 +15,53 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (locale + JQL + ADF fixes)
+
+### Fixed
+- **kanban 0.3.12** — three orthogonal regressions surfaced after the
+  morning's #16–#21 batch shipped. Closes #17 (re-opened), #26, #27.
+
+  - **#17 transition lookup is now locale-immune.** The `Accept-Language:
+    en-US` header added in 0.3.9 fixed JQL paths but does NOT untranslate
+    the `to.name` field on `/transitions` responses — Atlassian still
+    returns localized status names (e.g. `審查` for `REVIEW` on a zh-TW
+    account) even with the header. `transition()` now matches by the
+    transition action name (`t["name"]`, English-canonical regardless of
+    UI locale) first, falling back to `t["to"]["name"]` for English-locale
+    accounts whose action and status names differ. Same root cause hit
+    `/kanban:reconcile`: it compared raw `status.name` against DSL names
+    client-side. The fix moves the filter server-side via JQL `status
+    not in (mapped_statuses)`, which JQL evaluates against canonical
+    English regardless of UI locale. One JQL query instead of two; the
+    localized status name in the response is used only for grouping in
+    the diagnostic output (cosmetic).
+
+  - **#26 `find-mentions` always returned 0.** `_jql_quote_ts()` was a
+    passthrough that handed Jira full ISO-8601 strings with timezone
+    offsets (`2026-05-02T11:44:37+08:00`) — JQL silently rejects this
+    format and returns 0 results with no error. Now normalizes to JQL's
+    canonical `yyyy-MM-dd HH:mm` via `datetime.fromisoformat`. Same
+    `_jql_quote_ts` site is reused by `cmd_sync_summary`'s mentions
+    block, which had the same bug.
+
+  - **#27 agent comment prefix rendered broken in Jira UI.** The SPEC §9
+    prefix was authored as a markdown literal (`**[ap] [kind]**`) and
+    embedded into a single ADF text node; ADF doesn't parse markdown,
+    so Jira's renderer emitted raw `**` plus broken `<span class="error">`
+    around the brackets. The prefix is now an ADF text node with a
+    `strong` mark in its own paragraph, with the body in a second
+    paragraph. `_PREFIX_RE` now accepts both forms (old comments still
+    parse). The same fix applies to `text_to_adf_with_mention` so
+    `/kanban:reply` renders correctly.
+
+  Tests: phase 19 covers transition action-name fallback (with both
+  zh-TW and English locale workflows), reconcile's locale-immune JQL
+  shape, `_jql_quote_ts` normalization (incl. quote-injection refusal),
+  and ADF strong-mark prefix on both no-mention and mention paths.
+  Phase 18 mocks updated to mirror the new server-side filter (mapped
+  cards never reach the client); phase 2's `post_comment_prefixes`
+  asserts the new ADF shape directly. All 19 phases green.
+
 ## 2026-05-02 (drift visibility)
 
 ### Added
