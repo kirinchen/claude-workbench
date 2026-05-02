@@ -13,7 +13,7 @@ This module owns the conventions block: validation, hashing for ack, and
 the small public surface needed by the slash commands and helper CLI.
 
 Public surface:
-    DEFAULT_NOTES_MAX_LEN          # 200 chars per note
+    DEFAULT_NOTES_MAX_LEN          # 1024 chars per note
     DEFAULT_NOTES_MAX_COUNT        # 10 notes total
     validate(conventions) -> list[str]            # warnings, never errors
     hash_conventions(conventions) -> str          # stable for ack tracking
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_NOTES_MAX_LEN = 300
+DEFAULT_NOTES_MAX_LEN = 1024
 DEFAULT_NOTES_MAX_COUNT = 10
 
 

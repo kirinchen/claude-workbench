@@ -2561,7 +2561,19 @@ def cmd_health(args: argparse.Namespace) -> int:
 
     driver = get_driver(data, p.parent)
     h = driver.health()
-    _emit({"ok": h.status.value == "ok", "status": h.status.value, "detail": h.detail})
+    detail = h.detail
+    # `LocalDriver.health()` is unconditionally ok — it has nothing
+    # Jira-related to check. Callers that use `health` to gate "are Jira
+    # credentials set up?" silently bypass credential capture when the
+    # backend is still local (the by-code init flow before #31 fix).
+    # Append a hint so any caller who prints `detail` self-diagnoses.
+    # `ok` stays true because the local driver IS healthy in its own
+    # right — flipping it would break /kanban:init's legitimate
+    # post-init health check.
+    if driver.name == "local":
+        hint = "local driver — Jira credentials not checked; use read-credentials"
+        detail = f"{detail}; {hint}" if detail else hint
+    _emit({"ok": h.status.value == "ok", "status": h.status.value, "detail": detail})
     return 0
 
 
