@@ -1215,14 +1215,22 @@ def cmd_find_mentions(args: argparse.Namespace) -> int:
 def _jql_quote_ts(ts: str) -> str:
     """Format a timestamp for safe inclusion in a JQL string literal.
 
-    Jira's JQL `updated >= "..."` accepts both yyyy/MM/dd HH:mm and ISO-8601.
-    We pass through ISO if it looks safe; anything with a `"` is rejected
-    (callers should never produce such input — `since` is either a stored
-    timestamp or a freshly-generated ISO string).
+    Jira JQL accepts `yyyy-MM-dd HH:mm`, `yyyy/MM/dd HH:mm`, and the
+    date-only forms. It silently rejects full ISO-8601 with a timezone
+    offset (e.g. `2026-05-02T11:44:37+08:00`) — query returns 0 results
+    with no error (#26). When the input parses as ISO-8601, normalize to
+    `yyyy-MM-dd HH:mm` (Jira interprets the bare timestamp in the project's
+    configured zone, which is what callers want for "recent activity"
+    queries). Otherwise pass through (already canonical short form).
     """
     if '"' in ts:
         raise ValueError(f"invalid timestamp {ts!r}")
-    return ts
+    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(ts)
+    except ValueError:
+        return ts  # already canonical (yyyy-MM-dd or yyyy/MM/dd HH:mm)
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 def cmd_mark_mentions_read(args: argparse.Namespace) -> int:
@@ -2149,8 +2157,15 @@ def _detect_reconcile(
 
     Two read-only JQL queries:
       1. project=X AND cf[ap]=repo_ap AND statusCategory!=Done
-         → cards belonging to my AP; group by status; flag those
-         whose status name isn't in transitions[*].status set.
+                  AND status not in (mapped_statuses)
+         → my-AP cards whose Jira status isn't covered by the DSL.
+         Filtering server-side via `status not in (...)` is locale-immune:
+         JQL accepts canonical English status names regardless of the
+         account's UI locale, so a zh-TW account whose API responses
+         translate "REVIEW" to "審查" still won't false-flag mapped cards
+         (#17). The status name in the response is used only for grouping
+         in the diagnostic output (cosmetic — matches what the user sees
+         in their Jira UI).
       2. project=X AND cf[ap] is EMPTY AND statusCategory!=Done
          → cards in the project with no AP set (invisible to
          /kanban:next which always filters by AP).
@@ -2162,20 +2177,27 @@ def _detect_reconcile(
     missing_ap: list[str] = []
     errors: list[str] = []
 
-    mapped_status_names: set[str] = set()
+    # Distinct mapped status names for the JQL `status not in (...)` filter.
+    # Skip any name containing `"` (would break the JQL string literal —
+    # Jira status names never contain quotes in normal configurations).
+    mapped_statuses: list[str] = []
+    seen: set[str] = set()
     for spec in (transitions or {}).values():
         st = (spec or {}).get("status")
-        if isinstance(st, str) and st:
-            mapped_status_names.add(st)
+        if isinstance(st, str) and st and '"' not in st and st not in seen:
+            mapped_statuses.append(st)
+            seen.add(st)
 
     cf_id = _ap_cf_jql_id(ap_field_id)
 
-    # 1. My-AP cards in unmapped statuses
-    if repo_ap and cf_id:
+    # 1. My-AP cards in unmapped statuses (server-side filter — locale immune)
+    if repo_ap and cf_id and mapped_statuses:
+        in_clause = ", ".join(f'"{s}"' for s in mapped_statuses)
         jql = (
             f'project = "{project_key}" '
             f'AND cf[{cf_id}] = "{repo_ap}" '
-            f'AND statusCategory != Done'
+            f'AND statusCategory != Done '
+            f'AND status not in ({in_clause})'
         )
         try:
             resp = client.search_jql(
@@ -2188,12 +2210,9 @@ def _detect_reconcile(
                 key = issue.get("key", "")
                 status_name = (
                     ((issue.get("fields") or {}).get("status") or {}).get("name")
-                )
-                if not isinstance(status_name, str) or not status_name:
-                    continue
-                if status_name in mapped_status_names:
-                    continue  # mapped, no problem
-                unmapped.setdefault(status_name, []).append(key)
+                ) or "(unknown)"
+                if key:
+                    unmapped.setdefault(status_name, []).append(key)
 
     # 2. Missing-AP cards (regardless of which AP would have owned them)
     if cf_id:

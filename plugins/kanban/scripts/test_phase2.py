@@ -310,10 +310,23 @@ def test_post_comment_prefixes():
 
     drv.post_comment("AGENT-1", "Body of question?", CommentKind.QUESTION)
     sent = json.loads(calls[0]["body"])
+    # v0.3.12 (#27): prefix is now an ADF strong-marked text node in its
+    # own paragraph — emitting `**...**` markdown literals broke Jira UI
+    # rendering. adf_to_text drops the marks and returns canonical text.
     body_text = adf_to_text(sent["body"])
-    assert body_text.startswith("**[")
-    assert "[Q]" in body_text
+    # No repo_ap configured in the temp project → fallback "agent" is used.
+    assert body_text.startswith("[agent] [Q]"), body_text
     assert "Body of question?" in body_text
+    # Verify the actual ADF shape so a regression to markdown-string mode
+    # is caught loudly: first paragraph has the prefix as a strong text
+    # node, second paragraph is the body as plain text.
+    paras = sent["body"]["content"]
+    assert paras[0]["type"] == "paragraph"
+    p0 = paras[0]["content"][0]
+    assert p0["type"] == "text"
+    assert p0["text"] == "[agent] [Q]"
+    assert {"type": "strong"} in p0["marks"]
+    assert paras[1]["content"][0]["text"] == "Body of question?"
 
 
 def test_list_comments_parses_prefix():

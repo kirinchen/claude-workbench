@@ -50,9 +50,13 @@ class SelfApproveRefused(RuntimeError):
     delegating to Jira workflow conditions when admin can configure them.
     """
 
-# SPEC §9 prefix grammar.
+# SPEC §9 prefix grammar. Historically the prefix was authored as markdown
+# `**[ap] [kind]**`; v0.3.12 switched to ADF strong marks (so Jira UI no
+# longer renders literal `**` and broken `<span class="error">` around the
+# brackets — see #27). When parsing, accept both forms so old comments stay
+# readable.
 _PREFIX_RE = re.compile(
-    r"^\*\*\[(?P<ap>[a-z][a-z0-9-]+)\]\s+\[(?P<kind>Q|A|C|S)\]\*\*\s*\n*(?P<rest>.*)$",
+    r"^(?:\*\*)?\[(?P<ap>[a-z][a-z0-9-]+)\]\s+\[(?P<kind>Q|A|C|S)\](?:\*\*)?\s*\n*(?P<rest>.*)$",
     re.DOTALL,
 )
 
@@ -163,14 +167,40 @@ class JiraDriver:
         )
 
     @staticmethod
-    def _agent_prefix(ap: str | None, kind: CommentKind) -> str:
+    def _agent_prefix_text(ap: str | None, kind: CommentKind) -> str:
+        """Plain text of the SPEC §9 prefix (no markdown). The ADF builder
+        wraps this in a strong-marked text node, so Jira UI renders it as
+        bold without the markdown literals leaking through (see #27)."""
         ap_str = ap or "agent"
-        return f"**[{ap_str}] [{kind.value}]**\n\n"
+        return f"[{ap_str}] [{kind.value}]"
 
     def _agent_comment_body(
         self, body: str, kind: CommentKind, ap: str | None
     ) -> dict[str, Any]:
-        return text_to_adf(self._agent_prefix(ap, kind) + body)
+        # Two paragraphs: bold prefix on its own line, then the body. ADF
+        # doesn't parse markdown — emitting the prefix as a strong-marked
+        # text node is the only way to get bold rendering without the raw
+        # `**` showing up in the Jira UI (#27).
+        return {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self._agent_prefix_text(ap, kind),
+                            "marks": [{"type": "strong"}],
+                        }
+                    ],
+                },
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": body}],
+                },
+            ],
+        }
 
     def _parse_comment(self, raw: dict[str, Any]) -> Comment:
         author = ((raw.get("author") or {}).get("displayName")) or ""
@@ -349,11 +379,19 @@ class JiraDriver:
         existing_status = existing_for_status.custom.get("raw_status")
         if existing_status != target_status:
             transitions = (client.get_transitions(key) or {}).get("transitions", [])
+            # Match by transition action name first, then destination status
+            # name. Jira's `to.name` is locale-translated (e.g. zh-TW shows
+            # "審查" for canonical "REVIEW") even with Accept-Language: en-US,
+            # but `name` (the workflow action label) stays English. Falling
+            # back to `to.name` keeps English-locale users working when their
+            # action name differs from their status name (e.g. action="Resolve
+            # Issue", status="Resolved", DSL="Resolved"). See #17.
             tid = next(
                 (
                     t["id"]
                     for t in transitions
-                    if (t.get("to") or {}).get("name") == target_status
+                    if t.get("name") == target_status
+                    or (t.get("to") or {}).get("name") == target_status
                 ),
                 None,
             )
@@ -430,11 +468,8 @@ class JiraDriver:
         client = self._client_or_raise()
         ap = self._current_repo_ap()
         if mention_account_id:
-            # Strip trailing newlines from the agent prefix so the prefix
-            # paragraph reads cleanly above the mention paragraph.
-            prefix = self._agent_prefix(ap, kind).strip()
             adf = text_to_adf_with_mention(
-                prefix,
+                self._agent_prefix_text(ap, kind),
                 mention_account_id,
                 mention_display or "user",
                 body,

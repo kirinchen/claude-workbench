@@ -91,20 +91,20 @@ _TRANSITIONS = {
 
 
 def test_detect_reconcile_groups_unmapped():
-    """My-AP cards with status outside the mapped set are flagged."""
+    """My-AP cards with status outside the mapped set are flagged.
+
+    v0.3.12: filtering moved server-side via JQL `status not in (...)`
+    (locale-immune — see #17), so the mock only returns the unmapped
+    cards. Mapped cards never reach the client.
+    """
     queue = [
-        # Query 1: my-AP, statusCategory != Done
+        # Query 1: my-AP cards in unmapped statuses (server-side filter)
         _Response(200, json.dumps({
             "issues": [
-                # Mapped — not flagged
-                {"key": "AGENT-100",
-                 "fields": {"status": {"name": "In Progress"}}},
-                # Unmapped — flagged under "TO PROGRESS"
                 {"key": "AGENT-201",
                  "fields": {"status": {"name": "TO PROGRESS"}}},
                 {"key": "AGENT-202",
                  "fields": {"status": {"name": "TO PROGRESS"}}},
-                # Unmapped — flagged under "Backlog"
                 {"key": "AGENT-300",
                  "fields": {"status": {"name": "Backlog"}}},
             ],
@@ -127,6 +127,13 @@ def test_detect_reconcile_groups_unmapped():
     assert unmapped["TO PROGRESS"] == ["AGENT-201", "AGENT-202"]
     assert unmapped["Backlog"] == ["AGENT-300"]
     assert missing == ["AGENT-401", "AGENT-402"]
+    # Query 1 must include the locale-immune `status not in (...)` filter
+    # listing every DSL-mapped status name (the heart of #17 fix).
+    q1_payload = json.loads((calls[0]["body"] or b"{}").decode())
+    q1_jql = q1_payload.get("jql", "")
+    assert "status not in (" in q1_jql, q1_jql
+    for st in ("Selected for Development", "In Progress", "Done"):
+        assert f'"{st}"' in q1_jql, q1_jql
 
 
 def test_detect_reconcile_skips_when_no_repo_ap():
@@ -240,13 +247,11 @@ def _restore_client_or_none(orig):
 
 
 def test_reconcile_clean():
-    """When no drift, hint is positive."""
+    """When no drift, hint is positive. (v0.3.12: server-side JQL filter
+    means a clean state returns empty in query 1.)"""
     queue = [
-        # Query 1 — only mapped statuses
-        _Response(200, json.dumps({"issues": [
-            {"key": "A-1", "fields": {"status": {"name": "In Progress"}}},
-            {"key": "A-2", "fields": {"status": {"name": "Selected for Development"}}},
-        ]}).encode(), {}),
+        # Query 1 — server filter `status not in (mapped)` excludes everything
+        _Response(200, json.dumps({"issues": []}).encode(), {}),
         # Query 2 — empty
         _Response(200, json.dumps({"issues": []}).encode(), {}),
     ]

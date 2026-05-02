@@ -482,20 +482,26 @@ def text_to_adf_with_mention(
     mention_display: str,
     body_text: str,
 ) -> dict[str, Any]:
-    """Build an ADF doc that prepends `prefix_text` (as its own paragraph)
-    then a paragraph that begins with an @-mention node followed by
-    ` body_text`.
+    """Build an ADF doc that prepends `prefix_text` (as its own paragraph,
+    rendered bold) then a paragraph that begins with an @-mention node
+    followed by ` body_text`.
 
-    Used by /kanban:reply so the bot's reply notifies the human via
-    Jira's native mention plumbing. Empty `prefix_text` collapses the
-    prefix paragraph (used when caller already wrapped the prefix
-    elsewhere).
+    Used by /kanban:reply so the bot's reply notifies the human via Jira's
+    native mention plumbing. Empty `prefix_text` collapses the prefix
+    paragraph (used when caller already wrapped the prefix elsewhere). The
+    prefix renders as bold via an ADF `strong` mark — ADF doesn't parse
+    markdown, so emitting `**...**` literals would render verbatim (#27).
     """
     content: list[dict[str, Any]] = []
     if prefix_text:
-        content.append(
-            {"type": "paragraph", "content": [{"type": "text", "text": prefix_text}]}
-        )
+        content.append({
+            "type": "paragraph",
+            "content": [{
+                "type": "text",
+                "text": prefix_text,
+                "marks": [{"type": "strong"}],
+            }],
+        })
     body_para: dict[str, Any] = {
         "type": "paragraph",
         "content": [
