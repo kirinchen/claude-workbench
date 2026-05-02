@@ -308,11 +308,31 @@ class JiraDriver:
         if to_column == "DONE":
             current_ap = self._current_repo_ap()
             if current_ap and existing_for_status.ap and existing_for_status.ap == current_ap:
-                raise SelfApproveRefused(
-                    f"anti-self-approve: agent {current_ap!r} cannot "
-                    f"transition its own card {key} to DONE — ask another "
-                    "agent or a human reviewer to approve"
+                # Only refuse when the agent itself owns the work.
+                # Per issue #19: if the assignee is a different account
+                # (e.g. a human teammate who actually completed the
+                # work), the agent is recording, not approving — allow.
+                # An unassigned card defaults to "agent's own work" for
+                # safety: without an explicit human owner the strict
+                # original guard still applies.
+                assignee_acct: str | None = None
+                if existing_for_status.assignee is not None:
+                    assignee_acct = getattr(
+                        existing_for_status.assignee, "accountId", None
+                    )
+                recording_for_other = (
+                    assignee_acct is not None
+                    and self.agent_account_id is not None
+                    and assignee_acct != self.agent_account_id
                 )
+                if not recording_for_other:
+                    raise SelfApproveRefused(
+                        f"anti-self-approve: agent {current_ap!r} cannot "
+                        f"transition its own card {key} to DONE — ask "
+                        "another agent or a human reviewer to approve "
+                        "(or assign the card to that human first if you "
+                        "are recording on their behalf)"
+                    )
         client = self._client_or_raise()
 
         # Step 0 — blocked_by issue links (only meaningful when transitioning

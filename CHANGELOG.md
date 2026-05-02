@@ -15,6 +15,48 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (assignee-aware self-approve + guardrail bump)
+
+### Changed
+- **kanban 0.3.10** — two behaviour-tuning fixes from real BZK board use:
+
+  - **(#19)** Anti-self-approve now considers `assignee` alongside the
+    AP custom field. Previously, refusing DONE only required
+    `card.ap == repo_ap` — too strict when the agent is recording work
+    completed by a human teammate (assignee = the human). The agent
+    isn't approving its own work in that case; it's recording the
+    human's completion.
+
+    The new rule:
+
+    | `card.ap` | `assignee` | DONE allowed? |
+    |---|---|---|
+    | mine | agent's own account | NO (refuse) |
+    | mine | None (unassigned) | NO (refuse, strict default) |
+    | mine | a different account (human teammate) | YES (allow) |
+    | other / nil | anything | YES (allow) |
+
+    Refusal message now hints at the workaround: "assign the card to
+    that human first if you are recording on their behalf."
+
+  - **(#20)** `conventions.notes[]` length guardrail bumped 200 → 300
+    chars. Compound rules like `"REVIEW = ball in user court. (A) ...
+    (B) ... Don't confuse with BLOCKED for ..."` consistently exceeded
+    200 in real use; splitting them across multiple notes lost the
+    connecting logic. 300 covers typical compound clauses; over that,
+    move to an ADR.
+
+  Both are advisory-level tweaks (no API change, no schema change).
+
+  - `test_phase17.py` (5 cases): all four canonical
+    AP/assignee combinations + workaround hint in error message.
+  - phase 7's `test_self_approve_refused_v03` updated: mock issue's
+    assignee changed from `kirin-acct` → `shared-agent` to match the
+    new "refuse only when assignee is the agent itself" rule.
+  - phase 11 guardrail tests updated for 300-char threshold.
+
+  All 17 phase suites (173 tests) green. Bumps 0.3.9 → 0.3.10.
+
 ## 2026-05-02 (locale-stable Jira responses)
 
 ### Fixed
