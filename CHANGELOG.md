@@ -15,6 +15,50 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-02 (drift visibility)
+
+### Added
+- **kanban 0.3.11** — `/kanban:reconcile` slash command and a one-line
+  drift reminder in `/kanban:sync`. Closes #21 (and the visibility
+  story for the whole #16-#21 batch).
+
+  Problem: cards can land in Jira statuses NOT mapped by the DSL — via
+  manual UI moves, automation rules, or mistakes. Such cards were
+  completely invisible to `/kanban:status`, `/kanban:next`, and
+  `cmd_sync_summary`. Same for cards that have no AP set at all
+  (manual creation in Jira UI, broken init flow, etc.) — they were
+  silently excluded from the AP-filtered queries.
+
+  In the reporter's session, 7 cards drifted to a `TO PROGRESS` status
+  the DSL didn't map; the migration looked successful but those cards
+  were silently orphaned until manual JQL detective work surfaced them.
+
+  Fix:
+
+  - **`cmd_reconcile`** runs two read-only JQL queries:
+    1. `project = X AND cf[ap] = repo_ap AND statusCategory != Done`
+       — my-AP cards; group by status name; flag any not in the
+       transitions[*].status set as `unmapped`.
+    2. `project = X AND cf[ap] is EMPTY AND statusCategory != Done`
+       — open cards with no AP set (`missingAp`).
+    Returns `{unmapped: {<status>: [keys]}, missingAp: [keys],
+    totalUnmapped, totalMissingAp, errors, hint}`.
+  - **`/kanban:reconcile`** slash command renders the result with
+    suggested next steps (re-run `/kanban:initjira` step 3 to map
+    missing statuses; or move cards back to mapped statuses).
+  - **`cmd_sync_summary`** appends a single-line reminder when there's
+    drift: `[drift — run /kanban:reconcile for details] N in unmapped
+    statuses, M with no AP`. Best-effort: detection failures are
+    silent so the rest of sync still prints.
+  - Read-only — never modifies anything. Pair-mode reminder: this is
+    diagnostic, not remediation. The user decides what to do based on
+    the report.
+  - `test_phase18.py`: 10 mocked cases covering the JQL-id helper,
+    detector grouping, graceful skips when repo_ap or ap_field_id
+    missing, error collection, hint generation, sync-summary
+    integration both ways.
+  - bumps 0.3.10 → 0.3.11. All 18 phase suites (183 tests) green.
+
 ## 2026-05-02 (assignee-aware self-approve + guardrail bump)
 
 ### Changed
