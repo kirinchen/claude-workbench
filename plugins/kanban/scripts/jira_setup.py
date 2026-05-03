@@ -992,28 +992,82 @@ def cmd_import_jira_code(args: argparse.Namespace) -> int:
 def cmd_set_conventions(args: argparse.Namespace) -> int:
     """Persist `backend.jira.conventions` to kanban.json.
 
-    Accepts a full conventions block (notes + per-team toggles) as JSON.
+    Two modes (mutually exclusive):
+
+      Full replace — `--conventions-json '{"notes": [...], ...}'`. The
+      block is replaced wholesale.
+
+      Incremental — `--append-note`, `--remove-note`, `--set-toggle
+      KEY=VAL`. The existing block is loaded, the requested mutations
+      applied (append is idempotent: exact-text dups skipped), then
+      saved. Useful for slash commands that want to add a single rule
+      without faithfully reproducing the rest (which an LLM might
+      paraphrase on round-trip — exactly the kind of subtle drift that
+      causes "why did this rule disappear" mysteries). See #36.
+
     Validation is advisory — guardrails surface as `warnings`, never
     block the write.
     """
     p = Path(args.kanban_path)
     if not p.exists():
         return _fail(f"kanban.json not found at {p}")
-    try:
-        incoming = json.loads(args.conventions_json)
-    except json.JSONDecodeError as e:
-        return _fail(f"--conventions-json is not valid JSON: {e}")
-    if not isinstance(incoming, dict):
-        return _fail("--conventions-json must be a JSON object")
 
-    normalized = _cv.normalize(incoming)
-    warnings = _cv.validate(normalized)
+    incremental = bool(
+        args.append_note or args.remove_note or args.set_toggle
+    )
+    if args.conventions_json and incremental:
+        return _fail(
+            "--conventions-json cannot be combined with --append-note / "
+            "--remove-note / --set-toggle (full replace vs. incremental "
+            "mutate are different modes — pick one)"
+        )
+    if not args.conventions_json and not incremental:
+        return _fail(
+            "set-conventions requires either --conventions-json (full "
+            "replace) or one of --append-note / --remove-note / "
+            "--set-toggle (incremental mutate)"
+        )
 
     data = kanban_io.load(p)
     backend = data.setdefault("backend", {"driver": "jira"})
     if backend.get("driver") != "jira":
         return _fail("backend.driver must be 'jira'")
     jira_cfg = backend.setdefault("jira", {})
+
+    if args.conventions_json:
+        try:
+            incoming = json.loads(args.conventions_json)
+        except json.JSONDecodeError as e:
+            return _fail(f"--conventions-json is not valid JSON: {e}")
+        if not isinstance(incoming, dict):
+            return _fail("--conventions-json must be a JSON object")
+    else:
+        # Incremental: start from the current normalized block, mutate.
+        incoming = dict(_cv.normalize(jira_cfg.get("conventions")))
+        notes = list(incoming.get("notes") or [])
+        # Append (idempotent — skip exact-text duplicates)
+        for n in args.append_note:
+            if n not in notes:
+                notes.append(n)
+        # Remove (no-op if absent)
+        if args.remove_note:
+            removeset = set(args.remove_note)
+            notes = [n for n in notes if n not in removeset]
+        incoming["notes"] = notes
+        # Toggles (KEY=VAL; boolean detection is case-insensitive)
+        for spec in args.set_toggle:
+            if "=" not in spec:
+                return _fail(
+                    f"--set-toggle expects KEY=VALUE form, got {spec!r}"
+                )
+            k, _, v = spec.partition("=")
+            if v.lower() in ("true", "false"):
+                incoming[k] = (v.lower() == "true")
+            else:
+                incoming[k] = v
+
+    normalized = _cv.normalize(incoming)
+    warnings = _cv.validate(normalized)
     jira_cfg["conventions"] = normalized
     kanban_io.save(p, data)
     _emit({"ok": True, "conventions": normalized, "warnings": warnings})
@@ -2798,8 +2852,39 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("set-conventions")
     s.add_argument("--kanban-path", required=True)
     s.add_argument(
-        "--conventions-json", required=True,
-        help='JSON object: {"notes": ["..."], "blockedRequiresLink": bool}',
+        "--conventions-json",
+        help=(
+            'Full replace mode. JSON object: {"notes": ["..."], '
+            '"blockedRequiresLink": bool}. Mutually exclusive with the '
+            'incremental flags below.'
+        ),
+    )
+    s.add_argument(
+        "--append-note", action="append", default=[],
+        help=(
+            "Incremental mode: append a note to conventions.notes. "
+            "Idempotent — exact-text duplicates of existing notes are "
+            "silently skipped. Repeat the flag to append several notes "
+            "in one call. May not be combined with --conventions-json."
+        ),
+    )
+    s.add_argument(
+        "--remove-note", action="append", default=[],
+        help=(
+            "Incremental mode: remove a note from conventions.notes by "
+            "exact-text match. Notes that don't exist are a no-op. May "
+            "not be combined with --conventions-json."
+        ),
+    )
+    s.add_argument(
+        "--set-toggle", action="append", default=[],
+        help=(
+            "Incremental mode: set a single toggle as KEY=VALUE (e.g. "
+            "blockedRequiresLink=false). Booleans are recognised "
+            "case-insensitively; everything else is stored as a string. "
+            "Repeat the flag to set several toggles. May not be combined "
+            "with --conventions-json."
+        ),
     )
     s.set_defaults(func=cmd_set_conventions)
 
