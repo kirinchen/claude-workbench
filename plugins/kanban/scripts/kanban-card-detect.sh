@@ -72,11 +72,16 @@ keys = keys[:5]
 setup = os.path.join(os.environ["PLUGIN_LIB"], "scripts", "jira_setup.py")
 blocks = []
 for key in keys:
+    # Surface the 3 most-recent comments verbatim in the context block
+    # so agents see "stop / cancel / change direction" instructions
+    # instead of confidently proceeding in the wrong direction (#42).
+    # The 30s precheck cache absorbs the extra API call cost across
+    # repeated key references in a session.
     res = subprocess.run(
         ["python3", setup, "precheck-card",
          "--kanban-path", kanban_path,
          "--key", key,
-         "--skip-comments"],
+         "--comments-limit", "3"],
         capture_output=True, text=True,
     )
     if res.returncode != 0:

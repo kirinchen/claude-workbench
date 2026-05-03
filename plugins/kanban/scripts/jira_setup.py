@@ -1768,6 +1768,59 @@ def _read_repo_ap(p: Path) -> str | None:
         return None
 
 
+_COMMENT_EXCERPT_LIMIT = 500
+
+
+def _relative_ts(ts: str | None) -> str:
+    """Render a Jira ISO timestamp as a short relative description
+    ("3h ago", "yesterday", "5d ago"). Returns "?" on parse failure.
+
+    Used in the precheck-card recent-comments block — relative form is
+    much easier for an agent to weight ("just now" → load-bearing,
+    "5d ago" → stale) than raw ISO strings."""
+    dt = _parse_iso(ts)
+    if dt is None:
+        return "?"
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = now - dt
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "just now"
+    if secs < 90:
+        return "just now"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins}m ago"
+    hours = mins // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days}d ago"
+    if days < 30:
+        return f"{days // 7}w ago"
+    if days < 365:
+        return f"{days // 30}mo ago"
+    return f"{days // 365}y ago"
+
+
+def _comment_excerpt(text: str, *, limit: int = _COMMENT_EXCERPT_LIMIT) -> str:
+    """Single-line excerpt for the precheck-card context block. Newlines
+    collapse to spaces (so the block stays grep-friendly) and over-limit
+    text is truncated with a `…` marker."""
+    if not isinstance(text, str):
+        return ""
+    flat = " ".join(text.split())
+    if len(flat) > limit:
+        return flat[: limit - 1].rstrip() + "…"
+    return flat
+
+
 def _build_precheck_block(
     key: str,
     task_data: dict[str, Any] | None,
@@ -1816,6 +1869,20 @@ def _build_precheck_block(
         rows.append("  Consider answering before continuing.")
         warnings.append("open-question")
 
+    # Recent comments — surface the latest N verbatim. The hook used to
+    # always pass --skip-comments, so agents missed load-bearing "stop /
+    # cancel / change direction" instructions and proceeded confidently
+    # in the wrong direction. See #42.
+    recent_comments = task_data.get("recent_comments") or []
+    if recent_comments:
+        rows.append(f"  Recent comments ({len(recent_comments)}):")
+        for c in recent_comments:
+            author = c.get("author") or "?"
+            kind = c.get("kind") or "C"
+            tsrel = _relative_ts(c.get("ts"))
+            excerpt = _comment_excerpt(c.get("text") or "")
+            rows.append(f"    {author} ({tsrel}) [{kind}]: {excerpt}")
+
     if "ap-mismatch" in warnings:
         rows.append(
             "  Suggested action: do NOT modify this card. To take it over, "
@@ -1823,6 +1890,51 @@ def _build_precheck_block(
         )
 
     return warnings, "\n".join(rows)
+
+
+def cmd_read_card_comments(args: argparse.Namespace) -> int:
+    """Read comments on a single Jira card. Building block for the
+    card-detect hook (#42) and any slash command that needs to surface
+    recent comments.
+
+    Returns: {ok, key, comments: [{author, ts, kind, text}, ...]}.
+    `comments` is in chronological order (oldest first), matching the
+    driver layer. `--limit N` keeps only the most recent N entries.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira'")
+        return 1
+
+    from drivers import get_driver
+    driver = get_driver(data, p.parent)
+    try:
+        comments = driver.list_comments(args.key)
+    except JiraError as e:
+        _fail(f"jira: {e.detail or e}", statusCode=e.status_code)
+        return 1
+    except Exception as e:  # noqa: BLE001
+        _fail(f"{type(e).__name__}: {e}")
+        return 1
+
+    if args.limit and args.limit > 0:
+        comments = comments[-args.limit:]
+
+    out = []
+    for c in comments:
+        out.append({
+            "author": c.author,
+            "ts": c.ts,
+            "kind": getattr(c.kind, "value", str(c.kind)),
+            "text": c.text,
+        })
+    _emit({"ok": True, "key": args.key, "comments": out})
+    return 0
 
 
 def _detect_open_question(comments: list) -> str | None:
@@ -1895,13 +2007,28 @@ def cmd_precheck_card(args: argparse.Namespace) -> int:
         _fail(f"{type(e).__name__}: {e}")
         return 1
 
+    # `--skip-comments` short-circuits the API call entirely; otherwise
+    # honour `--comments-limit` (default 3, 0 = scan for open Q only,
+    # don't surface verbatim).
     open_q: str | None = None
+    recent_comments_payload: list[dict[str, Any]] = []
+    comments_limit = 0 if args.skip_comments else args.comments_limit
     if not args.skip_comments:
         try:
             comments = driver.list_comments(args.key)
             open_q = _detect_open_question(comments)
+            if comments_limit > 0:
+                tail = comments[-comments_limit:]
+                for c in tail:
+                    recent_comments_payload.append({
+                        "author": c.author,
+                        "ts": c.ts,
+                        "kind": getattr(c.kind, "value", str(c.kind)),
+                        "text": c.text,
+                    })
         except Exception:
             open_q = None
+            recent_comments_payload = []
 
     task_data = {
         "id": task.id,
@@ -1911,6 +2038,7 @@ def cmd_precheck_card(args: argparse.Namespace) -> int:
         "priority": task.priority,
         "custom": task.custom,
         "last_open_question": open_q,
+        "recent_comments": recent_comments_payload,
     }
     card_cache.put(p.parent, args.key, task_data)
     warnings, block = _build_precheck_block(args.key, task_data, repo_ap)
@@ -2875,9 +3003,37 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("precheck-card")
     s.add_argument("--kanban-path", required=True)
     s.add_argument("--key", required=True)
-    s.add_argument("--skip-comments", action="store_true",
-                   help="skip the open-question scan (saves an API call)")
+    s.add_argument(
+        "--skip-comments", action="store_true",
+        help=(
+            "Skip the comment scan entirely (saves an API call). Equivalent "
+            "to --comments-limit 0."
+        ),
+    )
+    s.add_argument(
+        "--comments-limit", type=int, default=3,
+        help=(
+            "Number of most-recent comments to surface verbatim in the "
+            "context block (default 3, max recommended 5). 0 disables. "
+            "See #42 — agents previously missed load-bearing 'stop' / "
+            "'cancel' / 'change direction' comments because the hook "
+            "always passed --skip-comments."
+        ),
+    )
     s.set_defaults(func=cmd_precheck_card)
+
+    s = sub.add_parser(
+        "read-card-comments",
+        help="Read comments on a single Jira card. Used by /kanban "
+             "card-detect and any slash command that needs recent context.",
+    )
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument(
+        "--limit", type=int, default=0,
+        help="Keep only the N most recent comments (0 = all).",
+    )
+    s.set_defaults(func=cmd_read_card_comments)
 
     s = sub.add_parser("sync-summary")
     s.add_argument("--kanban-path", required=True)
