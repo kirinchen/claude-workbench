@@ -15,6 +15,35 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-03 (kanban create_task fixup PUT)
+
+### Fixed
+- **kanban 0.3.14** — `create_task` now re-asserts `labels` via a
+  follow-up `PUT /rest/api/3/issue/{key}` after the initial POST.
+  Closes #35.
+
+  Jira filters the `POST /rest/api/3/issue` body against the project's
+  Create Screen for the target issuetype: fields not on that screen
+  (commonly `labels` and AP custom fields on Story / Sub-task / Task)
+  are silently elided. The API returns 201 with a key, the plugin
+  treated that as success, and the requested fields didn't stick. In
+  one reporter's session 26 of 28 created issues lost their labels
+  this way — invisible to `/kanban:next` (AP filter) and to JQL like
+  `labels = "<value>"`.
+
+  The Edit Screen is generally more permissive than the Create Screen,
+  so a follow-up PUT against the same key recovers most cases. The
+  fixup is best-effort: a failure leaves an audit comment but does not
+  roll back the create — users prefer "labels missing on this card"
+  over "no card at all". Cost is at most one extra HTTP request per
+  create; for `import-tasks` bulk runs this is acceptable.
+
+  Phase 21 covers four cases: PUT carries the requested labels; no
+  PUT fires when there are no tags; PUT failure posts a system comment
+  and create still returns successfully; fixup PUT fires before the
+  parent-link POST so a later link failure can't mask a prior fixup
+  failure.
+
 ## 2026-05-02 (kanban health oracle + notes guardrail)
 
 ### Fixed
