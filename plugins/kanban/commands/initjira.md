@@ -30,52 +30,65 @@ ALWAYS pipe the token via stdin (`echo "$TOKEN" | python3 .../jira_setup.py …`
 
 ## Step 1/3 — Credentials
 
-If credentials already exist (call `python3 jira_setup.py read-credentials` and
-check `tokenPresent`), validate them silently:
+Check if credentials already exist:
 
 ```bash
-echo "$TOKEN_FROM_ENV" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
-  validate-credentials --base-url <baseUrl> --email <email>
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-credentials
 ```
 
-But you don't have access to the stored token from this session — instead,
-*delegate the validation to a helper that reads from .env itself*. Use:
+If `tokenPresent: true`, run `/kanban:whoami` to confirm they
+authenticate; if it succeeds, print "Detected valid Jira credentials
+from a previous run. Skipping Step 1." and continue to Step 2.
 
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py health --kanban-path <kanban.json>
-```
-
-If health returns `ok=true`, print "Detected valid Jira credentials from a
-previous run. Skipping Step 1." and continue to Step 2.
-
-Otherwise, capture inputs via three separate `AskUserQuestion` calls:
+Otherwise, capture **base URL + email** via two `AskUserQuestion` calls:
 
 1. **Base URL** — example: `https://yourteam.atlassian.net`. Validate the
    pattern `https?://[^/ ]+` before continuing.
 2. **Shared agent account email** — the Atlassian account agents will operate
    under. Pattern: standard email.
-3. **API token** — generated at https://id.atlassian.com/manage-profile/security/api-tokens.
-   30+ alnum characters. Treat as secret — do not display or echo.
 
-Then validate (token via stdin):
+Do **NOT** ask for the API token here. The token is captured in the
+next sub-step by the user themselves, in their own terminal.
 
-```bash
-echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
-  validate-credentials --base-url '<URL>' --email '<EMAIL>'
+### Token capture (USER-DRIVEN — do NOT run via Bash tool)
+
+> ⚠ **The token must NOT enter Claude Code's conversation log.** Claude
+> Code's Bash tool prints every command it runs to the conversation
+> transcript, so any `echo "<token>" | ...` you might construct leaks
+> the token. Use `--prompt-token` (added in kanban@0.3.18) and have the
+> user run it themselves.
+
+Print this block to the user verbatim, then **stop and wait**:
+
+```
+─────────────────────────────────────────────────────────────────
+For security, paste your Jira API token in YOUR OWN terminal, not
+through this chat. Open a terminal on this machine and run:
+
+  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
+    store-credentials --base-url "<URL>" --email "<EMAIL>" \
+    --prompt-token
+
+You'll see:
+  Jira API token:
+Paste the token (generated at
+https://id.atlassian.com/manage-profile/security/api-tokens) at the
+prompt and press Enter (it won't echo). On success: {"ok": true}
+
+Then come back here and tell me "done" so I can verify.
+─────────────────────────────────────────────────────────────────
 ```
 
-Parse the JSON. On `ok=false`, print the error verbatim (it does NOT contain
-the token) and ask the user to re-enter the token. Repeat at most twice. On
-final failure, abort.
+**Substitute** `<URL>` and `<EMAIL>` with the values captured above
+before printing — those aren't secret. Do NOT substitute or invent
+any token-related field.
 
-On `ok=true`, store the credentials:
-
-```bash
-echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
-  store-credentials --base-url '<URL>' --email '<EMAIL>'
-```
-
-Confirm to user: `✓ authenticated as <displayName>; credentials saved.`
+After the user reports "done", verify with `read-credentials` (look for
+`tokenPresent: true`) and then run `/kanban:whoami` to confirm the
+token actually authenticates against Jira. If `whoami` reports
+`UNAUTHENTICATED`, tell the user "the token didn't authenticate — try
+again, or check the URL / email" and loop back to the prompt block.
+On success, confirm: `✓ authenticated as <displayName>; credentials saved.`
 
 ## Step 2/3 — Board URL
 
@@ -89,31 +102,16 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
 Result is `{"projectKey": "...", "boardId": ...}`. If parse fails, ask once
 more, then abort.
 
-Validate that the project + board are reachable with our credentials. The
-helper auto-loads token via `read-credentials`, but for explicit re-validation
-re-prompt is overkill — instead use a single combined check:
+Validate that the project + board are reachable with our credentials.
+The token is already in `~/.claude-workbench/.env` from step 1; use
+`--from-env` so the helper reads it directly — **never** echo the token
+to a Bash command (Claude Code prints every Bash command to the
+conversation log, which would leak the token; #42).
 
 ```bash
-python3 - <<'PY'
-import json, subprocess, sys
-from pathlib import Path
-CHECKER = "${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py"
-BASE = "<URL>"; EMAIL = "<EMAIL>"; PROJECT = "<KEY>"; BOARD = <ID>
-# read token from .env via helper
-out = subprocess.check_output(["python3", CHECKER, "read-credentials"])
-token_present = json.loads(out)["tokenPresent"]
-if not token_present: print("missing token"); sys.exit(1)
-PY
-```
-
-In practice — for Phase 2 ergonomics — call validate-project by re-asking the
-user for the token. Acceptable simplification: the user just typed it; the
-session can hold it briefly in memory.
-
-```bash
-echo "<TOKEN>" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
   validate-project --base-url '<URL>' --email '<EMAIL>' \
-  --project '<KEY>' --board <ID>
+  --project '<KEY>' --board <ID> --from-env
 ```
 
 Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)`.
@@ -428,10 +426,20 @@ Try:
 
 ## Absolute rules
 
+- **NEVER** call the Bash tool with a command that contains the token
+  literal (e.g. `echo "<actual token>" | ...`). Claude Code prints every
+  Bash command to the conversation transcript, so any such command leaks
+  the token. Token capture is user-driven via `--prompt-token` (the user
+  runs the helper in their own terminal); subsequent steps use
+  `--from-env` so the helper reads the token directly from
+  `~/.claude-workbench/.env`. See #42 for the original "your plugin
+  taught me to leak my own token" report.
+- **NEVER** ask for the token via `AskUserQuestion` either — the user's
+  response is part of the conversation log.
 - Never echo the API token back to the user.
-- Never pass the token via argv (`--token=…`) — always pipe via stdin.
 - Never write `kanban.json` via Edit/Write tools — always go through
   `jira_setup.py write-backend`.
 - If any helper call returns `ok=false`, surface its `error` field verbatim
   and stop; do not invent retry logic beyond what is specified above.
-- Never proceed past a failed `validate-credentials` even with `--partial`.
+- Never proceed past a failed token verification (`whoami` returning
+  UNAUTHENTICATED) even with `--partial`.

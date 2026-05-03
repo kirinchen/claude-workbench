@@ -15,6 +15,77 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-03 (kanban secret-safe token capture)
+
+### Security
+- **kanban 0.3.18** — token capture flow no longer routes the API
+  token through the agent's Bash tool, so the token literal can't end
+  up in Claude Code's conversation transcript. Closes #42.
+
+  **The original bug**: `/kanban:reset-credentials` and
+  `/kanban:initjira` step 1 told the agent to capture the token via
+  `AskUserQuestion`, then to run `echo "<TOKEN>" | python3 ... store-
+  credentials ...` through the Bash tool. Claude Code prints every Bash
+  command to the conversation transcript for transparency, so the
+  token literal was logged. The plugin's own leak detector then warned
+  the user to rotate — a self-inflicted loop where you set up the
+  token following the docs and immediately got told you'd leaked it.
+
+  **The fix** has three parts:
+
+  - `_read_token` accepts `prompt=True`, which uses
+    `getpass.getpass`. `getpass` reads from the controlling terminal
+    directly: never argv, never stdin pipe, never the parent
+    process's view of file descriptors. `EOFError` /
+    `KeyboardInterrupt` exit cleanly with rc=2.
+  - `store-credentials` and `validate-credentials` gain
+    `--prompt-token` flags that drive the prompt path. Existing
+    automation that pipes the token via stdin still works (back-compat
+    preserved) but the new agent-facing flow is `--prompt-token`.
+  - `validate-project` gains `--from-env`, which reads the token from
+    `~/.claude-workbench/.env` (where step 1's `store-credentials`
+    wrote it) instead of stdin. This lets `/kanban:initjira` step 2
+    validate the project + board without piping the token through
+    a Bash command at all.
+
+  **Slash command flow change**: `/kanban:reset-credentials` step 3
+  and `/kanban:initjira` step 1 are now USER-DRIVEN — the agent
+  prints a block of instructions for the user to run in their own
+  terminal:
+
+  ```
+  python3 .../jira_setup.py store-credentials \
+    --base-url "<URL>" --email "<EMAIL>" --prompt-token
+  ```
+
+  The user runs this, sees `Jira API token:` (no echo), pastes,
+  presses Enter. The token never traverses the agent's Bash tool, so
+  it never appears in the conversation transcript. The agent then
+  verifies via `read-credentials` (no token in argv) + `/kanban:whoami`
+  (token read from `.env`).
+
+  Both commands now carry an explicit absolute rule: "**NEVER** call
+  the Bash tool with a command that contains the token literal" — and
+  "**NEVER** ask for the token via `AskUserQuestion`" (the user's
+  response is also part of the conversation log).
+
+  Phase 24 covers six cases: `_read_token(prompt=True)` reads from
+  getpass and strips whitespace; clean abort on EOF/Ctrl-C;
+  `store-credentials --prompt-token` writes to `.env` without touching
+  stdin; back-compat — stdin path still works without the flag;
+  `validate-project --from-env` reads from `.env`, never stdin;
+  missing-token-in-`.env` fails with a `reset-credentials` hint.
+
+### Fixed
+- Phase 3's `_setup_cmd` now defaults `HOME` to a throwaway directory
+  so a real `~/.claude-workbench/.env` on the test machine doesn't
+  trigger live Jira API calls and mask the offline-only assertions
+  (e.g. fuzzy-collision check). Symptom on a developer machine with
+  an existing `.env`: `register-ap` saw real credentials, hit the
+  Jira instance, got 404 / 401, and `register_ap_fuzzy_no_force`
+  failed with a network error instead of returning the expected
+  fuzzy-match warning.
+
 ## 2026-05-03 (kanban same-repo-different-machine UX)
 
 ### Changed

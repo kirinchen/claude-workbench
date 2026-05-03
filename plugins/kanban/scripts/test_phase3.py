@@ -305,6 +305,13 @@ def test_transition_allows_when_ap_differs():
 def _setup_cmd(*args, env_extra=None):
     cmd = ["python3", str(PLUGIN / "scripts" / "jira_setup.py"), *args]
     env = dict(os.environ)
+    # Default HOME to a throwaway dir so a real ~/.claude-workbench/.env
+    # on the test machine can't sneak Jira credentials into the helper
+    # (which would trigger live API calls and mask offline-only
+    # assertions like the fuzzy-collision check).
+    if "HOME" not in (env_extra or {}):
+        env["HOME"] = "/tmp/kanban-phase3-fakehome"
+        os.makedirs(env["HOME"], exist_ok=True)
     if env_extra:
         env.update(env_extra)
     return subprocess.run(cmd, capture_output=True, env=env)
@@ -316,8 +323,14 @@ def test_register_ap_fuzzy_no_force():
         kp = pathlib.Path(td) / "kanban.json"
         kp.write_text(json.dumps(_mk_data(registered=["agent-fin"])))
 
+        # Isolate HOME so a real ~/.claude-workbench/.env on the test
+        # machine doesn't trigger a live Jira call (which would 401/404
+        # and mask the fuzzy-match assertion).
+        fakehome = pathlib.Path(td) / "fakehome"
+        fakehome.mkdir(parents=True, exist_ok=True)
         out = _setup_cmd(
-            "register-ap", "--kanban-path", str(kp), "--name", "agent-fix"
+            "register-ap", "--kanban-path", str(kp), "--name", "agent-fix",
+            env_extra={"HOME": str(fakehome)},
         )
         assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
