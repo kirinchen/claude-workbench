@@ -1,20 +1,33 @@
 ---
-description: Pick the next kanban task and move it to DOING.
+description: DEPRECATED — use /kanban:doing (Jira mode) or /kanban:next is still the local-mode pick-one helper.
 argument-hint: [--category=X] [--priority=Y] [<task-id>]
 allowed-tools: Read, Bash(python3:*), Bash(date:*)
 ---
 
-# /kanban:next
+# /kanban:next  *(deprecated for Jira mode — see /kanban:doing)*
 
 Arguments: `$ARGUMENTS`
 
-Pick the next eligible TODO task and transition it to DOING. The Skill
-`kanban-workflow` (loaded automatically) governs the rules.
+## 0. Driver check + deprecation nudge
 
-## 0. Driver check
+Read `kanban.json#backend.driver`. If absent, treat as `"local"`.
 
-Read `kanban.json` first. Look at `backend.driver`. If absent, treat as
-`"local"`. If `"jira"`, follow the Jira flow at the end of this file.
+- **Jira mode**: this command is **deprecated**. Print a deprecation
+  notice and stop:
+
+  ```
+  /kanban:next is deprecated for Jira mode (kanban@0.3.16 — see #33).
+  Use /kanban:doing instead — it works the cards already in DOING
+  rather than pulling from TODO. Owner curates TODO → DOING; agent
+  executes DOING.
+  ```
+
+  Do **not** auto-pick. The agent must not be the one moving cards
+  from TODO into DOING.
+
+- **Local mode**: continue with the existing flow below. Local mode
+  has no AP / curation distinction, so the pick-one semantics are
+  still correct here.
 
 ## 1. Parse arguments (local driver)
 
@@ -54,25 +67,10 @@ Then begin executing the task described in `description`. Treat
 `description` as the brief — ask the user for clarification if anything is
 ambiguous rather than guessing.
 
-## Jira flow
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py claim-next \
-  --kanban-path '<kanban.json path>'
-```
-
-| Shape | Action |
-|---|---|
-| `{ok: true, claimed: {id, title, priority, ap}}` | print `Claiming <id> "<title>" (P<n>, ap=<ap>)`, begin executing |
-| `{ok: true, claimed: null, reason}` | print `No TODO cards for AP <ap>` and stop |
-| `{ok: false, error}` | surface verbatim. If error mentions `kanban-agent.json`, suggest `/kanban:assign-ap`. |
-
 ## Absolute rules
 
+- **Jira mode**: never auto-pick from TODO. The deprecation nudge above
+  is the only correct behavior. See #33 for the rationale.
 - Never start a task whose deps are not all DONE (local mode — helper enforces).
 - Never start a task in DONE or BLOCKED.
-- Never start more than one task at a time in the same session. If a DOING
-  task already exists with assignee `claude-code`, confirm with the user
-  before starting a new one.
 - Never call the Write/Edit tool on `kanban.json` — go through the helper.
-- Jira mode: never bypass `claim-next` — it enforces AP routing.

@@ -160,7 +160,7 @@ def has_recent_ack(
     conventions: dict[str, Any] | None,
 ) -> bool:
     """Return True iff `.claude/kanban-agent.json` records an ack whose
-    hash matches `conventions`. Allows /kanban:initjira-by-code to skip
+    hash matches `conventions`. Allows /kanban:import-jira-code to skip
     the friction prompt when the user has already acknowledged this exact
     convention set in this repo.
     """

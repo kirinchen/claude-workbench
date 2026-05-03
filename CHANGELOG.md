@@ -15,6 +15,65 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-03 (kanban command renames + scope narrowing)
+
+### Changed
+- **kanban 0.3.16** — two slash command renames; the helper subcommands
+  and overall framing now match what the commands actually do. Closes
+  #33 and #34.
+
+  **`/kanban:next` → `/kanban:doing` (Jira mode only).** The old name
+  implied a single-step "pick the next task" model, but the actual
+  workflow on a multi-card AP is "agent works through every card the
+  owner has placed in DOING, reasoning across them." The new command
+  reads only `status=DOING AND assignee=this-AP` cards (helper:
+  `list-doing`) and never pulls from TODO. The state machine the plugin
+  enforces:
+
+  ```
+  TODO  ──(owner moves)──▶  DOING  ──(/kanban:doing executes)──▶  DONE
+  ```
+
+  - **TODO → DOING is the owner's call** (Jira UI, or the owner's own
+    `/kanban:transition`). The agent must never pull from TODO unless
+    an explicit @-mention from the owner names a card with start intent.
+  - The token-cost win is real: 11 open TODOs were being scanned by
+    the old auto-pick to choose one card; the new command only reads
+    the (small) DOING set.
+  - Local mode keeps its `/kanban:next` semantics — local has no AP
+    routing, the pick-one model is still right there.
+  - `/kanban:next` becomes a deprecation shim for one release cycle:
+    in Jira mode it prints a notice and stops; in local mode it forwards
+    to the existing helper.
+
+  **`/kanban:initjira-by-code` → `/kanban:import-jira-code`.** The
+  helper has always been called `import-jira-code` — the slash command
+  now matches. The new name also makes obvious that the command is
+  not just first-run init: it works for re-sync too. To smooth the
+  re-sync path:
+
+  - Step 3 (AP) is now idempotent: when `.claude/kanban-agent.json#ap`
+    is set AND the AP still appears in `live-list-aps`, the prompt is
+    skipped and a one-line confirmation is printed. Re-import after a
+    `/kanban:edit-conventions` change becomes friction-free.
+  - The conventions ack-hash mechanism (forces re-ack when notes
+    drift) is preserved — that's the team-drift safety net.
+  - `/kanban:initjira-by-code` becomes a deprecation shim that prints
+    a notice and forwards.
+
+  Cross-references throughout the repo were updated:
+  README/quickstart, `kanban-jira-agent` SKILL, and Jira-flavored
+  commands (`initjira`, `create-sub`, `mentions`, `reconcile`,
+  `fix-ap-screen`) now point at `/kanban:doing` and
+  `/kanban:import-jira-code`. Generic / local-mode docs keep
+  `/kanban:next` (still correct in local mode).
+
+  New phase 23 covers the helper: list-doing returns DOING-only cards
+  filtered by AP; empty-DOING is `ok=true` with empty list (slash
+  command then says "owner needs to move a TODO into DOING"); missing
+  repo AP fails with the assign-ap nudge; local backend is refused.
+  All 23 phases green.
+
 ## 2026-05-03 (kanban set-conventions incremental flags)
 
 ### Added

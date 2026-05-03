@@ -7,7 +7,7 @@ allowed-tools: Read, Bash(python3:*)
 
 Recover from the issue #6 failure mode where the AP custom field was
 created (e.g. by an older `/kanban:initjira` on 0.3.1) but never
-associated with any Jira screen. Symptom: `/kanban:next` returns nothing
+associated with any Jira screen. Symptom: `/kanban:doing` returns nothing
 even though there are TODO cards, because `customfield_X cannot be set`
 on any issue, so no card carries an AP value.
 

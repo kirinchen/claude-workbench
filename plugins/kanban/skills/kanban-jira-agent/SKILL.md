@@ -17,12 +17,18 @@ Jira MCP server even if one is available in your environment.
 summary; cards listed are yours. If you suspect stale state, run
 `/kanban:sync` again explicitly.
 
-## Picking work
+## Working the DOING pool
 
-- `/kanban:next` — claims the highest-priority TODO card scoped to your AP,
-  transitions it to In Progress, and posts a `[<ap>] [S] claimed` system
-  comment. Do this **before** starting any work.
-- Do not claim a card already DOING by another AP — the precheck hook
+- `/kanban:doing` — read every card already in DOING scoped to your AP,
+  decide an execution order across them (deps, module affinity,
+  priority as tiebreaker), then work them sequentially. Read-only —
+  this command does NOT pull from TODO.
+- **TODO → DOING is the owner's call.** If a card you want to work is
+  still in TODO, ask the owner to move it (Jira UI or their own
+  `/kanban:transition`); do not transition it yourself unless an
+  explicit @-mention from the owner names that card with start intent
+  (see "When you're @-mentioned" below).
+- Do not work a DOING card owned by another AP — the precheck hook
   warns you when you mention such a card.
 
 ## During work
@@ -60,19 +66,21 @@ Treat each mention as a directive. Process:
 
 3. **Act based on estimate**:
 
-   - **Small** — claim and execute:
+   - **Small** — the @-mention authorizes you to transition this card
+     into DOING (the owner is the one asking):
      ```
-     /kanban:next --task-id <KEY>      # claim, move to DOING
+     /kanban:transition <KEY> --to DOING    # owner-authorized TODO → DOING move
+     /kanban:doing                          # read DOING and pick this card up
      # ... do the actual work ...
-     /kanban:done <KEY>                 # transition to REVIEW
+     /kanban:done <KEY>                     # transition to REVIEW
      /kanban:reply <KEY> --to <authorAccountId> --body "<verdict + status>"
      ```
-   - **Large** — break down without claiming the parent:
+   - **Large** — break down without transitioning the parent:
      ```
      /kanban:create-sub <KEY> --title "..." --title "..." --title "..."
      /kanban:reply <KEY> --to <authorAccountId> --body "Spawned <N> sub-cards: <list>"
-     # then claim the first sub-card and start
-     /kanban:next --task-id <first-sub-key>
+     # owner reviews and moves the first sub-card to DOING; then:
+     /kanban:doing
      ```
    - **Ask first** — don't claim anything yet:
      ```

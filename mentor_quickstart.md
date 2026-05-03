@@ -90,7 +90,8 @@ workbench-mentor review --format json               # exit 0 clean, 2 on violati
 Just two layers: `doc/SPEC.md` (the truth) + tasks (kanban.json or `doc/task.md`).
 
 ```
-> /kanban:next            # if kanban installed — pick a TODO and start
+> /kanban:next            # local mode (if kanban installed) — pick a TODO and start
+> /kanban:doing           # jira mode (if kanban installed) — work the DOING pool
 > /mentor:status          # see compliance + task overview
 ```
 

@@ -110,7 +110,8 @@ claude
 ```bash
 > /kanban:init --with-examples      # 建立 kanban.json + schema
 > /kanban:status                    # 唯讀的狀態總覽
-> /kanban:next                      # 挑一個 TODO 移到 DOING
+> /kanban:next                      # local mode：挑一個 TODO 移到 DOING
+> /kanban:doing                     # jira mode：執行已經在 DOING 的卡片
 > /kanban:done --note="deployed"    # 關掉當前 DOING 任務
 ```
 
@@ -133,7 +134,7 @@ Claude 對 `kanban.json` **會做的**：
 | 組合 | 效果 | 狀態 |
 |---|---|---|
 | `kanban × notify` | 狀態轉換觸發推播（BLOCKED → 高優先度）。 | 線路已接，E2E 未測 |
-| `kanban × memory` | `/kanban:next` 查詢過去 session；`/kanban:done` 存完工筆記。 | 等 memory |
+| `kanban × memory` | `/kanban:next`（local）/ `/kanban:doing`（jira）查詢過去 session；`/kanban:done` 存完工筆記。 | 等 memory |
 | `kanban × mentor` | 新 Issue 可自動產生 kanban task；可選的 Issue Acceptance Criteria DONE gate。 | 線路已接，等 E2E |
 | `notify × memory` | 決策提示會附帶「上次你選了 X」。 | 等 memory |
 | `mentor × memory` | Sprint retro + accepted ADR 持久化到 memory。 | 線路已接，等 memory |

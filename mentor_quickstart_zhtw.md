@@ -90,7 +90,8 @@ workbench-mentor review --format json               # 乾淨 exit 0；有違規 
 只有兩層：`doc/SPEC.md`（事實）+ tasks（kanban.json 或 `doc/task.md`）。
 
 ```
-> /kanban:next            # 有裝 kanban 的話——挑一個 TODO 開始做
+> /kanban:next            # local mode（有裝 kanban 的話）——挑一個 TODO 開始做
+> /kanban:doing           # jira mode（有裝 kanban 的話）——執行已在 DOING 的卡片
 > /mentor:status          # 看合規狀況 + 任務概覽
 ```
 

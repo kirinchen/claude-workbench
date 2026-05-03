@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(python3:*), Bash(git:*)
 
 Emit the current `kanban.json#backend.jira` block as a compact JSON code
 suitable for pasting into another repo / another machine via
-`/kanban:initjira-by-code`. Use this to share a board's compound-transition
+`/kanban:import-jira-code`. Use this to share a board's compound-transition
 mapping across teammates' machines without re-running the DSL setup
 everywhere.
 
@@ -24,7 +24,7 @@ everywhere.
 - `conventions` (since /2): team narrative notes + per-team toggles
   (e.g. `blockedRequiresLink`). Empty by default — author via
   `/kanban:edit-conventions`. Receivers must acknowledge non-empty
-  notes before `/kanban:initjira-by-code` completes.
+  notes before `/kanban:import-jira-code` completes.
 
 ## What's deliberately excluded
 
@@ -35,7 +35,7 @@ everywhere.
   shared agent Atlassian account.
 - API token, base URL credentials — never. Those live in
   `~/.claude-workbench/.env` and are per-machine; the receiver runs
-  `/kanban:reset-credentials` (or step 1 of `/kanban:initjira-by-code`).
+  `/kanban:reset-credentials` (or step 1 of `/kanban:import-jira-code`).
 
 ## 0. Pre-flight
 
@@ -60,7 +60,7 @@ Print the code as a fenced JSON block, then a one-line hint:
 
 ```
 Share this code with your teammates. They paste it into
-/kanban:initjira-by-code and skip the DSL setup.
+/kanban:import-jira-code and skip the DSL setup.
 
 ```json
 {
@@ -74,7 +74,7 @@ Share this code with your teammates. They paste it into
 \```
 
 (Each receiver still needs their own Jira credentials — the code does
-NOT contain tokens. Run `/kanban:initjira-by-code` on the receiver
+NOT contain tokens. Run `/kanban:import-jira-code` on the receiver
 side; if they don't yet have credentials saved, the command will
 capture them up-front.)
 ```

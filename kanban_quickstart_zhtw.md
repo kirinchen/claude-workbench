@@ -173,7 +173,7 @@ init 完之後：
 
 ```
 > /kanban:status     # 從 Jira 拉即時狀態
-> /kanban:next       # 認領這個 AP 最高優先 TODO
+> /kanban:doing      # 執行已在 DOING 的卡片（owner 把 TODO 推進 DOING；agent 執行）
 > /kanban:done       # DOING → In Review（由人類批准成 Done）
 > /kanban:question AGENT-42 "v1 是否保留向下相容？"
 > /kanban:whoami     # 顯示 driver、AP、token 有效性、MCP 衝突
@@ -195,7 +195,7 @@ Setup 拆成**三層**，每層有自己的生命週期：
 
 | 層級 | 內容 | 何時要重跑 |
 |---|---|---|
-| **Per-board（可分享）** | `transitions`、AP custom field id、board metadata、`conventions` 規則 | **一次**。然後 `/kanban:showjira-code`，任何同事 / repo 用 `/kanban:initjira-by-code` 貼 JSON 就繼承 |
+| **Per-board（可分享）** | `transitions`、AP custom field id、board metadata、`conventions` 規則 | **一次**。然後 `/kanban:showjira-code`，任何同事 / repo 用 `/kanban:import-jira-code` 貼 JSON 就繼承 |
 | **Per-machine（每台必做）** | Jira 憑證（`~/.claude-workbench/.env`：base URL、agent email、API token） | 每台機器一次。之後該台所有 repo 共用 |
 | **Per-repo（每個 repo 必做）** | 這個 repo 用哪個 AP（`.claude/kanban-agent.json`） | 每個 repo 一次。各自從 Jira live options 挑 |
 
@@ -203,8 +203,8 @@ Setup 拆成**三層**，每層有自己的生命週期：
 
 | 情境 | 新 receiver 端要跑的 |
 |---|---|
-| **全新機器 + 全新 repo** | `/kanban:init` → `/kanban:initjira-by-code`（一個指令做完憑證 + 貼 code + 選 AP） |
-| **同機器 + 新 repo** | `/kanban:init` → `/kanban:initjira-by-code`（憑證自動跳過——本機已有；只剩貼 code + 選 AP 互動） |
+| **全新機器 + 全新 repo** | `/kanban:init` → `/kanban:import-jira-code`（一個指令做完憑證 + 貼 code + 選 AP） |
+| **同機器 + 新 repo** | `/kanban:init` → `/kanban:import-jira-code`（憑證自動跳過——本機已有；只剩貼 code + 選 AP 互動） |
 | **既有 repo 已是 jira mode** | 啥都不用——已 setup。`/kanban:whoami` 可驗證 |
 
 ### 運作原理
@@ -221,7 +221,7 @@ Setup 拆成**三層**，每層有自己的生命週期：
 
 ```
 > /kanban:init                  # scaffold kanban.json (local mode)
-> /kanban:initjira-by-code      # 貼 JSON；視情況跑憑證 + 選 AP
+> /kanban:import-jira-code      # 貼 JSON；視情況跑憑證 + 選 AP
 ```
 
 第一次在某台機器跑時會問憑證；同台第二個 repo 時自動跳過。如果 code 帶 `conventions.notes` 非空，接收端必須輸入 `I have read these` 才能完成 init（這個 friction 是刻意的——詳見 issue #10）。
