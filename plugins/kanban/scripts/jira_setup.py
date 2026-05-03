@@ -131,9 +131,33 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
 
 
-def _read_token() -> str:
+def _read_token(*, prompt: bool = False) -> str:
+    """Read the Jira API token. Default path is stdin (caller pipes the
+    token in — used by automation / CI). When `prompt=True`, the token
+    is captured interactively via `getpass.getpass`, which:
+
+      - reads from /dev/tty (or the platform equivalent) directly,
+      - never echoes typed characters to the terminal,
+      - never enters argv, stdin, or any caller's process tree.
+
+    The prompt path is the secret-safe way to capture a token in a
+    Claude-Code-style flow: the agent prints the command for the user
+    to run in their *own* terminal (NOT through the agent's Bash tool),
+    so the token literal never appears in the conversation log. See
+    SPEC §10 / the 0.3.18 changelog entry for the full rationale.
+    """
+    if prompt:
+        import getpass
+        try:
+            return getpass.getpass("Jira API token: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.stderr.write("\nerror: token prompt aborted\n")
+            sys.exit(2)
     if sys.stdin.isatty():
-        sys.stderr.write("error: token expected on stdin\n")
+        sys.stderr.write(
+            "error: token expected on stdin "
+            "(or use --prompt-token to enter it interactively)\n"
+        )
         sys.exit(2)
     return sys.stdin.read().strip()
 
@@ -180,7 +204,7 @@ def _fail(msg: str, code: int = 1, **extra: Any) -> None:
 
 
 def cmd_validate_credentials(args: argparse.Namespace) -> int:
-    token = _read_token()
+    token = _read_token(prompt=getattr(args, "prompt_token", False))
     try:
         me = _client(args.base_url, args.email, token).get_myself()
     except JiraError as e:
@@ -201,7 +225,7 @@ def cmd_validate_credentials(args: argparse.Namespace) -> int:
 
 
 def cmd_store_credentials(args: argparse.Namespace) -> int:
-    token = _read_token()
+    token = _read_token(prompt=getattr(args, "prompt_token", False))
     if not token:
         _fail("empty token")
     credentials.write(
@@ -243,7 +267,20 @@ def cmd_parse_board_url(args: argparse.Namespace) -> int:
 
 
 def cmd_validate_project(args: argparse.Namespace) -> int:
-    token = _read_token()
+    if getattr(args, "from_env", False):
+        # Read token from `~/.claude-workbench/.env` (where step 1's
+        # store-credentials wrote it). Avoids agents having to pipe the
+        # token through stdin during initjira's step 2 — see #42.
+        env = credentials.read("JIRA_")
+        token = env.get("JIRA_API_TOKEN", "")
+        if not token:
+            _fail(
+                "no JIRA_API_TOKEN in ~/.claude-workbench/.env — "
+                "run /kanban:reset-credentials first",
+            )
+            return 1
+    else:
+        token = _read_token(prompt=getattr(args, "prompt_token", False))
     client = _client(args.base_url, args.email, token)
     try:
         proj = client.get_project(args.project)
@@ -2687,11 +2724,30 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("validate-credentials")
     s.add_argument("--base-url", required=True)
     s.add_argument("--email", required=True)
+    s.add_argument(
+        "--prompt-token", action="store_true",
+        help=(
+            "Capture the token interactively via getpass (no echo, no "
+            "argv, no stdin pipe). Use this when running the command "
+            "yourself in a terminal — keeps the token out of any "
+            "Claude Code Bash-tool conversation log. Without this flag "
+            "the token is read from stdin."
+        ),
+    )
     s.set_defaults(func=cmd_validate_credentials)
 
     s = sub.add_parser("store-credentials")
     s.add_argument("--base-url", required=True)
     s.add_argument("--email", required=True)
+    s.add_argument(
+        "--prompt-token", action="store_true",
+        help=(
+            "Capture the token interactively via getpass (no echo, no "
+            "argv, no stdin pipe). Recommended path for human-driven "
+            "setup; keeps the token out of any agent's conversation "
+            "log. Without this flag the token is read from stdin."
+        ),
+    )
     s.set_defaults(func=cmd_store_credentials)
 
     s = sub.add_parser("read-credentials")
@@ -2706,6 +2762,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--email", required=True)
     s.add_argument("--project", required=True)
     s.add_argument("--board", required=True, type=int)
+    s.add_argument(
+        "--from-env", action="store_true",
+        help=(
+            "Read the token from ~/.claude-workbench/.env instead of "
+            "stdin. Recommended in agent-driven flows so the token "
+            "doesn't have to traverse stdin via a Bash-tool command "
+            "(which would log to the conversation transcript). Step 1's "
+            "store-credentials populates the .env file."
+        ),
+    )
+    s.add_argument(
+        "--prompt-token", action="store_true",
+        help="Capture the token interactively via getpass (no echo).",
+    )
     s.set_defaults(func=cmd_validate_project)
 
     s = sub.add_parser("build-status-map")
