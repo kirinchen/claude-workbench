@@ -297,6 +297,32 @@ class JiraDriver:
         resp = client._request("POST", "/rest/api/3/issue", body=body)
         new_key = resp["key"]
 
+        # Fixup pass — re-assert fields the project's Create Screen scheme
+        # may have silently dropped (#35). Jira filters the POST body
+        # against the Create Screen for the target issuetype: fields not
+        # on that screen are silently elided, the API returns 201, and
+        # `labels: []` ends up on the issue. The Edit Screen is generally
+        # more permissive, so a follow-up PUT recovers most cases. Best-
+        # effort: a fixup failure leaves an audit comment but doesn't
+        # roll back the create (the card exists; users prefer "labels
+        # missing" over "no card at all").
+        fixup: dict[str, Any] = {}
+        if task.tags:
+            fixup["labels"] = list(task.tags)
+        if fixup:
+            try:
+                client._request(
+                    "PUT", f"/rest/api/3/issue/{new_key}",
+                    body={"fields": fixup},
+                )
+            except JiraError as e:
+                self._post_system_comment(
+                    new_key,
+                    f"create_task fixup failed (fields {sorted(fixup)} may "
+                    f"have been silently dropped by Create Screen scheme): "
+                    f"{e.detail or e}",
+                )
+
         # Sub-card linking — best-effort. If link creation fails, log via
         # an audit comment on the new card but don't undo the create. The
         # card exists; the user can manually link if needed.
