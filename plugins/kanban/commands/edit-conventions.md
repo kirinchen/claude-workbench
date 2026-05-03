@@ -80,7 +80,7 @@ time they re-import. To push the update now:
 
   1. Run /kanban:showjira-code in this repo
   2. Share the printed JSON with your team
-  3. Each teammate runs /kanban:initjira-by-code on their repo and
+  3. Each teammate runs /kanban:import-jira-code on their repo and
      pastes the new code (the ack flow re-fires because the hash changed)
 ```
 
@@ -90,4 +90,4 @@ time they re-import. To push the update now:
 - Never bypass the length guardrails silently — warn and re-prompt.
 - Never write conventions on behalf of another repo. The source-of-truth
   is wherever the user is running this command. Other repos pull via
-  `/kanban:initjira-by-code`.
+  `/kanban:import-jira-code`.

@@ -75,10 +75,14 @@ For each mention, the LLM should follow the `kanban-jira-agent` skill's
 
 - Read the card (description + recent comments)
 - Estimate workload
-- Small (1–3h): `/kanban:next --task-id <KEY>` to claim, do the work,
-  then `/kanban:reply <KEY> --to <authorAccountId> --body "..."`
+- Small (1–3h): the @-mention authorizes you to move the card —
+  `/kanban:transition <KEY> --to DOING`, then `/kanban:doing` to pick
+  it up, do the work, then `/kanban:reply <KEY> --to <authorAccountId>
+  --body "..."`
 - Large (>3h): `/kanban:create-sub <KEY> --title "..."` to spawn 2–5
-  sub-cards, then claim them one at a time
+  sub-cards; owner moves the first sub into DOING (or you may
+  `/kanban:transition` it on their behalf when their mention's intent
+  is clear), then `/kanban:doing` to work it
 - Uncertain: `/kanban:question <KEY> "<clarifying question>"`
 
 ## 4. Mark as read

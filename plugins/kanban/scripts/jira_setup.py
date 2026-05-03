@@ -1560,6 +1560,52 @@ def cmd_read_agent_ap(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_list_doing(args: argparse.Namespace) -> int:
+    """List my-AP cards currently in DOING. Read-only — does NOT pull
+    from TODO and does NOT transition. Backs `/kanban:doing` (#33).
+
+    Returns: {ok, ap, doing: [{id, title, priority, started, ...}, ...]}
+    The slash-command then reads the list and decides execution order
+    across the (small) DOING set without scanning the wider backlog.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        _fail(f"kanban.json not found at {p}")
+        return 1
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        _fail("backend.driver must be 'jira'")
+        return 1
+    ap = _read_repo_ap(p)
+    if not ap:
+        _fail(
+            "this repo has no AP set — run /kanban:assign-ap <name> first",
+        )
+        return 1
+
+    from drivers import get_driver
+    from drivers.base import TaskFilter
+
+    driver = get_driver(data, p.parent)
+    try:
+        cards = driver.list_tasks(TaskFilter(column="DOING", ap=ap))
+    except Exception as e:  # noqa: BLE001
+        _fail(f"{type(e).__name__}: {e}")
+        return 1
+    out: list[dict[str, Any]] = []
+    for t in cards:
+        out.append({
+            "id": t.id,
+            "title": t.title,
+            "priority": t.priority,
+            "started": t.started,
+            "ap": t.ap,
+        })
+    _emit({"ok": True, "ap": ap, "doing": out})
+    return 0
+
+
 def cmd_claim_next(args: argparse.Namespace) -> int:
     p = Path(args.kanban_path)
     if not p.exists():
@@ -2733,6 +2779,14 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("claim-next")
     s.add_argument("--kanban-path", required=True)
     s.set_defaults(func=cmd_claim_next)
+
+    s = sub.add_parser(
+        "list-doing",
+        help="List my-AP cards currently in DOING. Read-only; does not "
+             "pull from TODO. Used by /kanban:doing (#33).",
+    )
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_list_doing)
 
     s = sub.add_parser("transition")
     s.add_argument("--kanban-path", required=True)

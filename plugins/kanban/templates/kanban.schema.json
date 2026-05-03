@@ -85,7 +85,7 @@
               "properties": {
                 "notes": {
                   "type": "array",
-                  "description": "Short prose notes shown to anyone importing the board code. Receivers are required to acknowledge before /kanban:initjira-by-code completes.",
+                  "description": "Short prose notes shown to anyone importing the board code. Receivers are required to acknowledge before /kanban:import-jira-code completes.",
                   "items": { "type": "string" }
                 },
                 "blockedRequiresLink": {

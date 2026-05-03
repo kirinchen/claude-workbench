@@ -54,6 +54,8 @@ Hook contents to write:
 set -euo pipefail
 changed=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD 2>/dev/null || true)
 if printf '%s\n' "$changed" | grep -q '^kanban\.json$'; then
+    # Replace /kanban:next with /kanban:doing for Jira-mode repos —
+    # /kanban:next prints a deprecation notice in Jira mode (#33).
     claude -p "kanban.json changed via git pull. /kanban:next and execute." \
       --allowedTools "Read,Write,Edit,Bash(git:*),Bash(date:*)" \
       --permission-mode acceptEdits \

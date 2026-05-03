@@ -178,7 +178,7 @@ After init:
 
 ```
 > /kanban:status     # live state from Jira
-> /kanban:next       # claim the top TODO for this AP
+> /kanban:doing      # work the cards already in DOING (owner curates TODO → DOING; agent executes)
 > /kanban:done       # transition DOING → In Review (a human approves to Done)
 > /kanban:question AGENT-42 "should v1 stay backward-compatible?"
 > /kanban:whoami     # show driver, AP, token validity, MCP scan
@@ -205,7 +205,7 @@ Setup splits into three layers, each with a different lifecycle:
 
 | Layer | What | When you redo it |
 |---|---|---|
-| **Per-board** (shareable) | `transitions`, AP custom-field id, board metadata, `conventions` notes | Once. Then `/kanban:showjira-code` and any teammate / repo can `/kanban:initjira-by-code` paste the JSON to inherit it. |
+| **Per-board** (shareable) | `transitions`, AP custom-field id, board metadata, `conventions` notes | Once. Then `/kanban:showjira-code` and any teammate / repo can `/kanban:import-jira-code` paste the JSON to inherit it. |
 | **Per-machine** | Jira credentials in `~/.claude-workbench/.env` (base URL, agent email, API token) | Once per machine. After that all repos on that machine share the credentials. |
 | **Per-repo** | This repo's AP in `.claude/kanban-agent.json` | Once per repo. Each repo picks its own AP from the live Jira options list. |
 
@@ -213,8 +213,8 @@ Setup splits into three layers, each with a different lifecycle:
 
 | Scenario | What you run on the new side |
 |---|---|
-| **All-new machine + all-new repo** | `/kanban:init` → `/kanban:initjira-by-code` (does credentials + paste code + assign AP in one flow) |
-| **Same machine, new repo** | `/kanban:init` → `/kanban:initjira-by-code` (credentials auto-skipped — already on this machine; only paste code + assign AP run interactively) |
+| **All-new machine + all-new repo** | `/kanban:init` → `/kanban:import-jira-code` (does credentials + paste code + assign AP in one flow) |
+| **Same machine, new repo** | `/kanban:init` → `/kanban:import-jira-code` (credentials auto-skipped — already on this machine; only paste code + assign AP run interactively) |
 | **Existing repo already in Jira mode** | Nothing — already set up. `/kanban:whoami` to verify. |
 
 ### How it works
@@ -231,7 +231,7 @@ On any other machine / repo:
 
 ```
 > /kanban:init                  # scaffold kanban.json (local mode)
-> /kanban:initjira-by-code      # paste the JSON; runs credentials (if needed) + assign AP
+> /kanban:import-jira-code      # paste the JSON; runs credentials (if needed) + assign AP
 ```
 
 The receiver asks for Jira credentials only the first time on a given machine. If `conventions.notes` is non-empty, the receiver also has to type `I have read these` to acknowledge before init completes (the friction is intentional — see issue #10).

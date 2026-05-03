@@ -55,7 +55,7 @@ Acknowledgement: <✓ acknowledged | ⚠ not acknowledged in this repo>
 
 If `alreadyAcked` is false, append:
 
-> Run `/kanban:initjira-by-code` (re-paste the same code) to ack, or
+> Run `/kanban:import-jira-code` (re-paste the same code) to ack, or
 > just type `I have read these` next time you re-init.
 
 ## Absolute rules

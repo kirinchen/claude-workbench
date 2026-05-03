@@ -9,7 +9,7 @@ Arguments: `$ARGUMENTS`
 
 This command switches a project to **Jira mode** end-to-end: credentials,
 board, workflow check, Agent Property (AP) custom field, and the first AP
-registration. After it completes, `/kanban:next`, `/kanban:done`, and
+registration. After it completes, `/kanban:doing`, `/kanban:done`, and
 `/kanban:block` operate against Jira with anti-self-approve enforcement.
 
 The helper `${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py` does the network +
@@ -120,7 +120,7 @@ Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)
 
 > **Tip — already configured the same board in another repo or machine?**
 > Skip this entire flow: run `/kanban:showjira-code` in the source repo,
-> copy the printed JSON, then run `/kanban:initjira-by-code` in this repo
+> copy the printed JSON, then run `/kanban:import-jira-code` in this repo
 > and paste it. Jumps straight from credentials to step 5 (assign AP).
 
 ## Step 3/5 — Compound transitions (canonical → Jira)
@@ -303,7 +303,7 @@ list verbatim and suggest:
 > ⚠ AP field created, but couldn't attach it to: `<screen names>`.
 > Ask a Jira admin to add `<fieldName>` to those screens, or run
 > `/kanban:fix-ap-screen` after they grant you permission. **Until at
-> least one screen carries the field, `/kanban:next` will return no
+> least one screen carries the field, `/kanban:doing` will return no
 > work even if cards exist.**
 
 On `ok=true`, persist the new field:
@@ -423,7 +423,7 @@ MCP scan:   ✓ no conflicts | ⚠ <count> conflict(s)
 Try:
   • /kanban:whoami       — confirm current state
   • /kanban:status       — read live Jira state for this AP
-  • /kanban:next         — claim the next TODO for this AP
+  • /kanban:doing         — claim the next TODO for this AP
 ```
 
 ## Absolute rules

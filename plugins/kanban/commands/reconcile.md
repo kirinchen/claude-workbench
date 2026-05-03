@@ -6,7 +6,7 @@ allowed-tools: Read, Bash(python3:*)
 # /kanban:reconcile
 
 Read-only diagnostic. Finds cards that are present in Jira but invisible
-to `/kanban:status` / `/kanban:next` / `cmd_sync_summary` because they
+to `/kanban:status` / `/kanban:doing` / `cmd_sync_summary` because they
 don't satisfy the AP + status filter the plugin uses.
 
 Two checks:
@@ -18,7 +18,7 @@ Two checks:
 2. **Missing AP** — open card in the project with no AP custom field
    set. Cause: manual creation in Jira UI, an old import that pre-dates
    0.3.8, broken `/kanban:initjira` step 5, etc. Such cards never
-   appear in `/kanban:next` regardless of their status.
+   appear in `/kanban:doing` regardless of their status.
 
 `/kanban:sync` (auto on `SessionStart`) already prints a one-line drift
 reminder when this command would surface anything. This command is the
@@ -55,14 +55,14 @@ Otherwise render two sections (skip the section if its count is zero):
   Backlog:
     BZK-700
 
-[missing AP — N card(s) with no AP set, invisible to /kanban:next]
+[missing AP — N card(s) with no AP set, invisible to /kanban:doing]
   BZK-820  BZK-821  ...
 
 Suggested next steps:
   • For unmapped statuses: re-run /kanban:initjira (step 3) and add DSL
     lines mapping `TO PROGRESS` and `Backlog` to canonical columns —
     OR move the cards back to a mapped status in the Jira UI.
-  • For missing AP: claim them via /kanban:next (per repo) or set the
+  • For missing AP: claim them via /kanban:doing (per repo) or set the
     AP field directly in Jira UI for cards owned by other agents.
 ```
 

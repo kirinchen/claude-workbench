@@ -59,7 +59,7 @@ Response:
 ```
 
 Each created card is auto-assigned this repo's AP (so it shows up on
-the next `/kanban:next`). If the AP assignment fails (network /
+the next `/kanban:doing`). If the AP assignment fails (network /
 permission), the card still exists — surface in the report.
 
 ## 2. Render
@@ -80,11 +80,15 @@ After spawning sub-cards, the LLM typically:
 
 1. `/kanban:reply <parent> --to <commenter-accountId> --body "..."`
    — notify the human about the breakdown.
-2. `/kanban:next --task-id <first-sub>` — claim the first sub-card.
-3. Work on it, complete via `/kanban:done`.
-4. Move to the next sub-card.
+2. Owner reviews the sub-cards and moves the first one to DOING
+   (TODO → DOING is the owner's call — see #33). When the @-mention
+   from the owner explicitly authorizes start, the agent may instead
+   call `/kanban:transition <first-sub> --to DOING`.
+3. `/kanban:doing` — read the DOING pool and pick up the first sub-card.
+4. Work on it, complete via `/kanban:done`.
+5. Move to the next sub-card.
 
-Don't claim all sub-cards at once — the kanban-workflow skill says
+Don't work all sub-cards in parallel — the kanban-workflow skill says
 "never start more than one task at a time in the same session."
 
 ## Absolute rules
@@ -93,6 +97,6 @@ Don't claim all sub-cards at once — the kanban-workflow skill says
   response to an @-mention with clear "do it" intent). Don't proactively
   break down cards that look big.
 - Never omit the parent — sub-cards without a parent should just be
-  created via `/kanban:next` workflows.
+  created via `/kanban:create` and worked through `/kanban:doing`.
 - Never invent titles — they must come from the user's request or the
   LLM's classified breakdown of the parent's description.
