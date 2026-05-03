@@ -35,11 +35,29 @@ You still need:
 - Confirm `kanban.json` exists at the project root. If missing, run
   `/kanban:init` first.
 - `$CLAUDE_PROJECT_DIR` (or `git rev-parse --show-toplevel`) → kanban path.
-- If `kanban.json#backend.driver` is already `"jira"`, ask the user
-  whether to overwrite the current mapping (the import will replace
-  `backend.jira` wholesale). For routine re-sync this is the expected
-  flow — say yes; for a fresh code from an unfamiliar source, double-check
-  it's the right team's payload first.
+- **Check whether the config is already in place from git.** Read
+  `kanban.json#backend.jira` — if `driver == "jira"` AND `transitions`
+  is non-empty (any keys configured), this repo already has its full
+  Jira config from a prior `git pull`. The most likely intent in that
+  case is "I cloned this repo on a new machine and just need to set my
+  Jira token here," not "I want to re-paste the entire code." Surface
+  this proactively:
+
+  ```
+  ⓘ kanban.json already has a complete backend.jira block (probably
+    from `git pull`). On a same-repo-different-machine setup, what
+    you usually want is just /kanban:reset-credentials to capture the
+    Jira token for THIS machine — config itself travels via git.
+
+    Continue with full re-import anyway? [y/N]
+  ```
+
+  Default no. If the user says no, exit with a one-line nudge to run
+  `/kanban:reset-credentials`. If yes, proceed with the rest of the
+  flow — the import will replace `backend.jira` wholesale (which is
+  the correct behavior for a genuine config drift / re-sync).
+- If the user opts in (or `backend.jira` is empty / driver is `local`),
+  proceed.
 
 ## Step 1/3 — Credentials
 

@@ -1,12 +1,22 @@
 ---
-description: Rotate Jira API credentials for the current machine.
+description: Set or rotate Jira credentials on this machine — entry point for both first-time-on-this-machine setup and token rotation.
 allowed-tools: Bash(python3:*), AskUserQuestion
 ---
 
 # /kanban:reset-credentials
 
-Re-prompt and overwrite the Jira credentials in `~/.claude-workbench/.env`.
-Use when the API token has been rotated, expired, or exposed.
+Capture (or re-capture) the Jira credentials in `~/.claude-workbench/.env`.
+Two main use cases:
+
+- **First-time setup on a new machine for an existing repo.** When you
+  `git clone` (or `git pull`) a repo that already has Jira mode
+  configured, `kanban.json` carries the full `backend.jira` block
+  (transitions, projectKey, ap.fieldId, conventions) already — config
+  travels via git. The only thing this machine is missing is your
+  Jira API token, which is per-machine by design. Run this command to
+  capture it, no need to re-paste the code via `/kanban:import-jira-code`.
+- **Token rotation.** Existing token expired, was rotated by an admin,
+  or was exposed; replace it.
 
 This command does NOT touch `kanban.json`, AP registry, or any other
 plugin's configuration. Only the `JIRA_*` lines in `.env` are replaced.

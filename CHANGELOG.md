@@ -15,6 +15,47 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-03 (kanban same-repo-different-machine UX)
+
+### Changed
+- **kanban 0.3.17** — documentation + slash-command guidance for the
+  "same repo cloned on a new machine" flow. No code or test changes;
+  pure UX clarity.
+
+  Background: `kanban.json` is committed by `kanban-autocommit.sh` and
+  travels with the repo via git. In Jira mode it carries the full
+  `backend.jira` block (transitions, projectKey, ap.fieldId,
+  conventions) — i.e. the same payload `/kanban:showjira-code` would
+  emit, except git is the transport. The only legitimately
+  per-machine state is the API token in `~/.claude-workbench/.env`.
+  So when you `git clone` (or `git pull`) a repo that's already in
+  Jira mode on a new machine, you do NOT need to re-paste the code
+  — you just need to capture this machine's token.
+
+  But the existing docs hid that. The Multi-machine cheatsheet only
+  listed "new repo" / "teammate joining" scenarios; readers reached
+  for `/kanban:import-jira-code` and re-pasted redundantly.
+  `/kanban:reset-credentials` was the right tool but its description
+  framed it purely as "rotate Jira credentials," not "first-time
+  setup on this machine for an existing repo."
+
+  Fixed:
+
+  - `commands/reset-credentials.md` description and body now spell
+    out both use cases: first-time-on-this-machine setup AND token
+    rotation.
+  - `commands/import-jira-code.md` step 0 now detects when
+    `backend.jira` already has a non-empty `transitions` map (the
+    git-pull signal) and proactively suggests `/kanban:reset-credentials`
+    before doing a wholesale re-import. Default no on the "continue
+    anyway" prompt — the import will replace `backend.jira` wholesale,
+    which is rarely what someone wants when their config came from
+    git.
+  - `kanban_quickstart.md` + `kanban_quickstart_zhtw.md` cheatsheet
+    gains a new row: "Same repo, different machine → `git pull` +
+    `/kanban:reset-credentials`." A blockquote underneath explains
+    why this works (autocommit hook + git transport).
+
 ## 2026-05-03 (kanban command renames + scope narrowing)
 
 ### Changed
