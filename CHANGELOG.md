@@ -15,6 +15,39 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-03 (kanban set-conventions incremental flags)
+
+### Added
+- **kanban 0.3.15** — `set-conventions` accepts three new flags for
+  incremental mutation, mutually exclusive with the existing
+  `--conventions-json` full-replace mode. Closes #36.
+
+  - `--append-note "..."` — append a note to `conventions.notes`.
+    Idempotent: exact-text duplicates of existing notes are silently
+    skipped, so slash-command flows that re-run on the same input
+    won't double up. Repeat the flag to append several notes in one
+    call.
+  - `--remove-note "..."` — drop a note by exact-text match. Notes
+    that don't exist are a no-op.
+  - `--set-toggle KEY=VALUE` — set a single toggle (e.g.
+    `blockedRequiresLink=false`). Booleans are recognised
+    case-insensitively (`true` / `TRUE` / `false` / `FALSE`);
+    everything else is stored as a string.
+
+  Why this matters: the original `--conventions-json` mode required
+  callers to faithfully reproduce the entire block to add a single
+  rule. For LLM-driven slash-command flows that round-trip is risky —
+  an agent that paraphrases an existing note on the way through
+  silently overwrites it ("why did this rule disappear" mysteries).
+  The incremental flags let callers atomically mutate the block
+  without reproducing existing material.
+
+  Phase 22 covers seven cases: append idempotency, remove no-op when
+  absent, toggle bool conversion (case-insensitive), mutual
+  exclusion with `--conventions-json`, "require at least one mode"
+  guard, full-replace back-compat, and a combo call exercising all
+  three incremental flags together.
+
 ## 2026-05-03 (kanban create_task fixup PUT)
 
 ### Fixed
