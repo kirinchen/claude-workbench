@@ -15,6 +15,65 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-04 (kanban precheck recent comments)
+
+### Fixed
+- **kanban 0.3.19** — the card-detect hook now surfaces the most
+  recent 3 comments verbatim in its context block, so an agent
+  pasting a Jira URL into a prompt sees load-bearing instructions
+  ("stop", "delete this", "scope changed") instead of just the
+  static title/status/AP. Closes #42.
+
+  **The original bug**: `scripts/kanban-card-detect.sh` always passed
+  `--skip-comments` to `precheck-card`, and even without that flag
+  `_detect_open_question` only considered SPEC §9 `Q:`-prefixed
+  comments. So a free-form instruction comment from the user was
+  silently invisible to the agent — the implicit "if you reference a
+  card, you have its context" contract held for static fields but not
+  dynamic ones, which is where async decisions actually live.
+
+  **Fix has three parts**:
+
+  - `precheck-card` gains `--comments-limit N` (default **3**, max
+    recommended 5; `0` disables, equivalent to `--skip-comments`).
+    The most recent N comments are surfaced verbatim with author +
+    relative timestamp + SPEC §9 kind tag + a 500-char excerpt.
+    Newlines collapse to spaces so the block stays grep-friendly.
+  - `kanban-card-detect.sh` drops `--skip-comments`, replaced by
+    `--comments-limit 3`. The 30s precheck cache absorbs the extra
+    API call across repeated key references in a session.
+  - New `read-card-comments` helper subcommand: `python3
+    jira_setup.py read-card-comments --kanban-path P --key KEY
+    [--limit N]` returns `{ok, key, comments: [{author, ts, kind,
+    text}, ...]}`. Building block for any slash command that needs
+    recent context (and the natural fix for "the plugin's CLI doesn't
+    expose read-comments anywhere" gap reporter called out).
+
+  **Output shape** in the precheck block:
+
+  ```
+  [kanban context for BZK-633]
+    Title:        ...
+    Status:       In Progress
+    AP:           quant-oak  (you)
+    Recent comments (3):
+      Bot (5d ago) [S]: claimed
+      Alice (yesterday) [C]: 我同意; 改方向到 NFA
+      Kirin (2h ago) [C]: 已經不需要了, 由 NFA 主導, 幫我把這卡 delete
+  ```
+
+  The Q-prefix open-question detection is preserved — it remains a
+  high-signal warning (`Open question: ...`) above the recent-comments
+  block when an unanswered Q exists. Recent-comments and open-question
+  are now complementary surfaces, not the only path.
+
+  Phase 25 covers seven cases: rendering when recent_comments present;
+  no section when empty; excerpt newline-collapse + 500-char truncate
+  with `…`; relative-timestamp buckets (just now / Nm / Nh /
+  yesterday / Nd / Nw / Nmo / Ny ago); cache-hit path emits the
+  block; `--skip-comments` back-compat; `read-card-comments` shape +
+  `--limit` truncation.
+
 ## 2026-05-03 (kanban secret-safe token capture)
 
 ### Security
