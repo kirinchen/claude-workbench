@@ -205,7 +205,15 @@ Setup 拆成**三層**，每層有自己的生命週期：
 |---|---|
 | **全新機器 + 全新 repo** | `/kanban:init` → `/kanban:import-jira-code`（一個指令做完憑證 + 貼 code + 選 AP） |
 | **同機器 + 新 repo** | `/kanban:init` → `/kanban:import-jira-code`（憑證自動跳過——本機已有；只剩貼 code + 選 AP 互動） |
-| **既有 repo 已是 jira mode** | 啥都不用——已 setup。`/kanban:whoami` 可驗證 |
+| **同 repo + 換機器**（clone 一個已經是 jira mode 的 repo） | `git pull` → `/kanban:reset-credentials`。`kanban.json` 已經帶完整 `backend.jira` block 透過 git 過來了，這台只缺自己這台機器的 Jira token。**不用重貼 code。** |
+| **既有 repo 已是 jira mode 在這台** | 啥都不用——已 setup。`/kanban:whoami` 可驗證 |
+
+> **為什麼同 repo 換機器這麼簡單**：`kanban.json` 會被 `kanban-autocommit.sh`
+> PostToolUse hook 自動 commit，跟著 `git push` / `git pull` 走。`backend.jira`
+> block（transitions、projectKey、ap.fieldId、conventions）就是
+> `/kanban:showjira-code` 印出來那份 JSON——只是 git 幫你做傳輸。唯一 per-machine
+> 的東西是你 `~/.claude-workbench/.env` 裡的 Jira API token，那個不在 git 裡
+> （也不該在——每台機器各拿一張 token 比較安全）。
 
 ### 運作原理
 

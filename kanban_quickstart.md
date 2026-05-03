@@ -215,7 +215,17 @@ Setup splits into three layers, each with a different lifecycle:
 |---|---|
 | **All-new machine + all-new repo** | `/kanban:init` → `/kanban:import-jira-code` (does credentials + paste code + assign AP in one flow) |
 | **Same machine, new repo** | `/kanban:init` → `/kanban:import-jira-code` (credentials auto-skipped — already on this machine; only paste code + assign AP run interactively) |
-| **Existing repo already in Jira mode** | Nothing — already set up. `/kanban:whoami` to verify. |
+| **Same repo, different machine** (you cloned a repo that's already in Jira mode) | `git pull` → `/kanban:reset-credentials`. `kanban.json` already carries the full `backend.jira` block via git, so the only thing this machine needs is your per-machine Jira token. **No need to re-paste the code.** |
+| **Existing repo already in Jira mode on this machine** | Nothing — already set up. `/kanban:whoami` to verify. |
+
+> **Why same-repo-different-machine is easy**: `kanban.json` is committed
+> by the `kanban-autocommit.sh` PostToolUse hook and travels with `git
+> push` / `git pull`. The `backend.jira` block (transitions, projectKey,
+> ap.fieldId, conventions) is the same payload `/kanban:showjira-code`
+> would emit — except git is doing the transport for you. The only
+> per-machine state is your Jira API token in `~/.claude-workbench/.env`,
+> which is not in git (and shouldn't be — each machine should have its
+> own token).
 
 ### How it works
 
