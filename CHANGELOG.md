@@ -15,6 +15,85 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-04 (kanban REVIEW flavors)
+
+### Added
+- **kanban 0.3.22** — transitions DSL now supports `flavors` —
+  same-status sub-classification via labels, atomically applied. The
+  agent's compound transition write merges the chosen flavor's
+  `addLabels` / `removeLabels` / `assignee` into the parent spec on
+  the same write, so the card lands in REVIEW + the flavor label in
+  one operation (no transient "REVIEW without label" window). Closes
+  #45.
+
+  **Why this matters**: REVIEW was a single canonical state but
+  carried two semantically different signals — "agent finished, please
+  approve" vs "agent stuck, posted options, please decide." An outside
+  observer (board glance, JQL, mobile UI) couldn't tell them apart
+  without opening the card. Per-team agents were inventing their own
+  label conventions (`kanban_awaiting_approval` vs `pls-approve` vs
+  `awaiting-review`) — the plugin should provide consistency, not push
+  it onto every team.
+
+  **Why `flavors` instead of new canonical states**: lifecycle stage
+  (canonical state) and within-stage metadata (flavor) are different
+  abstraction layers. Flavors don't trigger different plugin behavior
+  (anti-self-approve, `/kanban:doing`, `/kanban:reconcile` all treat
+  the flavors equivalently). A new canonical state would also force
+  `local` driver migration, SPEC + quickstart updates, and
+  `/kanban:status` column changes — none of which serve the actual
+  use case (label-level triage on the same lifecycle stage).
+
+  **DSL shape** (additive — no flavors block = same as before):
+
+  ```json
+  "REVIEW": {
+    "status": "REVIEW",
+    "flavors": {
+      "awaiting_approval": { "addLabels": ["kanban_awaiting_approval"] },
+      "needs_decision":    { "addLabels": ["kanban_needs_decision"] }
+    },
+    "defaultFlavor": "awaiting_approval"
+  }
+  ```
+
+  - `transition --to REVIEW --flavor awaiting_approval` does status +
+    label add atomically.
+  - `--flavor` required when state has flavors; `defaultFlavor`
+    (optional) is the fallback so `/kanban:done` can stay short.
+  - Invalid / missing flavor → raise with the available flavor list.
+  - State without `flavors` block → ignore stray `--flavor` (forward
+    compat — callers can pass it unconditionally).
+
+  **Slash command updates**:
+
+  - `/kanban:done` — when DSL declares flavors on REVIEW, pass
+    `--flavor awaiting_approval` (the conventional name; respects
+    whatever key the team's DSL uses).
+  - `kanban-jira-agent` SKILL — explains the two flavors and which
+    command path to use for each: `/kanban:done` for
+    `awaiting_approval`, `/kanban:transition --flavor needs_decision`
+    after posting an options comment for `needs_decision`.
+
+  **Naming guidance**: new plugin-suggested labels prefer underscore
+  (`kanban_awaiting_approval`) over colon (`kanban:foo`). The colon
+  form visually parses as a slash-command path and confuses operators.
+  Existing built-in `kanban:blocked` / `kanban:cancelled` keep the
+  colon for back-compat.
+
+  **Forward / back compat**: kanban-jira-code/2 payloads carrying
+  `flavors` blocks survive round-trip through receivers older than
+  0.3.22 — Python's dict round-trip is forgiving and the older driver
+  ignores the unknown keys (it just won't know how to consume
+  `--flavor`). No new schema version needed.
+
+  Phase 27 covers eight cases: validator accepts well-formed flavors;
+  validator rejects six malformed shapes; driver merges flavor's
+  addLabels onto compound write; defaultFlavor fallback; missing
+  flavor + no default raises with available list; invalid flavor
+  raises; state-without-flavors ignores stray `--flavor`;
+  cmd_transition argparse threads `--flavor` into kwargs.
+
 ## 2026-05-04 (kanban clickable URLs in ADF bodies)
 
 ### Fixed

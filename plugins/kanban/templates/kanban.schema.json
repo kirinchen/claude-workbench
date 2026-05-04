@@ -168,6 +168,38 @@
           "properties": {
             "accountId": { "type": "string", "minLength": 1 }
           }
+        },
+        "flavors": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Sub-classification of this canonical state via labels (#45). Each flavor adds its own addLabels/removeLabels/assignee on top of the parent spec, atomically. The parent's `status` is shared. Use when a single canonical lifecycle stage carries multiple semantic flavors that an outside observer should be able to triage at a glance (e.g. REVIEW awaiting_approval vs needs_decision). Naming: prefer underscore-separated values (kanban_awaiting_approval) over colon (kanban:foo) — the latter visually parses as a slash-command path.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "addLabels": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "removeLabels": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "assignee": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["accountId"],
+                "properties": {
+                  "accountId": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "defaultFlavor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional fallback flavor name used when transition is invoked without --flavor. Must be a key in `flavors`. When unset and `flavors` exists, transition without --flavor raises."
         }
       }
     },

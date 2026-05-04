@@ -361,6 +361,46 @@ class JiraDriver:
         if not target_status:
             raise RuntimeError(f"transition spec for {to_column!r} missing `status`")
 
+        # Flavor resolution (#45). When the spec carries a `flavors` block,
+        # the caller must pick one (via --flavor / kwargs["flavor"]) or
+        # the spec must declare a `defaultFlavor`. The chosen flavor's
+        # addLabels / removeLabels / assignee are merged onto the parent
+        # spec, then the rest of the compound write runs unchanged. When
+        # the spec has no flavors, a stray `flavor` kwarg is silently
+        # ignored (forward compat — callers can pass it unconditionally).
+        flavor_name = kwargs.get("flavor")
+        flavors = spec.get("flavors") or {}
+        if flavors:
+            if not flavor_name:
+                flavor_name = spec.get("defaultFlavor")
+            if not flavor_name:
+                raise RuntimeError(
+                    f"transition to {to_column!r} requires --flavor "
+                    f"(available: {sorted(flavors)}); set "
+                    f"transitions.{to_column}.defaultFlavor in kanban.json "
+                    f"to skip this when one flavor is the common case"
+                )
+            if flavor_name not in flavors:
+                raise RuntimeError(
+                    f"unknown flavor {flavor_name!r} for {to_column!r} "
+                    f"(available: {sorted(flavors)})"
+                )
+            flavor_spec = flavors[flavor_name] or {}
+            # Build a merged spec WITHOUT mutating self.transitions_map —
+            # subsequent reads / disambiguate calls still see the pristine
+            # config.
+            merged_add = list(spec.get("addLabels") or []) + list(
+                flavor_spec.get("addLabels") or []
+            )
+            merged_remove = list(spec.get("removeLabels") or []) + list(
+                flavor_spec.get("removeLabels") or []
+            )
+            spec = dict(spec)
+            spec["addLabels"] = merged_add
+            spec["removeLabels"] = merged_remove
+            if flavor_spec.get("assignee"):
+                spec["assignee"] = flavor_spec["assignee"]
+
         # One pre-flight read serves anti-self-approve, the already-in-
         # target-status fast path, and the blocked_by idempotency check.
         existing_for_status = self.get_task(key)

@@ -380,6 +380,57 @@ def validate(
         if a is not None:
             if not isinstance(a, dict) or not a.get("accountId"):
                 errs.append(f"{col}: assignee must be {{accountId: ...}}")
+        # Flavors — same-status sub-classification via labels (#45).
+        # Each flavor is itself a partial spec (addLabels / removeLabels /
+        # assignee); status comes from the parent. defaultFlavor, when
+        # set, must reference an existing flavor key.
+        flavors = spec.get("flavors")
+        if flavors is not None:
+            if not isinstance(flavors, dict) or not flavors:
+                errs.append(f"{col}: flavors must be a non-empty object")
+            else:
+                for fname, fspec in flavors.items():
+                    if not isinstance(fname, str) or not fname:
+                        errs.append(f"{col}: flavor name must be a non-empty string")
+                        continue
+                    if not isinstance(fspec, dict):
+                        errs.append(f"{col}.flavors.{fname}: must be an object")
+                        continue
+                    for fkey in ("addLabels", "removeLabels"):
+                        fv = fspec.get(fkey)
+                        if fv is not None and not (
+                            isinstance(fv, list)
+                            and all(isinstance(x, str) and x for x in fv)
+                        ):
+                            errs.append(
+                                f"{col}.flavors.{fname}: {fkey} must be a "
+                                f"list of non-empty strings"
+                            )
+                    fa = fspec.get("assignee")
+                    if fa is not None:
+                        if not isinstance(fa, dict) or not fa.get("accountId"):
+                            errs.append(
+                                f"{col}.flavors.{fname}: assignee must be "
+                                f"{{accountId: ...}}"
+                            )
+            # defaultFlavor sanity (only meaningful when flavors block ok)
+            default_flavor = spec.get("defaultFlavor")
+            if default_flavor is not None:
+                if not isinstance(default_flavor, str):
+                    errs.append(f"{col}: defaultFlavor must be a string")
+                elif (
+                    isinstance(flavors, dict)
+                    and flavors
+                    and default_flavor not in flavors
+                ):
+                    errs.append(
+                        f"{col}: defaultFlavor {default_flavor!r} is not in "
+                        f"flavors keys {sorted(flavors)}"
+                    )
+        elif spec.get("defaultFlavor") is not None:
+            errs.append(
+                f"{col}: defaultFlavor set but no flavors block — drop one"
+            )
     return errs
 
 
