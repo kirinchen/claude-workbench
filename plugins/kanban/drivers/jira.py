@@ -20,6 +20,7 @@ from lib import card_cache, credentials, transitions as _tr
 from lib.jira_client import (
     JiraClient,
     JiraError,
+    _text_to_inline_nodes,
     adf_to_text,
     text_to_adf,
     text_to_adf_with_mention,
@@ -180,7 +181,9 @@ class JiraDriver:
         # Two paragraphs: bold prefix on its own line, then the body. ADF
         # doesn't parse markdown — emitting the prefix as a strong-marked
         # text node is the only way to get bold rendering without the raw
-        # `**` showing up in the Jira UI (#27).
+        # `**` showing up in the Jira UI (#27). URLs in the body are
+        # split out into ADF link-marked nodes so they render clickable.
+        body_nodes = _text_to_inline_nodes(body) or [{"type": "text", "text": ""}]
         return {
             "type": "doc",
             "version": 1,
@@ -197,7 +200,7 @@ class JiraDriver:
                 },
                 {
                     "type": "paragraph",
-                    "content": [{"type": "text", "text": body}],
+                    "content": body_nodes,
                 },
             ],
         }

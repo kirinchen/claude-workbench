@@ -395,20 +395,69 @@ class JiraClient:
 # -------- helpers ----------------------------------------------------------
 
 
+# URL detector for clickable-link markup. Conservative on tail characters
+# so a URL at end-of-sentence (e.g. "see https://x.com.") doesn't swallow
+# the period, and a URL inside parens / quotes doesn't pull the closing
+# bracket in. ADF doesn't auto-linkify plain text — without an explicit
+# `link` mark the URL renders as un-clickable text.
+import re as _re
+_URL_RE = _re.compile(r"https?://[^\s<>\"\)\]]+")
+
+
+def _text_to_inline_nodes(text: str) -> list[dict[str, Any]]:
+    """Split `text` on URLs and return ADF text nodes — URL spans get
+    a `link` mark so they render clickable in Jira UI.
+
+    Returns a list ready to drop into a paragraph's `content`. Empty
+    spans collapse so adjacent URLs don't yield empty text nodes.
+    Trailing punctuation that's commonly attached to a sentence
+    (`.`, `,`, `;`, `:`, `!`, `?`) is stripped off the URL and put back
+    in a following plain-text node, so "see https://x.com." parses as
+    URL "https://x.com" + plain ".".
+    """
+    if not text:
+        return []
+    out: list[dict[str, Any]] = []
+    pos = 0
+    for m in _URL_RE.finditer(text):
+        # Plain text segment before the URL
+        if m.start() > pos:
+            out.append({"type": "text", "text": text[pos:m.start()]})
+        url = m.group(0)
+        # Strip trailing punctuation that's almost certainly NOT part
+        # of the URL ("see https://x.com." → URL is x.com, "." is prose)
+        trailer = ""
+        while url and url[-1] in ".,;:!?":
+            trailer = url[-1] + trailer
+            url = url[:-1]
+        if url:
+            out.append({
+                "type": "text",
+                "text": url,
+                "marks": [{"type": "link", "attrs": {"href": url}}],
+            })
+        if trailer:
+            out.append({"type": "text", "text": trailer})
+        pos = m.end()
+    if pos < len(text):
+        out.append({"type": "text", "text": text[pos:]})
+    return out
+
+
 def text_to_adf(text: str) -> dict[str, Any]:
     """Wrap a plain-text body in Atlassian Document Format.
 
-    Used for comments. Does not attempt rich formatting; SPEC §9 prefix is
+    Used for comments and issue descriptions. URLs in the body are
+    detected and wrapped in ADF `link` marks so they render clickable
+    in Jira UI; non-URL spans stay as plain text. SPEC §9 prefix is
     added at the driver layer.
     """
+    nodes = _text_to_inline_nodes(text) or [{"type": "text", "text": ""}]
     return {
         "type": "doc",
         "version": 1,
         "content": [
-            {
-                "type": "paragraph",
-                "content": [{"type": "text", "text": text}],
-            }
+            {"type": "paragraph", "content": nodes},
         ],
     }
 
@@ -515,6 +564,18 @@ def text_to_adf_with_mention(
         ],
     }
     if body_text:
-        body_para["content"].append({"type": "text", "text": " " + body_text})
+        # Leading space separates the mention chip from the body text.
+        # Merge it into the first plain-text inline node when possible
+        # (avoids fragmenting ADF into [" ", text] when [" text"] is
+        # equivalent and matches existing test expectations); fall back
+        # to a standalone space node when the body starts with a
+        # link-marked URL.
+        nodes = _text_to_inline_nodes(body_text)
+        if nodes and not nodes[0].get("marks"):
+            nodes[0]["text"] = " " + nodes[0]["text"]
+            body_para["content"].extend(nodes)
+        elif nodes:
+            body_para["content"].append({"type": "text", "text": " "})
+            body_para["content"].extend(nodes)
     content.append(body_para)
     return {"type": "doc", "version": 1, "content": content}
