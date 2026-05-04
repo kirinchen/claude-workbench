@@ -15,6 +15,22 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-04 (plugin READMEs)
+
+### Documentation
+- **kanban 0.3.20** — new `plugins/kanban/README.md` + `README_zhtw.md`.
+  Lists every slash command (24) grouped by purpose (day-to-day,
+  inbox/async, lifecycle, setup), explains driver concepts (local vs
+  Jira, AP routing, compound transitions, conventions), enumerates
+  hooks, sketches the file layout. Drives off the convention "to find
+  available commands, the authoritative source is Claude Code's `/`
+  autocomplete; this README is the offline / discovery surface."
+- **mentor 0.2.4** — `README.md` + `README_zhtw.md` slash-command
+  table updated to include `/mentor:upgrade` and
+  `/mentor:current-state` (both shipped after the v0.1.0 MVP table
+  was written). File-layout `commands/{...}.md` line broadened to
+  reflect the seven shipped commands.
+
 ## 2026-05-04 (kanban precheck recent comments)
 
 ### Fixed
