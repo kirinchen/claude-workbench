@@ -59,15 +59,36 @@ Identify the target key from `$ARGUMENTS`. If absent, find the single DOING
 card with this repo's AP set (use `/kanban:status` to enumerate; if there
 is not exactly one, ask the user).
 
+**Flavor handling (#45)**: when `kanban.json#backend.jira.transitions.REVIEW`
+declares a `flavors` block, this command must pick one. `/kanban:done`
+ALWAYS means "I finished, please review", so pass `--flavor
+awaiting_approval` (the conventional name; check
+`backend.jira.transitions.REVIEW.flavors` for the actual key — the team
+may have named it differently). When the REVIEW spec has no `flavors`
+block, omit `--flavor` (helper ignores stray values when no flavors).
+
+For the *other* REVIEW flavor — "I'm stuck, here are options, please
+decide" — that is **not** `/kanban:done`'s job. Use `/kanban:transition
+--to REVIEW --flavor needs_decision` directly after posting the options
+comment. See `kanban-jira-agent` SKILL for the @-mention authorization
+contract that triggers that path.
+
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py transition \
-  --kanban-path '<kanban.json path>' --key '<KEY>' --to REVIEW
+  --kanban-path '<kanban.json path>' --key '<KEY>' --to REVIEW \
+  [--flavor awaiting_approval]
 ```
 
 On success print `✓ <KEY> → In Review (awaiting reviewer)`.
 
 If the helper exits with `kind: self-approve`, surface the error verbatim
 and explain another reviewer is required. Do NOT search for workarounds.
+
+If the helper rejects with `transition to 'REVIEW' requires --flavor`,
+the team's DSL declares `flavors` but no `defaultFlavor`. Pick
+`awaiting_approval` (or whatever the equivalent key is in their
+`flavors` map) and re-run. Do NOT add a `defaultFlavor` to kanban.json
+on the user's behalf — that's a team policy decision.
 
 ## Absolute rules
 

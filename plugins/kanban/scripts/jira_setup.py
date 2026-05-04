@@ -1710,6 +1710,8 @@ def cmd_transition(args: argparse.Namespace) -> int:
     kwargs: dict[str, Any] = {}
     if args.reason:
         kwargs["reason"] = args.reason
+    if getattr(args, "flavor", None):
+        kwargs["flavor"] = args.flavor
 
     # Comma-separated list of Jira keys; trim whitespace, drop empties.
     blockers: list[str] = []
@@ -2997,6 +2999,18 @@ def build_parser() -> argparse.ArgumentParser:
              "DMI-1099,INFRA-7) to attach as `is blocked by` issue links "
              "before applying the transition. Idempotent — already-linked "
              "blockers are skipped.",
+    )
+    s.add_argument(
+        "--flavor",
+        help=(
+            "Pick a flavor for canonical states that declare a "
+            "`flavors` block in transitions DSL (#45). The chosen "
+            "flavor's addLabels/removeLabels/assignee merge atomically "
+            "with the parent spec on this transition. Required when the "
+            "state has flavors AND no defaultFlavor is set; ignored when "
+            "the state has no flavors. e.g. --to REVIEW "
+            "--flavor awaiting_approval / --flavor needs_decision."
+        ),
     )
     s.set_defaults(func=cmd_transition)
 

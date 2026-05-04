@@ -31,6 +31,35 @@ summary; cards listed are yours. If you suspect stale state, run
 - Do not work a DOING card owned by another AP — the precheck hook
   warns you when you mention such a card.
 
+## Two flavors of REVIEW (#45)
+
+When the team's `transitions.REVIEW` declares a `flavors` block, every
+DOING → REVIEW transition must pick one. The two canonical flavors —
+their exact names live in `backend.jira.transitions.REVIEW.flavors`,
+but the conventional naming is:
+
+- **`awaiting_approval`** — you finished the work. Card is ready for
+  the human reviewer to glance, click DONE, and walk away. Use this
+  via `/kanban:done` (which auto-passes the flavor) — most common path.
+- **`needs_decision`** — you got stuck and posted N options in a
+  comment. Card is waiting for the human to *make a choice*; they'll
+  move it back to DOING (or somewhere else) once decided. Use
+  `/kanban:transition <KEY> --to REVIEW --flavor needs_decision`
+  directly after posting the options comment. NOT `/kanban:done`.
+
+The two flavors carry different labels (e.g. `kanban_awaiting_approval`
+vs `kanban_needs_decision`) so the human can JQL-filter or board-glance
+to triage which kind of REVIEW each card needs. Picking wrong leaves
+the wrong label on the card — fix with `/kanban:transition` again with
+the correct flavor (label sets are PUT-overwriting, so the stale label
+gets removed on the next transition).
+
+Naming guidance for new label values your team adopts: prefer
+underscore separators (`kanban_awaiting_approval`) over colon
+(`kanban:awaiting`). The colon form visually parses as a slash-command
+path and confuses operators. Existing built-in `kanban:blocked` /
+`kanban:cancelled` keep the colon form for back-compat.
+
 ## During work
 
 - Found a blocker that needs human input? `/kanban:question <KEY> "<text>"`.
