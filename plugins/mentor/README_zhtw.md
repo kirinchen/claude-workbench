@@ -26,17 +26,21 @@ basic 是刻意設計成最精簡——等之後出現規劃壓力時再升級�
 > /mentor:init            # 互動式——scan、選模式、產生結構
 ```
 
-## Slash 指令（v0.1.0 MVP）
+## Slash 指令
+
+完整可用清單以 Claude Code 的 `/` autocomplete 為準（會反映你目前安裝的 plugin）。mentor 0.2.4 為例：
 
 | 指令 | 目的 |
 |---|---|
-| `/mentor:init` | 互動式選模式 + 產生結構 |
+| `/mentor:init` | 互動式 setup——scan、選 framework mode、產生結構 |
 | `/mentor:status` | 目前模式、active sprint、open issues |
 | `/mentor:new` `<epic\|sprint\|issue\|adr>` | 從該模式的 template 產生新文件 |
-| `/mentor:review` | 合規檢查——missing docs、orphan issues、template drift |
+| `/mentor:review` | 合規檢查——missing docs、orphan issues、frontmatter drift |
+| `/mentor:upgrade` | 把既有專案 scaffold 對齊當前 framework——列出缺的文件，可選擇直接補上 |
+| `/mentor:current-state` | 事後啟用 opt-in 的 `doc/current_state/` 層，或顯示其狀態 |
 | `/mentor:migrate-from-docsync` | 讀 `.claude/docsync.yaml` → 寫 `.claude/mentor.yaml` |
 
-延後到 v0.2：`/mentor:sprint-start`、`/mentor:sprint-end`（sprint 生命週期 + 自動 retro）。
+延後到未來版本：`/mentor:sprint-start`、`/mentor:sprint-end`（sprint 生命週期 + 自動 retro）。
 
 ## Hooks
 
@@ -82,7 +86,7 @@ plugins/mentor/
 │       ├── basic-mode-guide.md
 │       ├── development-mode-guide.md
 │       └── task-pickup-workflow.md
-├── commands/{init,status,new,review,migrate-from-docsync}.md
+├── commands/                       # 7 個 slash command（init,status,new,review,upgrade,current-state,migrate-from-docsync）
 ├── hooks/hooks.json
 ├── scripts/
 │   ├── framework_engine.py        # config loader + mode resolution

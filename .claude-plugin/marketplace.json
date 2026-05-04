@@ -7,7 +7,7 @@
     {
       "name": "kanban",
       "source": "./plugins/kanban",
-      "version": "0.3.19",
+      "version": "0.3.20",
       "description": "Kanban workflow for Claude Code — local kanban.json or Jira Cloud as the storage backend",
       "category": "productivity",
       "keywords": ["kanban", "tasks", "workflow"]
@@ -31,7 +31,7 @@
     {
       "name": "mentor",
       "source": "./plugins/mentor",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, doc hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces docsync.",
       "category": "developer-tools",
       "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]

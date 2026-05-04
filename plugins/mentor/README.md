@@ -26,17 +26,21 @@ Basic is deliberately minimal — upgrade to `development` later when planning p
 > /mentor:init            # interactive — scan, pick mode, generate structure
 ```
 
-## Slash commands (v0.1.0 MVP)
+## Slash commands
+
+The complete list reflects what's installed in your environment — Claude Code's `/` autocomplete is authoritative. As of mentor 0.2.4:
 
 | Command | Purpose |
 |---|---|
-| `/mentor:init` | Interactive mode selection + structure generation |
+| `/mentor:init` | Interactive setup — scan, pick framework mode, generate structure |
 | `/mentor:status` | Current mode, active sprint, open issues |
 | `/mentor:new` `<epic\|sprint\|issue\|adr>` | Generate a new document from the mode's template |
-| `/mentor:review` | Compliance check — missing docs, orphan issues, template drift |
+| `/mentor:review` | Compliance check — missing docs, orphan issues, frontmatter drift |
+| `/mentor:upgrade` | Re-align an existing project's scaffold with the active framework — list missing docs, optionally fill them in |
+| `/mentor:current-state` | Enable the opt-in `doc/current_state/` layer after the fact, or show its status |
 | `/mentor:migrate-from-docsync` | Read `.claude/docsync.yaml` → write `.claude/mentor.yaml` |
 
-Deferred to v0.2: `/mentor:sprint-start`, `/mentor:sprint-end` (sprint lifecycle with auto-retro).
+Deferred to a future release: `/mentor:sprint-start`, `/mentor:sprint-end` (sprint lifecycle with auto-retro).
 
 ## Hooks
 
@@ -82,7 +86,7 @@ plugins/mentor/
 │       ├── basic-mode-guide.md
 │       ├── development-mode-guide.md
 │       └── task-pickup-workflow.md
-├── commands/{init,status,new,review,migrate-from-docsync}.md
+├── commands/                       # 7 slash commands (init,status,new,review,upgrade,current-state,migrate-from-docsync)
 ├── hooks/hooks.json
 ├── scripts/
 │   ├── framework_engine.py        # config loader + mode resolution
