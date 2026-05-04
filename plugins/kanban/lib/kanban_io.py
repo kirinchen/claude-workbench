@@ -63,6 +63,21 @@ def normalize(data: dict[str, Any]) -> dict[str, Any]:
             _tr = None
         if _tr is not None:
             backend["jira"] = _tr.migrate_legacy(backend["jira"])
+
+    # Local + Jira both share the canonical column rename (#48): legacy
+    # `DONE` task entries become `APPROVED` in-memory. `meta.columns`
+    # (the local-mode column whitelist) gets the same treatment so
+    # validators / displays don't keep showing `DONE`.
+    tasks = out.get("tasks")
+    if isinstance(tasks, list):
+        for t in tasks:
+            if isinstance(t, dict) and t.get("column") == "DONE":
+                t["column"] = "APPROVED"
+    meta = out.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("columns"), list):
+        meta["columns"] = [
+            "APPROVED" if c == "DONE" else c for c in meta["columns"]
+        ]
     return out
 
 

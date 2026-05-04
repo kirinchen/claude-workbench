@@ -39,7 +39,7 @@ their exact names live in `backend.jira.transitions.REVIEW.flavors`,
 but the conventional naming is:
 
 - **`awaiting_approval`** — you finished the work. Card is ready for
-  the human reviewer to glance, click DONE, and walk away. Use this
+  the human reviewer to glance, click APPROVED, and walk away. Use this
   via `/kanban:done` (which auto-passes the flavor) — most common path.
 - **`needs_decision`** — you got stuck and posted N options in a
   comment. Card is waiting for the human to *make a choice*; they'll

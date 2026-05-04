@@ -125,7 +125,7 @@ What Claude will and will not do with `kanban.json`:
 
 **Will not**:
 - Directly `Edit`/`Write` `kanban.json` (blocked by `kanban-guard.sh`).
-- Modify tasks in the `DONE` column.
+- Modify tasks in the `APPROVED` column.
 
 ## Composition
 
@@ -135,7 +135,7 @@ Capability detection (SPEC §8.7): each plugin checks for sibling CLIs (`workben
 |---|---|---|
 | `kanban × notify` | State transitions trigger push notifications (BLOCKED → high priority). | wired, not E2E tested |
 | `kanban × memory` | `/kanban:next` (local) / `/kanban:doing` (jira) queries past sessions; `/kanban:done` saves completion notes. | awaits memory |
-| `kanban × mentor` | New Issue can spawn kanban task; optional DONE gate on Issue Acceptance Criteria. | wired, awaits E2E test |
+| `kanban × mentor` | New Issue can spawn kanban task; optional APPROVED gate on Issue Acceptance Criteria. | wired, awaits E2E test |
 | `notify × memory` | Decision prompts carry "last time you chose X". | awaits memory |
 | `mentor × memory` | Sprint retros + accepted ADRs persisted to memory. | wired, awaits memory |
 | `mentor × notify` | Sprint-end / Epic-done push notifications. | wired, awaits E2E test |

@@ -99,7 +99,7 @@ claude
 
 Skill 會強制執行的規則（見 `plugins/kanban/skills/kanban-workflow/SKILL.md`）：
 - 有未完成 `depends` 的任務**不能**進 DOING。
-- `DONE` 是終點——不會被修改、不會被搬回來。
+- `APPROVED` 是終點——不會被修改、不會被搬回來。
 - `BLOCKED` 必須有非空的 `custom.blocked_reason`。
 
 `/kanban:next` 之後，Claude 會直接依照任務的 `description` 開始做。你隨時可以打斷。
@@ -179,7 +179,7 @@ init 完之後：
 > /kanban:whoami     # 顯示 driver、AP、token 有效性、MCP 衝突
 ```
 
-每個 repo 的 agent 身份存在 `.claude/kanban-agent.json`（建議 commit——讓團隊看到哪個 agent 管哪個 repo）。Anti-self-approve 會拒絕「自己 AP 的卡片」轉 DONE。
+每個 repo 的 agent 身份存在 `.claude/kanban-agent.json`（建議 commit——讓團隊看到哪個 agent 管哪個 repo）。Anti-self-approve 會拒絕「自己 AP 的卡片」轉 APPROVED。
 
 如果 workflow 沒有完整 6 個 canonical status（缺 `BLOCKED` / `REVIEW` / `CANCELLED`），加 `--partial` 重跑——缺的欄位會用 label 替代（`kanban:blocked` 等）。
 

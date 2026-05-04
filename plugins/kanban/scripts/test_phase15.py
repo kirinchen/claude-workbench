@@ -109,14 +109,14 @@ def _seed_kanban(td, tasks=()):
                 "DOING": {"status": "In Progress"},
                 "BLOCKED": {"status": "In Progress",
                             "addLabels": ["kanban:blocked"]},
-                "DONE": {"status": "Done"},
+                "APPROVED": {"status": "Done"},
             },
             "ap": {"fieldId": "customfield_10042",
                    "fieldName": "Claude Agent",
                    "registered": ["agent-fin"]},
         }},
         "meta": {"priorities": ["P0", "P1", "P2", "P3"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": list(tasks),
     }))
@@ -409,7 +409,7 @@ def test_skip_logic_preserved():
         kp = _seed_kanban(td, tasks=[
             {"id": "task-001", "title": "open", "column": "TODO",
              "priority": "P1", "created": "x", "updated": "y"},
-            {"id": "task-002", "title": "old", "column": "DONE",
+            {"id": "task-002", "title": "old", "column": "APPROVED",
              "priority": "P1", "created": "x", "updated": "y",
              "started": "x", "completed": "x"},
         ])
@@ -429,12 +429,12 @@ def test_skip_logic_preserved():
             _restore_driver(do)
         assert rc == 0
         j = json.loads(out)
-        # task-001 already-mapped, task-002 DONE-skipped → 0 created
+        # task-001 already-mapped, task-002 APPROVED-skipped → 0 created
         assert j["imported"] == 0
         assert j["skipped"] == 2
         reasons = {s["reason"] for s in j["skippedDetail"]}
         assert "already-mapped" in reasons
-        assert "closed-done" in reasons
+        assert "closed-approved" in reasons
 
 
 def test_passthrough_priority_when_no_credentials():

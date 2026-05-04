@@ -2,7 +2,7 @@
 
 ## `depends` semantics
 
-`task.depends` is a list of `task-id` strings. Semantics: **"do not move this task to DOING until every dependency has `column == DONE`"**.
+`task.depends` is a list of `task-id` strings. Semantics: **"do not move this task to DOING until every dependency has `column == APPROVED`"**.
 
 - `depends` may be empty (`[]`) or omitted.
 - Dependencies on `BLOCKED` or `DOING` tasks do NOT count as satisfied.
@@ -22,7 +22,7 @@ Cycle detection: do a DFS from each task; if you revisit a node in the current p
 
 When `/kanban:next` is invoked:
 
-1. Compute the "ready set" = TODO tasks whose deps are all DONE.
+1. Compute the "ready set" = TODO tasks whose deps are all APPROVED.
 2. If ready set is empty but TODO is not:
    - Report which TODO tasks are blocked by which deps.
    - Suggest: unblock a BLOCKED task, complete a DOING task, or create a missing prerequisite.
@@ -32,10 +32,10 @@ When `/kanban:next` is invoked:
 
 When starting a task that has deps, briefly surface what satisfied them so the user can verify:
 
-> task-042 starting. Deps satisfied: task-038 (DONE 2026-04-19), task-040 (DONE 2026-04-20).
+> task-042 starting. Deps satisfied: task-038 (APPROVED 2026-04-19), task-040 (APPROVED 2026-04-20).
 
-This catches the edge case where a DONE task was completed by an unexpected branch/person.
+This catches the edge case where a APPROVED task was completed by an unexpected branch/person.
 
 ## Adding new deps to an in-flight task
 
-Allowed only if the new dep is itself already DONE. If the user wants to add an unmet dep to a DOING task, move the DOING task to BLOCKED with `blocked_reason: "waiting on task-XYZ"` instead.
+Allowed only if the new dep is itself already APPROVED. If the user wants to add an unmet dep to a DOING task, move the DOING task to BLOCKED with `blocked_reason: "waiting on task-XYZ"` instead.

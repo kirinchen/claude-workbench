@@ -5,7 +5,7 @@
   "meta": {
     "priorities": ["P0", "P1", "P2", "P3"],
     "categories": ["infra", "feature", "bug", "docs"],
-    "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+    "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
     "created_at": "__CREATED_AT__",
     "updated_at": "__UPDATED_AT__"
   },
@@ -13,7 +13,7 @@
     {
       "id": "task-001",
       "title": "Set up project skeleton",
-      "column": "DONE",
+      "column": "APPROVED",
       "priority": "P0",
       "category": "infra",
       "tags": ["bootstrap"],

@@ -144,7 +144,7 @@ def _seed_jira(td) -> pathlib.Path:
             "TODO": {"status": "To Do"},
             "DOING": {"status": "In Progress"},
             "BLOCKED": {"status": "In Progress", "addLabels": ["kanban:blocked"]},
-            "DONE": {"status": "Done"},
+            "APPROVED": {"status": "Done"},
         },
         "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
                "registered": ["agent-fin"]},
@@ -153,7 +153,7 @@ def _seed_jira(td) -> pathlib.Path:
         "version": "0.2",
         "backend": {"driver": "jira", "jira": cfg},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))

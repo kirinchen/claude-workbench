@@ -30,7 +30,27 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
 
-CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED")
+# Canonical lifecycle stages (kanban v0.3.23+).
+#
+# `APPROVED` (formerly `DONE`, renamed in #48) is the human-gated terminal
+# state — anti-self-approve refuses to push a card here when the same AP
+# owns it. The rename disambiguates from the Jira workflow status `Done`
+# (which is just a column name; `transitions.APPROVED.status` typically
+# maps to it). DSL keys, kanban-jira-code payloads, task.column values,
+# and `--to` arguments all accept the legacy `DONE` token through one
+# minor cycle (back-compat alias with deprecation warning), normalised
+# to `APPROVED` on the way in.
+CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED")
+# Mapping used by the back-compat alias path. Read as: when you see the
+# left-hand token (in DSL keys, --to args, schema enums), interpret it as
+# the right-hand canonical name.
+LEGACY_CANONICAL_ALIASES = {"DONE": "APPROVED"}
+
+
+def normalize_canonical(name: str) -> str:
+    """Apply the legacy alias map. `DONE` → `APPROVED`; everything else
+    passes through unchanged. Idempotent."""
+    return LEGACY_CANONICAL_ALIASES.get(name, name)
 
 
 # --- DSL -----------------------------------------------------------------
@@ -82,11 +102,12 @@ def parse_dsl(
     """Parse a multi-line DSL block. Each non-blank line:
         CANONICAL > status [+ Label[ name]] [+ Assignee to me|<name>]
 
-    `CANONICAL` is one of TODO, DOING, BLOCKED, REVIEW, DONE, CANCELLED.
+    `CANONICAL` is one of TODO, DOING, BLOCKED, REVIEW, APPROVED, CANCELLED.
+    Legacy `DONE` is accepted on input and aliased to APPROVED (#48).
 
     The status field on the right may be an UPPERCASE canonical name
     referring to another canonical's resolved status (e.g.
-    `CANCELLED > DONE + label` reuses canonical DONE's Jira status).
+    `CANCELLED > APPROVED + label` reuses canonical APPROVED's Jira status).
 
     Returns a dict ready to write into `backend.jira.transitions`.
     Raises ValueError on syntax error / unknown canonical / cycle / missing
@@ -114,10 +135,13 @@ def parse_dsl(
                 f"line {line_index}: missing `>` separator (got {_redact(line)!r})"
             )
         head, sep, tail = line.partition(">")
-        canonical = head.strip().upper()
+        canonical_raw = head.strip().upper()
+        # Accept legacy DONE on input; alias to APPROVED (#48). Status-side
+        # (RHS of `>`) self-references are aliased below in resolve_status.
+        canonical = normalize_canonical(canonical_raw)
         if canonical not in CANONICAL_COLUMNS:
             raise ValueError(
-                f"line {line_index}: unknown canonical {_redact(canonical)!r}; "
+                f"line {line_index}: unknown canonical {_redact(canonical_raw)!r}; "
                 f"expected one of {CANONICAL_COLUMNS}"
             )
         if canonical in pre:
@@ -147,8 +171,12 @@ def parse_dsl(
             )
         st = info["status_raw"]
         ref = st.upper() if st.isupper() else None
-        if ref and ref in CANONICAL_COLUMNS:
-            return resolve_status(ref, seen | {col})
+        if ref:
+            # Alias legacy DONE→APPROVED on the RHS too, so existing DSLs
+            # like `CANCELLED > DONE + label` keep working unchanged (#48).
+            ref = normalize_canonical(ref)
+            if ref in CANONICAL_COLUMNS:
+                return resolve_status(ref, seen | {col})
         return st
 
     for col, info in pre.items():
@@ -198,9 +226,10 @@ _LIBERAL_NAME_RULES: dict[str, str] = {
     "review": "REVIEW",
     "in review": "REVIEW",
     "code review": "REVIEW",
-    "done": "DONE",
-    "closed": "DONE",
-    "resolved": "DONE",
+    "done": "APPROVED",
+    "closed": "APPROVED",
+    "resolved": "APPROVED",
+    "approved": "APPROVED",
     "cancelled": "CANCELLED",
     "canceled": "CANCELLED",
     "wontfix": "CANCELLED",
@@ -257,8 +286,8 @@ def suggest_from_jira(
                 Suggestion("DOING", name, 0.95, "statusCategory=indeterminate")
             )
         elif category == "done":
-            candidates["DONE"].append(
-                Suggestion("DONE", name, 0.95, "statusCategory=done")
+            candidates["APPROVED"].append(
+                Suggestion("APPROVED", name, 0.95, "statusCategory=done")
             )
         elif category == "new":
             candidates["TODO"].append(
@@ -291,8 +320,25 @@ _LEGACY_LABEL_FALLBACK_DEFAULTS = {
     # If the legacy file lacks an explicit fallback, infer reasonable status reuse.
     "BLOCKED": "DOING",
     "REVIEW": "DOING",
-    "CANCELLED": "DONE",
+    "CANCELLED": "APPROVED",
 }
+
+
+def _alias_done_to_approved(transitions: dict[str, Any]) -> dict[str, Any]:
+    """Rename `transitions.DONE` to `transitions.APPROVED` in-memory (#48).
+    Idempotent: if APPROVED already exists, conflict — DONE is dropped
+    silently to honour the explicit APPROVED entry. The first persistence
+    write afterwards normalises the on-disk shape."""
+    if not isinstance(transitions, dict) or "DONE" not in transitions:
+        return transitions
+    out = dict(transitions)
+    legacy = out.pop("DONE")
+    if "APPROVED" not in out:
+        out["APPROVED"] = legacy
+    # else: explicit APPROVED wins; DONE entry was either dead config or
+    # an intentional override — either way, the persisted form
+    # afterwards is canonical.
+    return out
 
 
 def migrate_legacy(jira_cfg: dict[str, Any]) -> dict[str, Any]:
@@ -304,9 +350,14 @@ def migrate_legacy(jira_cfg: dict[str, Any]) -> dict[str, Any]:
     - statusMap entries become bare-status transitions.
     - labelFallback entries become transitions sharing another canonical's
       status (per `_LEGACY_LABEL_FALLBACK_DEFAULTS`) with `addLabels`.
+
+    Also handles the v0.3.22 → v0.3.23 rename (#48): a `transitions.DONE`
+    key (kanban-jira-code/2 era) is renamed to `transitions.APPROVED`
+    in-memory. Idempotent.
     """
     cfg = dict(jira_cfg or {})
     if cfg.get("transitions"):
+        cfg["transitions"] = _alias_done_to_approved(cfg["transitions"])
         cfg.pop("statusMap", None)
         cfg.pop("labelFallback", None)
         cfg.pop("partial", None)
@@ -319,10 +370,13 @@ def migrate_legacy(jira_cfg: dict[str, Any]) -> dict[str, Any]:
 
     transitions: dict[str, dict[str, Any]] = {}
     for col, status in status_map.items():
+        # Legacy v0.2 statusMap keys may use "DONE"; alias on the way in.
+        col = normalize_canonical(col)
         if col in CANONICAL_COLUMNS and isinstance(status, str) and status:
             transitions[col] = {"status": status}
 
     for col, label in label_fb.items():
+        col = normalize_canonical(col)
         if col not in CANONICAL_COLUMNS or not isinstance(label, str):
             continue
         if col in transitions:

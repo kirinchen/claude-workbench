@@ -14,7 +14,7 @@ for the agents working day-to-day inside a Jira-mode project.
 |---|---|---|
 | 1 | Capture credentials (base URL, shared agent email, API token) and validate via `GET /myself` | Token comes from https://id.atlassian.com/manage-profile/security/api-tokens; it is account-scoped, not project-scoped |
 | 2 | Parse the board URL into `projectKey + boardId`; validate both | The URL usually contains `/jira/software/projects/<KEY>/boards/<ID>`; `?selectedIssue=...` URLs are not board URLs |
-| 3 | Pull the project workflow statuses; map to canonical `TODO/DOING/BLOCKED/REVIEW/DONE/CANCELLED` | Many out-of-the-box Jira workflows have only 3 statuses; you can either add the missing ones in Jira project settings, or accept partial mode with `--partial` |
+| 3 | Pull the project workflow statuses; map to canonical `TODO/DOING/BLOCKED/REVIEW/APPROVED/CANCELLED` | Many out-of-the-box Jira workflows have only 3 statuses; you can either add the missing ones in Jira project settings, or accept partial mode with `--partial` |
 | 4 | Choose `[a] use existing custom field` or `[b] create new (Claude Agent)` | Option `[b]` requires Jira admin; if the helper returns a 403, switch to `[a]` and ask an admin to create the field once |
 | 5 | Register the first AP and set this repo's AP | AP names match `^[a-z][a-z0-9-]{2,40}$`; the registry is a Jira custom-field options list, mirrored in `kanban.json` |
 
@@ -57,7 +57,7 @@ If `[b] create new field` returns `permission denied`:
 When `/kanban:initjira` finds existing `kanban.json#tasks`, it offers to
 import them as Jira issues:
 
-- TODO / DOING are imported by default; DONE / CANCELLED are skipped
+- TODO / DOING are imported by default; APPROVED / CANCELLED are skipped
   (override with `--include-done` if the user wants a complete history).
 - Each imported issue gets the label `migrated-from-local`.
 - The mapping `local-task-id → jira-key` is recorded in

@@ -81,14 +81,14 @@ def _seed_jira_data():
                 "TODO": {"status": "To Do"},
                 "DOING": {"status": "In Progress"},
                 "REVIEW": {"status": "REVIEW"},
-                "DONE": {"status": "Done"},
+                "APPROVED": {"status": "Done"},
             },
             "ap": {"fieldId": "customfield_10042",
                    "fieldName": "Claude Agent",
                    "registered": ["agent-fin"]},
         }},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }
@@ -206,7 +206,7 @@ def test_transition_still_matches_by_destination_status_name():
         calls: list[dict] = []
         _attach_mock(drv, queue, calls)
 
-        drv.transition("AGENT-1", "DONE")
+        drv.transition("AGENT-1", "APPROVED")
         transition_call = next(
             c for c in calls
             if c["url"].endswith("/transitions") and c["method"] == "POST"
@@ -309,7 +309,7 @@ def test_find_mentions_sends_normalized_timestamp_in_jql():
             }},
             "meta": {"priorities": ["P0"], "categories": [],
                      "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                                 "DONE", "CANCELLED"],
+                                 "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))

@@ -63,7 +63,7 @@ def test_mcp_scan_cli():
         (proj / "kanban.json").write_text(json.dumps({
             "version": "0.2", "backend": {"driver": "jira"},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                     "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": []
         }))
@@ -90,7 +90,7 @@ def _seed_v01_kanban(td) -> pathlib.Path:
         "meta": {
             "priorities": ["P0", "P1", "P2"],
             "categories": [],
-            "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+            "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
             "created_at": "x",
             "updated_at": "x",
         },
@@ -115,7 +115,7 @@ def _seed_v01_kanban(td) -> pathlib.Path:
             {
                 "id": "task-003",
                 "title": "old work",
-                "column": "DONE",
+                "column": "APPROVED",
                 "priority": "P0",
                 "tags": [],
                 "created": "x", "updated": "y",
@@ -140,7 +140,7 @@ def _make_jira_data():
                 "projectKey": "AGENT",
                 "agentAccountId": "agent-acct",
                 "statusMap": {
-                    "TODO": "To Do", "DOING": "In Progress", "DONE": "Done",
+                    "TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done",
                     "BLOCKED": "Blocked", "REVIEW": "In Review", "CANCELLED": "Cancelled",
                 },
                 "ap": {
@@ -153,7 +153,7 @@ def _make_jira_data():
         "meta": {
             "priorities": ["P0", "P1", "P2"],
             "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x", "updated_at": "x",
         },
         "tasks": [],

@@ -34,7 +34,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py block \
 ```
 
 The helper enforces:
-- DONE is terminal (refuses)
+- APPROVED is terminal (refuses)
 - only TODO or DOING can be moved to BLOCKED
 - `--reason` is required and must be non-empty
 - preserves `started` if the task was DOING
@@ -98,7 +98,7 @@ audit comment.
 ## Absolute rules
 
 - Never move a task to BLOCKED without a reason (local mode — helper enforces).
-- Never move from DONE to BLOCKED — DONE is terminal.
+- Never move from APPROVED to BLOCKED — APPROVED is terminal.
 - Never silently drop the old `started` timestamp (local mode — helper preserves).
 - Never call Write/Edit on `kanban.json` — go through the helper.
 - Jira mode: never invent a blocker key. The user must explicitly state

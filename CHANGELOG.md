@@ -15,6 +15,89 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-04 (kanban canonical DONE → APPROVED rename)
+
+### Changed
+- **kanban 0.3.23** — canonical state `DONE` renamed to `APPROVED` to
+  disambiguate from the Jira workflow status `Done`. Closes #48.
+
+  **The naming collision** caused real configuration mistakes: users
+  put "I'm done, please review" labels on the DSL's `DONE` entry
+  (dead code — `/kanban:done` transitions to canonical REVIEW, never
+  to DONE), wrote conventions notes describing a flow that doesn't
+  exist (DOING → DONE), and read DSL `"DONE": {"status": "Done"}` as
+  "the agent's done state" rather than the post-approval terminal.
+  After #45 (REVIEW flavors) shipped, this remained the next-biggest
+  source of footguns.
+
+  **The rename is breaking but back-compat-bridged.** Every input
+  surface accepts the legacy `DONE` token through one minor cycle and
+  normalises to `APPROVED` on the way in:
+
+  - `lib/transitions.py` — `CANONICAL_COLUMNS` is now
+    `(TODO, DOING, BLOCKED, REVIEW, APPROVED, CANCELLED)`.
+    `parse_dsl` accepts `DONE > Done` on the LHS and the
+    `CANCELLED > DONE + label` self-reference on the RHS, both
+    aliased. `migrate_legacy` renames `transitions.DONE` to
+    `transitions.APPROVED` in-memory; idempotent on already-renamed
+    input. New `_alias_done_to_approved` helper exposes the rename
+    for callers that round-trip JSON.
+  - `lib/kanban_io.py:load` migrates `task.column == "DONE"` to
+    `"APPROVED"` in-memory and rewrites `meta.columns`. First
+    persistence write afterwards normalises on disk. Existing
+    committed kanban.json files load cleanly with no user action.
+  - `drivers/jira.py:transition()` and `drivers/local.py:transition()`
+    normalise the `to_column` argument via `_tr.normalize_canonical`.
+    Anti-self-approve checks now key on `"APPROVED"`; error wording
+    matches.
+  - `scripts/jira_setup.py:cmd_transition` adds `APPROVED` to the
+    `--to` choices alongside `DONE` (deprecation alias) and emits a
+    stderr warning when `DONE` is used.
+  - `scripts/jira_setup.py:cmd_set_transitions` accepts a JSON block
+    with the legacy `DONE` key, auto-renames to `APPROVED`, returns a
+    deprecation warning. Refuses input that carries BOTH keys
+    (ambiguous).
+  - `scripts/jira_setup.py:cmd_emit_jira_code` now emits
+    `kanban-jira-code/3` with `APPROVED`. `cmd_import_jira_code`
+    accepts `/1`, `/2`, `/3` payloads and auto-upgrades the legacy
+    `DONE` key to `APPROVED` on import.
+  - `templates/kanban.schema.json` — schema bumped: `transitions`
+    properties now include `APPROVED` (canonical) and keep `DONE` as
+    a deprecated slot for back-compat parsing. `meta.columns` and
+    `task.column` enums include both tokens. `if/then` validation
+    block on `APPROVED` requires `started` + `completed`; the legacy
+    `DONE` block is preserved for older data files.
+  - `templates/kanban.empty.json` and `kanban.example.json` use
+    `APPROVED` in the columns array and on the seeded sample task.
+
+  **`/kanban:done` (slash command) is unchanged** — reporter flagged
+  the command name as a separate confusion layer (Jira mode actually
+  transitions to REVIEW, not APPROVED) and asked to file it as a
+  follow-up. This PR honours that out-of-scope marker.
+
+  **Migration timeline**: the legacy `DONE` alias paths log
+  deprecation warnings in 0.3.x; planned removal target is **kanban
+  0.5** (multiple minor releases of warnings before reject — gives
+  ecosystem time to upgrade).
+
+  Phase 28 covers thirteen back-compat paths: alias-helper basic +
+  idempotent + conflict-skip; `kanban_io.load` task.column +
+  meta.columns migration; `parse_dsl` accepts legacy DONE on LHS and
+  on RHS self-reference; `migrate_legacy` v0.2 statusMap rename;
+  `migrate_legacy` v0.3 transitions rename; `cmd_set_transitions`
+  deprecation + ambiguity reject; `cmd_import_jira_code` v2-with-DONE
+  upgrades to APPROVED on persist; `cmd_emit_jira_code` outputs
+  `/3`; `cmd_transition --to DONE` aliases with stderr warning. The
+  prior 27 phases were swept (test data updated DONE → APPROVED) and
+  remain green.
+
+  Docs sweep: `commands/`, `skills/` (kanban-workflow,
+  kanban-jira-agent, kanban-jira-setup, references), plugin README +
+  README_zhtw, top-level kanban_quickstart + _zhtw, top-level README
+  + _zhtw all updated to use `APPROVED` for the canonical state name.
+  CHANGELOG entries for prior releases are unchanged (historical).
+  Jira workflow status names (`Done`) stay as Jira's own naming.
+
 ## 2026-05-04 (kanban REVIEW flavors)
 
 ### Added

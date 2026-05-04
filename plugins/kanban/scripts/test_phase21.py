@@ -50,14 +50,14 @@ def _seed_jira_data():
             "transitions": {
                 "TODO": {"status": "To Do"},
                 "DOING": {"status": "In Progress"},
-                "DONE": {"status": "Done"},
+                "APPROVED": {"status": "Done"},
             },
             "ap": {"fieldId": "customfield_10042",
                    "fieldName": "Claude Agent",
                    "registered": ["agent-fin"]},
         }},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }

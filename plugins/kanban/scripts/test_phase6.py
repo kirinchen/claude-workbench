@@ -233,7 +233,7 @@ def test_block_required_reason_and_done_immune():
              "started": "2026-04-29T00:00:00+08:00",
              "completed": None, "assignee": "claude-code",
              "description": "", "comments": [], "custom": {}},
-            {"id": "task-002", "title": "closed", "column": "DONE",
+            {"id": "task-002", "title": "closed", "column": "APPROVED",
              "priority": "P1", "tags": [], "depends": [],
              "created": "2026-04-29T00:00:00+08:00",
              "updated": "2026-04-29T00:00:00+08:00",

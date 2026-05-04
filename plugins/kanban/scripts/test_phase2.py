@@ -119,7 +119,7 @@ def _mk_kanban_data(*, partial=False, label_fallback=None, ap_field=None):
             "statusMap": {
                 "TODO": "To Do",
                 "DOING": "In Progress",
-                "DONE": "Done",
+                "APPROVED": "Done",
             },
             "partial": partial,
             "labelFallback": label_fallback or {},
@@ -133,7 +133,7 @@ def _mk_kanban_data(*, partial=False, label_fallback=None, ap_field=None):
         "meta": {
             "priorities": ["P0", "P1", "P2"],
             "categories": [],
-            "columns": ["TODO", "DOING", "DONE", "BLOCKED", "REVIEW", "CANCELLED"],
+            "columns": ["TODO", "DOING", "APPROVED", "BLOCKED", "REVIEW", "CANCELLED"],
             "created_at": "2026-04-29T00:00:00+08:00",
             "updated_at": "2026-04-29T00:00:00+08:00",
         },
@@ -397,7 +397,7 @@ def test_write_backend():
             "meta": {
                 "priorities": ["P0", "P1"],
                 "categories": [],
-                "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
                 "created_at": "x",
                 "updated_at": "x",
             },
@@ -410,7 +410,7 @@ def test_write_backend():
             "boardId": 1,
             "projectKey": "AGENT",
             "agentAccountId": "acct-x",
-            "statusMap": {"TODO": "To Do", "DOING": "In Progress", "DONE": "Done"},
+            "statusMap": {"TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done"},
             "partial": True,
             "labelFallback": {"BLOCKED": "kanban:blocked"},
         }
@@ -427,7 +427,7 @@ def test_write_backend():
         assert on_disk["backend"]["jira"]["projectKey"] == "AGENT"
         # columns extended to canonical 6
         assert set(on_disk["meta"]["columns"]) == {
-            "TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"
+            "TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"
         }
 
 

@@ -44,7 +44,7 @@ def _seed_jira(td, *, conventions=None) -> pathlib.Path:
         "transitions": {
             "TODO": {"status": "Selected for Development"},
             "DOING": {"status": "In Progress"},
-            "DONE": {"status": "Done"},
+            "APPROVED": {"status": "Done"},
         },
         "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
                "registered": ["agent-fin"]},
@@ -56,7 +56,7 @@ def _seed_jira(td, *, conventions=None) -> pathlib.Path:
         "backend": {"driver": "jira", "jira": cfg},
         "meta": {"priorities": ["P0"], "categories": [],
                  "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                             "DONE", "CANCELLED"],
+                             "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))

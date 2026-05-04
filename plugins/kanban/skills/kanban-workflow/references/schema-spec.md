@@ -17,7 +17,7 @@ Canonical schema is `kanban.schema.json` (JSON Schema draft-07). This file expla
 |---|---|---|---|
 | `priorities` | string[] | ✓ | Ordered highest → lowest. Default `["P0","P1","P2","P3"]`. |
 | `categories` | string[] | optional | User-defined. May be empty. |
-| `columns` | string[] | ✓ | Always exactly `["TODO","DOING","DONE","BLOCKED"]`. Do not rename or reorder. |
+| `columns` | string[] | ✓ | Always exactly `["TODO","DOING","APPROVED","BLOCKED"]`. Do not rename or reorder. |
 | `created_at` | ISO 8601 | ✓ | Set once at `/kanban:init`. Do not modify. |
 | `updated_at` | ISO 8601 | ✓ | Update on every write. |
 
@@ -34,8 +34,8 @@ Canonical schema is `kanban.schema.json` (JSON Schema draft-07). This file expla
 | `depends` | string[] | optional | Other task ids. Cycles forbidden. |
 | `created` | ISO 8601 | ✓ | Immutable. |
 | `updated` | ISO 8601 | ✓ | Set on every mutation. |
-| `started` | ISO 8601\|null | conditional | Required when `column == DOING` or `DONE`. |
-| `completed` | ISO 8601\|null | conditional | Required when `column == DONE`. |
+| `started` | ISO 8601\|null | conditional | Required when `column == DOING` or `APPROVED`. |
+| `completed` | ISO 8601\|null | conditional | Required when `column == APPROVED`. |
 | `assignee` | string\|null | optional | `claude-code`, a human name, or null. |
 | `description` | string | optional | Multi-line markdown allowed. Do NOT store secrets. |
 | `comments` | comment[] | optional | Append-only in practice. |
@@ -53,7 +53,7 @@ Comments are the preferred channel for AI → human communication. Append, never
 
 - `TODO`: `started = null`, `completed = null`.
 - `DOING`: `started != null`, `completed = null`, exactly one assignee that is working now.
-- `DONE`: `started != null`, `completed != null`. Immutable.
+- `APPROVED`: `started != null`, `completed != null`. Immutable.
 - `BLOCKED`: `custom.blocked_reason` is a non-empty string.
 
 ## Timestamp discipline

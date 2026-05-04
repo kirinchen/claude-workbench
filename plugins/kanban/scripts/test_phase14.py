@@ -103,7 +103,7 @@ def _seed_kanban(repo: pathlib.Path) -> pathlib.Path:
         "version": "0.2",
         "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))

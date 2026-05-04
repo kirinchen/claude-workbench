@@ -2,7 +2,7 @@
 """Phase 11 regression checks for kanban v0.3.4 — team conventions (issue #10).
 
 Soft agreements (`backend.jira.conventions`) travel with the share code
-(`kanban-jira-code/2`). Receiver UX requires literal-phrase ack before
+(`kanban-jira-code/3`). Receiver UX requires literal-phrase ack before
 init completes. One opt-in machine-actionable toggle:
 `blockedRequiresLink`.
 
@@ -128,7 +128,7 @@ def _seed_jira(td, *, conventions=None) -> pathlib.Path:
             "TODO": {"status": "Selected for Development"},
             "DOING": {"status": "In Progress"},
             "BLOCKED": {"status": "In Progress", "addLabels": ["kanban:blocked"]},
-            "DONE": {"status": "Done"},
+            "APPROVED": {"status": "Done"},
         },
         "ap": {"fieldId": "customfield_10042", "fieldName": "Claude Agent",
                "registered": ["agent-fin"]},
@@ -139,7 +139,7 @@ def _seed_jira(td, *, conventions=None) -> pathlib.Path:
         "version": "0.2",
         "backend": {"driver": "jira", "jira": cfg},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))
@@ -168,7 +168,7 @@ def test_emit_default_v2_with_empty_conventions():
                    env_extra=_isolated_home(td))
         assert out.returncode == 0, out.stderr
         code = json.loads(out.stdout)["code"]
-        assert code["schema"] == "kanban-jira-code/2"
+        assert code["schema"] == "kanban-jira-code/3"
         assert code["conventions"] == {"notes": []}
 
 
@@ -199,7 +199,7 @@ def test_import_v1_back_compat():
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
@@ -229,12 +229,12 @@ def test_import_v2_with_notes_sets_ack_required():
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
         v2_code = {
-            "schema": "kanban-jira-code/2",
+            "schema": "kanban-jira-code/3",
             "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
             "boardId": 1, "projectKey": "AGENT",
             "transitions": {"DOING": {"status": "In Progress"}},
@@ -250,7 +250,7 @@ def test_import_v2_with_notes_sets_ack_required():
         assert out.returncode == 0, out.stderr
         j = json.loads(out.stdout)
         assert j["ok"] is True
-        assert j["schema"] == "kanban-jira-code/2"
+        assert j["schema"] == "kanban-jira-code/3"
         assert j["conventions"]["notes"] == ["use CANCELLED not DELETE"]
         assert j["ackRequired"] is True
 
@@ -263,7 +263,7 @@ def test_import_rejects_unknown_schema():
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "X"}},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))

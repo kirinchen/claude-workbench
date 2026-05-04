@@ -99,7 +99,7 @@ if [ "$HAS_NOTIFY" -eq 1 ] && [ -n "$transitions" ]; then
     case "${prev}->${new}" in
       "TODO->DOING")
         workbench-notify --priority low  --title "Kanban" --message "Started: $title" || true ;;
-      "DOING->DONE")
+      "DOING->APPROVED")
         workbench-notify --priority normal --title "Kanban" --message "Completed: $title" || true ;;
       "DOING->BLOCKED"|"TODO->BLOCKED")
         workbench-notify --priority high --title "Kanban: action needed" --message "$tid blocked: $title" || true ;;
@@ -108,10 +108,10 @@ if [ "$HAS_NOTIFY" -eq 1 ] && [ -n "$transitions" ]; then
 fi
 
 # --- Sibling integration: memory (§6.2 scenario B) ---------------------------
-# No-op today. On DOING→DONE, snapshot into memory for future recall.
+# No-op today. On DOING→APPROVED, snapshot into memory for future recall.
 if [ "$HAS_MEMORY" -eq 1 ] && [ -n "$transitions" ]; then
   printf '%s\n' "$transitions" | while IFS=$'\t' read -r tid prev new title; do
-    if [ "$prev" = "DOING" ] && [ "$new" = "DONE" ]; then
+    if [ "$prev" = "DOING" ] && [ "$new" = "APPROVED" ]; then
       workbench-memory save \
         --topic "Task $tid: $title" \
         --content "Completed via kanban autocommit." \

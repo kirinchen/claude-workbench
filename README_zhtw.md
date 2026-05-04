@@ -125,7 +125,7 @@ Claude 對 `kanban.json` **會做的**：
 **不會做的**：
 
 - 不會直接 `Edit`/`Write` `kanban.json`（被 `kanban-guard.sh` 擋住）。
-- 不會修改 `DONE` 欄位裡的任務。
+- 不會修改 `APPROVED` 欄位裡的任務。
 
 ## 組合使用
 
@@ -135,7 +135,7 @@ Claude 對 `kanban.json` **會做的**：
 |---|---|---|
 | `kanban × notify` | 狀態轉換觸發推播（BLOCKED → 高優先度）。 | 線路已接，E2E 未測 |
 | `kanban × memory` | `/kanban:next`（local）/ `/kanban:doing`（jira）查詢過去 session；`/kanban:done` 存完工筆記。 | 等 memory |
-| `kanban × mentor` | 新 Issue 可自動產生 kanban task；可選的 Issue Acceptance Criteria DONE gate。 | 線路已接，等 E2E |
+| `kanban × mentor` | 新 Issue 可自動產生 kanban task；可選的 Issue Acceptance Criteria APPROVED gate。 | 線路已接，等 E2E |
 | `notify × memory` | 決策提示會附帶「上次你選了 X」。 | 等 memory |
 | `mentor × memory` | Sprint retro + accepted ADR 持久化到 memory。 | 線路已接，等 memory |
 | `mentor × notify` | Sprint 結束 / Epic 完成推播。 | 線路已接，等 E2E |
