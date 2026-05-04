@@ -15,6 +15,47 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-04 (kanban clickable URLs in ADF bodies)
+
+### Fixed
+- **kanban 0.3.21** — URLs in agent-posted comments and issue
+  descriptions now render as clickable links in Jira UI instead of
+  plain un-clickable text. Session-reported.
+
+  ADF doesn't auto-linkify text — a URL only renders clickable when
+  the text node carries an explicit `link` mark. The plugin's three
+  ADF builders (`text_to_adf` for descriptions and plain comments,
+  `text_to_adf_with_mention` for `/kanban:reply`'s `@`-mention path,
+  and the driver-level `_agent_comment_body` for prefixed agent
+  comments) all wrapped the entire body in a single plain text node.
+  URLs were faithfully preserved as text but uselessly so — the user
+  had to copy-paste them into the address bar manually.
+
+  New `_text_to_inline_nodes(text)` in `lib/jira_client.py` splits
+  the body on a conservative URL regex (`https?://[^\s<>"\)\]]+`)
+  and emits a list of ADF text nodes — URL spans get
+  `marks: [{type: "link", attrs: {href: url}}]`, non-URL spans stay
+  plain. Trailing sentence punctuation (`.`, `,`, `;`, `:`, `!`,
+  `?`) is stripped off URLs and put back into a following plain
+  span, so "see https://x.com." parses cleanly as URL + period.
+  Closing brackets / quotes are excluded from the regex so URLs
+  inside parens or square brackets don't pull the close-bracket
+  into the link.
+
+  All three ADF builders use the new helper for body content.
+  Existing strong-marked SPEC §9 prefixes (the #27 fix) and
+  `@`-mention chips are untouched. `adf_to_text` round-trips
+  link-marked output back to a clean plain string (lossy on marks
+  but text content preserved — non-destructive to existing
+  text-extraction callers like `find-mentions`).
+
+  Phase 26 covers ten cases: single URL; URL in middle splits
+  3-ways; trailing-punctuation stripping; close-bracket exclusion;
+  multiple URLs each get their own mark; no-URL plain-text path;
+  empty input; `text_to_adf` produces clickable URL; mention path
+  preserves chip + link; driver `_agent_comment_body` keeps strong
+  prefix + clickable body URL together; `adf_to_text` round-trip.
+
 ## 2026-05-04 (plugin READMEs)
 
 ### Documentation
