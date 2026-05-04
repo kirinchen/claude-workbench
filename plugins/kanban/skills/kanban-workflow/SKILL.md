@@ -1,6 +1,6 @@
 ---
 name: kanban-workflow
-description: Use this skill whenever kanban.json exists at the project root with backend.driver = "local" (or no backend block, which implies local), or when the user mentions tasks, TODO, kanban, priorities, or asks "what should I work on next", "pick a task", "繼續工作", etc. This skill governs the local-driver task lifecycle (TODO → DOING → DONE/BLOCKED). For backend.driver = "jira" the kanban-jira-agent skill applies instead.
+description: Use this skill whenever kanban.json exists at the project root with backend.driver = "local" (or no backend block, which implies local), or when the user mentions tasks, TODO, kanban, priorities, or asks "what should I work on next", "pick a task", "繼續工作", etc. This skill governs the local-driver task lifecycle (TODO → DOING → APPROVED/BLOCKED). For backend.driver = "jira" the kanban-jira-agent skill applies instead.
 ---
 
 # Kanban Workflow
@@ -10,8 +10,8 @@ You operate on a `kanban.json` file at the project root. It is the **single sour
 ## 0. Absolute Rules (do not violate)
 
 1. **Never directly Edit or Write `kanban.json`**. Always go through a `/kanban:*` slash command. The `kanban-guard.sh` hook will block direct edits anyway, but don't try.
-2. **Never modify a task in the `DONE` column.** DONE is append-only. If work needs to resume, create a new task that references the old id.
-3. **Never skip `depends`.** A task cannot move to `DOING` if any of its `depends` are not `DONE`.
+2. **Never modify a task in the `APPROVED` column.** APPROVED is append-only. If work needs to resume, create a new task that references the old id.
+3. **Never skip `depends`.** A task cannot move to `DOING` if any of its `depends` are not `APPROVED`.
 4. **Never bypass hooks** (`--no-verify`, disabling `kanban-guard.sh`, etc.).
 5. **All timestamps are ISO 8601 with timezone.** Use the local timezone of the project; never emit naive times.
 
@@ -27,18 +27,18 @@ Use the `Read` tool. Never assume in-memory state is current — another session
 ## 2. State Transition Rules
 
 ```
-TODO ──► DOING ──► DONE
+TODO ──► DOING ──► APPROVED
           │
           └──► BLOCKED ──► TODO
 ```
 
 | From | To | Required side effects |
 |---|---|---|
-| TODO | DOING | set `started` = now; verify all `depends` are DONE |
-| DOING | DONE | set `completed` = now |
+| TODO | DOING | set `started` = now; verify all `depends` are APPROVED |
+| DOING | APPROVED | set `completed` = now |
 | DOING | BLOCKED | `custom.blocked_reason` MUST be non-empty |
 | BLOCKED | TODO | clear `custom.blocked_reason` |
-| DONE | * | **forbidden** |
+| APPROVED | * | **forbidden** |
 
 Every transition also updates `meta.updated_at` and the task's `updated`.
 
@@ -46,7 +46,7 @@ Every transition also updates `meta.updated_at` and the task's `updated`.
 
 When asked for "next task", follow this order:
 
-1. Filter to `column == "TODO"` **with all `depends` DONE**.
+1. Filter to `column == "TODO"` **with all `depends` APPROVED**.
 2. Apply user-supplied filters (e.g. `--category=trading`, `--priority=P1`).
 3. Sort by `priority` ascending using `meta.priorities` order (so `P0` before `P1`).
 4. Tie-break by `created` ascending (oldest first).
@@ -56,7 +56,7 @@ See `references/priority-rules.md` and `references/dependency-rules.md` for deta
 
 ## 4. Handling dependencies
 
-- If the top candidate has unresolved `depends`, skip it — do NOT move a task to DOING that has non-DONE deps.
+- If the top candidate has unresolved `depends`, skip it — do NOT move a task to DOING that has non-APPROVED deps.
 - If ALL TODO tasks have unresolved deps, say so explicitly and suggest either (a) unblocking a BLOCKED task, or (b) creating a new task.
 
 ## 5. Escalation / ambiguity

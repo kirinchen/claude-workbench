@@ -53,7 +53,7 @@ if ! git pull --quiet --ff-only 2>>"$LOG_FILE"; then
 fi
 
 # --- Only run if there is work ------------------------------------------------
-# Cheap local check: count TODO tasks whose deps are all DONE. Skip invoking
+# Cheap local check: count TODO tasks whose deps are all APPROVED. Skip invoking
 # Claude entirely when there's nothing to do.
 READY=$(python3 - <<'PY' 2>/dev/null || echo 0
 import json
@@ -61,7 +61,7 @@ try:
     d = json.load(open("kanban.json"))
 except Exception:
     print(0); raise SystemExit
-done_ids = {t["id"] for t in d.get("tasks", []) if t.get("column") == "DONE"}
+done_ids = {t["id"] for t in d.get("tasks", []) if t.get("column") == "APPROVED"}
 ready = 0
 for t in d.get("tasks", []):
     if t.get("column") != "TODO": continue

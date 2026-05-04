@@ -42,7 +42,7 @@ def _seed_jira(td, *, registered=("agent-fin", "agent-quant"),
             "TODO": {"status": "Selected for Development"},
             "DOING": {"status": "In Progress"},
             "BLOCKED": {"status": "In Progress", "addLabels": ["kanban:blocked"]},
-            "DONE": {"status": "Done"},
+            "APPROVED": {"status": "Done"},
         },
         "ap": {
             "fieldId": "customfield_10042",
@@ -57,7 +57,7 @@ def _seed_jira(td, *, registered=("agent-fin", "agent-quant"),
         "backend": {"driver": "jira", "jira": cfg},
         "meta": {
             "priorities": ["P0"], "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x", "updated_at": "x",
         },
         "tasks": [],
@@ -94,7 +94,7 @@ def test_emit_strips_agent_and_registered():
         assert j["ok"] is True
         code = j["code"]
         # 0.3.4+ writers emit /2 by default; reader still accepts /1 (forward-compat).
-        assert code["schema"] == "kanban-jira-code/2"
+        assert code["schema"] == "kanban-jira-code/3"
         assert code["projectKey"] == "AGENT"
         assert code["boardId"] == 1
         # Defaults strip these:
@@ -125,7 +125,7 @@ def test_emit_refuses_local_driver():
             "version": "0.2",
             "backend": {"driver": "local"},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                     "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
@@ -147,7 +147,7 @@ def test_import_rejects_bad_schema():
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "X"}},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))
@@ -185,7 +185,7 @@ def test_emit_import_roundtrip_two_repos():
             "version": "0.2",
             "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
             "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                      "created_at": "x", "updated_at": "x"},
             "tasks": [],
         }))

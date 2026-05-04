@@ -30,7 +30,7 @@ def _seed_meta() -> dict:
     return {
         "priorities": ["P0", "P1", "P2"],
         "categories": [],
-        "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+        "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
         "created_at": "2026-04-29T00:00:00+08:00",
         "updated_at": "2026-04-29T00:00:00+08:00",
     }
@@ -155,7 +155,7 @@ def test_local_driver():
         drv.transition("task-002", "BLOCKED", reason="waiting on infra")
         assert drv.get_task("task-002").custom["blocked_reason"] == "waiting on infra"
 
-        drv.transition("task-001", "DONE")
+        drv.transition("task-001", "APPROVED")
         try:
             drv.transition("task-001", "TODO")
             assert False

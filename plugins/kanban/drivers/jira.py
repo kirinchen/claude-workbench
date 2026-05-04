@@ -41,14 +41,16 @@ from drivers.base import (
 )
 
 
-CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED")
+CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED")
 
 
 class SelfApproveRefused(RuntimeError):
-    """Raised when an agent tries to transition its own card to DONE.
+    """Raised when an agent tries to transition its own card to APPROVED.
 
     SPEC §8 invariant — the plugin enforces this client-side as well as
     delegating to Jira workflow conditions when admin can configure them.
+    APPROVED was renamed from DONE in #48 to disambiguate from the Jira
+    workflow status `Done`.
     """
 
 # SPEC §9 prefix grammar. Historically the prefix was authored as markdown
@@ -346,6 +348,11 @@ class JiraDriver:
         return self.get_task(new_key)
 
     def transition(self, key: str, to_column: str, **kwargs: Any) -> Task:
+        # Alias legacy DONE → APPROVED (#48). Caller-side surfaces (CLI
+        # --to, slash command bodies) emit a deprecation warning before
+        # delegating; here we just normalise so internal logic sees only
+        # the canonical name.
+        to_column = _tr.normalize_canonical(to_column)
         if to_column not in CANONICAL_COLUMNS:
             raise ValueError(
                 f"unknown canonical column {to_column!r}; expected one of "
@@ -404,7 +411,7 @@ class JiraDriver:
         # One pre-flight read serves anti-self-approve, the already-in-
         # target-status fast path, and the blocked_by idempotency check.
         existing_for_status = self.get_task(key)
-        if to_column == "DONE":
+        if to_column == "APPROVED":
             current_ap = self._current_repo_ap()
             if current_ap and existing_for_status.ap and existing_for_status.ap == current_ap:
                 # Only refuse when the agent itself owns the work.
@@ -427,7 +434,7 @@ class JiraDriver:
                 if not recording_for_other:
                     raise SelfApproveRefused(
                         f"anti-self-approve: agent {current_ap!r} cannot "
-                        f"transition its own card {key} to DONE — ask "
+                        f"transition its own card {key} to APPROVED — ask "
                         "another agent or a human reviewer to approve "
                         "(or assign the card to that human first if you "
                         "are recording on their behalf)"

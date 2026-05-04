@@ -39,14 +39,14 @@ def _seed():
             "transitions": {
                 "TODO": {"status": "To Do"},
                 "DOING": {"status": "In Progress"},
-                "DONE": {"status": "Done"},
+                "APPROVED": {"status": "Done"},
             },
             "ap": {"fieldId": "customfield_10042",
                    "fieldName": "Claude Agent",
                    "registered": ["agent-fin"]},
         }},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }
@@ -118,7 +118,7 @@ def test_refuse_when_assignee_is_agent_account():
 
         from drivers.jira import SelfApproveRefused
         try:
-            drv.transition("AGENT-1", "DONE")
+            drv.transition("AGENT-1", "APPROVED")
             assert False, "should have refused"
         except SelfApproveRefused as e:
             assert "agent-fin" in str(e)
@@ -140,7 +140,7 @@ def test_refuse_when_assignee_is_none():
 
         from drivers.jira import SelfApproveRefused
         try:
-            drv.transition("AGENT-2", "DONE")
+            drv.transition("AGENT-2", "APPROVED")
             assert False, "should have refused"
         except SelfApproveRefused:
             pass
@@ -172,8 +172,8 @@ def test_allow_when_assignee_is_different_human():
         calls = []
         _attach_mock(drv, queue, calls)
 
-        result = drv.transition("AGENT-3", "DONE")
-        assert result.column == "DONE"
+        result = drv.transition("AGENT-3", "APPROVED")
+        assert result.column == "APPROVED"
         # We hit the transition POST — proves the new code allowed it.
         posts = [c for c in calls if c["method"] == "POST"
                  and c["url"].endswith("/transitions")]
@@ -203,8 +203,8 @@ def test_allow_when_ap_does_not_match():
         calls = []
         _attach_mock(drv, queue, calls)
 
-        result = drv.transition("AGENT-4", "DONE")
-        assert result.column == "DONE"
+        result = drv.transition("AGENT-4", "APPROVED")
+        assert result.column == "APPROVED"
 
 
 # --- error message preserved --------------------------------------------
@@ -225,7 +225,7 @@ def test_refused_error_message_mentions_workaround():
 
         from drivers.jira import SelfApproveRefused
         try:
-            drv.transition("AGENT-5", "DONE")
+            drv.transition("AGENT-5", "APPROVED")
             assert False, "should have refused"
         except SelfApproveRefused as e:
             msg = str(e)

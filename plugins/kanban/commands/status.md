@@ -21,7 +21,7 @@ Read `kanban.json` at the project root. If missing, tell the user to run `/kanba
 
 - Count tasks per column.
 - Current DOING tasks (id, title, priority, assignee, started).
-- Top 3 TODO candidates (ready: deps all DONE), ranked by priority then created.
+- Top 3 TODO candidates (ready: deps all APPROVED), ranked by priority then created.
 - BLOCKED tasks with their `custom.blocked_reason`.
 - Any TODO task whose `depends` reference a non-existent id (data integrity issue).
 
@@ -32,7 +32,7 @@ Format (keep it tight — monospace-friendly):
 ```
 Kanban status (kanban.json · v0.2 · local)
 
-Columns: TODO 7 · DOING 1 · DONE 12 · BLOCKED 2
+Columns: TODO 7 · DOING 1 · APPROVED 12 · BLOCKED 2
 
 DOING:
   task-042  [P1 trading]  重寫 grid pricing dynamic classifier

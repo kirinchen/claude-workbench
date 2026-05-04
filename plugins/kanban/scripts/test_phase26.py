@@ -179,11 +179,11 @@ def test_agent_comment_body_preserves_prefix_and_links():
                 "backend": {"driver": "jira", "jira": {
                     "boardUrl": "https://x/projects/A/boards/1",
                     "boardId": 1, "projectKey": "A",
-                    "transitions": {"DONE": {"status": "Done"}},
+                    "transitions": {"APPROVED": {"status": "Done"}},
                 }},
                 "meta": {"priorities": ["P0"], "categories": [],
                          "columns": ["TODO", "DOING", "BLOCKED",
-                                     "REVIEW", "DONE", "CANCELLED"],
+                                     "REVIEW", "APPROVED", "CANCELLED"],
                          "created_at": "x", "updated_at": "x"},
                 "tasks": [],
             }

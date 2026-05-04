@@ -37,7 +37,7 @@ The complete list reflects what's installed in your environment — Claude Code'
 | `/kanban:status` | Read-only board summary (driver-aware) |
 | `/kanban:sync` | Pull the open-card summary for the current AP |
 | `/kanban:doing` | Work the DOING pool — read every card you currently own and execute in a sensible order *(Jira; local mode keeps `/kanban:next`)* |
-| `/kanban:done` | Mark a task (default: current DOING) as DONE |
+| `/kanban:done` | Mark a task (default: current DOING) as APPROVED |
 | `/kanban:block <key>` | Move a task to BLOCKED with a required reason |
 | `/kanban:question <key> "<text>"` | Post a question and transition to BLOCKED |
 | `/kanban:reply <key>` | Post a reply comment, optionally `@`-mentioning the recipient |
@@ -82,7 +82,7 @@ The complete list reflects what's installed in your environment — Claude Code'
 
 ## Core concepts
 
-- **Canonical columns**: `TODO → DOING → BLOCKED → REVIEW → DONE → CANCELLED`. Slash commands always speak canonical names; the Jira driver translates via the `transitions` DSL.
+- **Canonical columns**: `TODO → DOING → BLOCKED → REVIEW → APPROVED → CANCELLED`. Slash commands always speak canonical names; the Jira driver translates via the `transitions` DSL.
 - **Compound transitions** (`v0.3+`): `BLOCKED > In Progress + Label` lets multiple canonical states share one Jira status, disambiguated by labels — see `epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`.
 - **Agent Property (AP)**: a Jira single-select custom field that routes cards to specific agents/repos. Each repo declares its AP in `.claude/kanban-agent.json#ap`; commands like `/kanban:doing` filter by it (`cf[<id>] = "<repo's ap>"`).
 - **Conventions**: per-team narrative notes + opt-in toggles (e.g. `blockedRequiresLink: true`) that travel with `/kanban:showjira-code`. Receivers must explicitly acknowledge before `import-jira-code` completes.

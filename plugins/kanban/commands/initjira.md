@@ -124,7 +124,7 @@ Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)
 ## Step 3/5 — Compound transitions (canonical → Jira)
 
 This is the heart of Jira mode. For each canonical column
-(`TODO / DOING / BLOCKED / REVIEW / DONE / CANCELLED`) you must define a
+(`TODO / DOING / BLOCKED / REVIEW / APPROVED / CANCELLED`) you must define a
 **compound transition spec**: which Jira status to move to, plus optional
 labels to add/remove and an optional pinned assignee. Multiple canonicals
 can share the same Jira status — the reader disambiguates by labels.
@@ -143,7 +143,7 @@ Returns:
   "found": [{"name":"進行中","category":"indeterminate"}, ...],
   "suggestions": {
      "DOING": {"status":"進行中", "confidence":0.95, "reason":"statusCategory=indeterminate"},
-     "DONE":  {"status":"完成",   "confidence":0.95, "reason":"statusCategory=done"}
+     "APPROVED":  {"status":"完成",   "confidence":0.95, "reason":"statusCategory=done"}
   },
   "unmapped": ["TODO","BLOCKED","REVIEW","CANCELLED"],
   "ambiguous": ["TODO"]
@@ -161,7 +161,7 @@ Found Jira statuses:
 
 Auto-suggested mapping (confidence in parens):
   DOING → 進行中    (0.95, statusCategory=indeterminate)
-  DONE  → 完成      (0.95, statusCategory=done)
+  APPROVED  → 完成      (0.95, statusCategory=done)
 
 Unmapped: TODO, BLOCKED, REVIEW, CANCELLED
 Ambiguous: TODO (multiple "new"-category statuses — pick one explicitly)
@@ -185,13 +185,13 @@ expressive than a flat status map — it supports `+ Label[ name]` and
 >     DOING > In Progress
 >     BLOCKED > In Progress + Label                       # adds kanban:blocked
 >     REVIEW > In Progress + label + Assignee to me       # adds kanban:review + assigns to current user
->     DONE > Done
->     CANCELLED > DONE + label                            # same Jira status as canonical DONE, plus kanban:cancelled
+>     APPROVED > Done
+>     CANCELLED > APPROVED + label                            # same Jira status as canonical APPROVED, plus kanban:cancelled
 >
 > - `Label` / `label` (no name) defaults to `kanban:<canonical-lower>`.
 > - `Label some-name` lets you choose the label text.
 > - `Assignee to me` resolves to your current Jira accountId; `Assignee to <name>` queries `/user/search`.
-> - An UPPERCASE word on the right (e.g. `DONE`) refers to another canonical's resolved Jira status — useful when several canonicals share a status.
+> - An UPPERCASE word on the right (e.g. `APPROVED`) refers to another canonical's resolved Jira status — useful when several canonicals share a status.
 > - Lines starting with `#` are comments.
 
 Use `AskUserQuestion` to capture the multi-line DSL block.
@@ -360,7 +360,7 @@ entries from a prior local-mode life. If `len(tasks) > 0`, ask:
 
 > Found N existing local tasks. Import them as Jira issues? (y/N)
 >   • Imported tasks get the `migrated-from-local` label.
->   • DONE / CANCELLED tasks are skipped by default (use --include-done to override).
+>   • APPROVED / CANCELLED tasks are skipped by default (use --include-done to override).
 >   • The original `tasks[]` stays in kanban.json for rollback.
 
 On `y`:

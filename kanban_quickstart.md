@@ -99,7 +99,7 @@ Inside Claude Code:
 
 Rules the skill enforces (see `plugins/kanban/skills/kanban-workflow/SKILL.md`):
 - A task with unresolved `depends` cannot move to DOING.
-- `DONE` is terminal — never edited, never moved back.
+- `APPROVED` is terminal — never edited, never moved back.
 - `BLOCKED` requires a non-empty `custom.blocked_reason`.
 
 After `/kanban:next`, Claude just starts working on the task's `description`. You can interrupt at any time.
@@ -186,7 +186,7 @@ After init:
 
 Per-repo agent identity lives in `.claude/kanban-agent.json` (commit it —
 the team should see which agent owns the repo). Anti-self-approve refuses
-DONE transitions on a card whose AP equals this repo's AP.
+APPROVED transitions on a card whose AP equals this repo's AP.
 
 If the workflow lacks canonical statuses (`BLOCKED`, `REVIEW`, `CANCELLED`),
 re-run with `--partial` to accept label substitutes (`kanban:blocked`, etc.).

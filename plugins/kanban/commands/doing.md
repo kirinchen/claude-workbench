@@ -12,7 +12,7 @@ This command is **read-then-execute**, not pick-from-TODO. The state
 machine the plugin enforces:
 
 ```
-TODO  ──(owner moves)──▶  DOING  ──(/kanban:doing executes)──▶  DONE
+TODO  ──(owner moves)──▶  DOING  ──(/kanban:doing executes)──▶  APPROVED
                             │                                    ▲
                             └──(/kanban:block REVIEW)──▶ REVIEW ──┘
                                                           │
@@ -22,10 +22,10 @@ TODO  ──(owner moves)──▶  DOING  ──(/kanban:doing executes)──�
 - **TODO → DOING** is the **owner's** call (Jira UI, or whatever
   intake flow the team uses). The agent must never pull a card from
   TODO into DOING — that's curation, not execution.
-- **DOING → DONE** is yours, after executing successfully.
+- **DOING → APPROVED** is yours, after executing successfully.
 - **DOING → REVIEW** is yours when blocked / needs owner judgement.
 - **REVIEW → DOING** is the owner's ("keep going") or **REVIEW →
-  DONE** ("good enough").
+  APPROVED** ("good enough").
 
 ## 0. Pre-flight
 
@@ -74,7 +74,7 @@ Work the cards sequentially — actively executing one at a time
 - Read its full description and any prior comments (`/kanban:show`).
 - Make the changes the description calls for.
 - When done: `/kanban:done <id>` (or whatever your team calls the
-  DOING → DONE move).
+  DOING → APPROVED move).
 - When stuck and need owner input: `/kanban:block <id> --to REVIEW
   --reason "..."`.
 

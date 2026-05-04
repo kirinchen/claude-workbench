@@ -44,7 +44,7 @@ sys.path.insert(0, str(PLUGIN_ROOT))
 from lib import kanban_io  # noqa: E402
 
 
-LOCAL_COLUMNS = ("TODO", "DOING", "DONE", "BLOCKED")
+LOCAL_COLUMNS = ("TODO", "DOING", "APPROVED", "BLOCKED")
 
 
 def _now_iso() -> str:
@@ -144,9 +144,9 @@ def _candidate_tasks(
     category: str | None,
     priority: str | None,
 ) -> list[dict[str, Any]]:
-    """TODO tasks whose deps are all DONE, after applying user filters."""
+    """TODO tasks whose deps are all APPROVED, after applying user filters."""
     tasks = data.get("tasks") or []
-    done_ids = {t.get("id") for t in tasks if t.get("column") == "DONE"}
+    done_ids = {t.get("id") for t in tasks if t.get("column") == "APPROVED"}
     priorities = (data.get("meta") or {}).get("priorities") or []
     cutoff = priorities.index(priority) if priority and priority in priorities else None
 
@@ -284,13 +284,13 @@ def cmd_done(args: argparse.Namespace) -> int:
     if not target:
         return _fail(f"task {args.task_id!r} not found")
     col = target.get("column")
-    if col == "DONE":
-        return _fail(f"{target['id']} is already DONE")
+    if col == "APPROVED":
+        return _fail(f"{target['id']} is already APPROVED")
     if col != "DOING":
         return _fail(f"{target['id']} is in {col!r}, not DOING")
 
     ts = _now_iso()
-    target["column"] = "DONE"
+    target["column"] = "APPROVED"
     target["completed"] = ts
     target["updated"] = ts
     if not target.get("started"):
@@ -301,8 +301,8 @@ def cmd_done(args: argparse.Namespace) -> int:
         )
     _save(p, data)
 
-    # Compute newly unblocked tasks: TODO whose deps now all DONE.
-    done_ids = {t.get("id") for t in data.get("tasks") or [] if t.get("column") == "DONE"}
+    # Compute newly unblocked tasks: TODO whose deps now all APPROVED.
+    done_ids = {t.get("id") for t in data.get("tasks") or [] if t.get("column") == "APPROVED"}
     unblocked = []
     for t in data.get("tasks") or []:
         if t.get("column") != "TODO":
@@ -340,8 +340,8 @@ def cmd_block(args: argparse.Namespace) -> int:
     col = target.get("column")
     if col == "BLOCKED":
         return _fail(f"{target['id']} is already BLOCKED")
-    if col == "DONE":
-        return _fail(f"{target['id']} is DONE — terminal, cannot be blocked")
+    if col == "APPROVED":
+        return _fail(f"{target['id']} is APPROVED — terminal, cannot be blocked")
     if col not in {"TODO", "DOING"}:
         return _fail(f"unexpected column {col!r}")
 

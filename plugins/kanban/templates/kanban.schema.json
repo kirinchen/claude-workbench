@@ -47,7 +47,11 @@
                 "DOING":     { "$ref": "#/definitions/transitionSpec" },
                 "BLOCKED":   { "$ref": "#/definitions/transitionSpec" },
                 "REVIEW":    { "$ref": "#/definitions/transitionSpec" },
-                "DONE":      { "$ref": "#/definitions/transitionSpec" },
+                "APPROVED":  { "$ref": "#/definitions/transitionSpec" },
+                "DONE":      {
+                  "$ref": "#/definitions/transitionSpec",
+                  "description": "DEPRECATED — renamed to APPROVED in 0.3.23 (#48). Reader auto-migrates DONE → APPROVED on load; new writes use APPROVED. Slot kept for back-compat parsing."
+                },
                 "CANCELLED": { "$ref": "#/definitions/transitionSpec" }
               }
             },
@@ -118,12 +122,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["TODO", "DOING", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
+            "enum": ["TODO", "DOING", "APPROVED", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
           },
           "minItems": 4,
           "maxItems": 6,
           "uniqueItems": true,
-          "description": "Columns. Local mode uses the 4 canonical [TODO, DOING, DONE, BLOCKED]; Jira mode may add REVIEW and CANCELLED. Driver-side runtime enforces its own subset."
+          "description": "Columns. Local mode uses the 4 canonical [TODO, DOING, APPROVED, BLOCKED]; Jira mode may add REVIEW and CANCELLED. Driver-side runtime enforces its own subset. The legacy `DONE` token (renamed in 0.3.23, #48) is kept in the enum for back-compat parsing — readers auto-migrate to APPROVED on load."
         },
         "created_at": {
           "type": "string",
@@ -219,7 +223,7 @@
         },
         "column": {
           "type": "string",
-          "enum": ["TODO", "DOING", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
+          "enum": ["TODO", "DOING", "APPROVED", "DONE", "BLOCKED", "REVIEW", "CANCELLED"]
         },
         "priority": {
           "type": "string"
@@ -289,8 +293,12 @@
           "then": { "required": ["started"], "properties": { "started": { "type": "string" } } }
         },
         {
-          "if": { "properties": { "column": { "const": "DONE" } } },
+          "if": { "properties": { "column": { "const": "APPROVED" } } },
           "then": { "required": ["started", "completed"], "properties": { "started": { "type": "string" }, "completed": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "column": { "const": "DONE" } } },
+          "then": { "required": ["started", "completed"], "properties": { "started": { "type": "string" }, "completed": { "type": "string" } }, "description": "DONE is the deprecated alias for APPROVED (#48). Kept here so back-compat data files still validate." }
         },
         {
           "if": { "properties": { "column": { "const": "BLOCKED" } } },

@@ -37,7 +37,7 @@
 | `/kanban:status` | 唯讀的看板總覽（driver-aware） |
 | `/kanban:sync` | 拉這個 AP 的 open-card 摘要 |
 | `/kanban:doing` | 工作 DOING 池 — 讀完所有屬於你的卡片，依合理順序執行 *(Jira；local mode 用 `/kanban:next`)* |
-| `/kanban:done` | 把任務（預設目前 DOING）標 DONE |
+| `/kanban:done` | 把任務（預設目前 DOING）標 APPROVED |
 | `/kanban:block <key>` | 把任務移到 BLOCKED（要寫 reason） |
 | `/kanban:question <key> "<text>"` | 在卡片 post 問題並轉到 BLOCKED |
 | `/kanban:reply <key>` | 對卡片 post 回覆，可選 `@`-mention 對方 |
@@ -82,7 +82,7 @@
 
 ## 核心概念
 
-- **Canonical columns**：`TODO → DOING → BLOCKED → REVIEW → DONE → CANCELLED`。Slash command 永遠講 canonical 名稱；Jira driver 透過 `transitions` DSL 翻譯。
+- **Canonical columns**：`TODO → DOING → BLOCKED → REVIEW → APPROVED → CANCELLED`。Slash command 永遠講 canonical 名稱；Jira driver 透過 `transitions` DSL 翻譯。
 - **Compound transitions**（`v0.3+`）：`BLOCKED > In Progress + Label` 讓多個 canonical state 共享同一個 Jira status，靠 label disambiguate — 詳見 `epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`。
 - **Agent Property (AP)**：一個 Jira single-select custom field，把卡片 routing 到特定 agent / repo。每個 repo 在 `.claude/kanban-agent.json#ap` 宣告自己的 AP；像 `/kanban:doing` 這類命令會用它 filter（`cf[<id>] = "<repo's ap>"`）。
 - **Conventions**：per-team narrative notes + opt-in toggles（例如 `blockedRequiresLink: true`），跟著 `/kanban:showjira-code` 一起傳遞。接收端必須明確 acknowledge 才能完成 `import-jira-code`。

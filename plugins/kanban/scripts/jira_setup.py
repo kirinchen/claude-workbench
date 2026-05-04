@@ -20,7 +20,7 @@ Subcommands:
   build-status-map --base-url URL --email E --project K
        (token on stdin)
        -> {"found": [{"name": "To Do"}, ...],
-           "map": {"TODO": "To Do", "DOING": "In Progress", "DONE": "Done"},
+           "map": {"TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done"},
            "missing": ["BLOCKED", "REVIEW", "CANCELLED"],
            "partial": true}
 
@@ -99,7 +99,7 @@ from lib.jira_client import JiraClient, JiraError, adf_extract_mentions  # noqa:
 # --- helpers --------------------------------------------------------------
 
 
-CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED")
+CANONICAL_COLUMNS = ("TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED")
 
 # Liberal name → canonical match, case-insensitive, ignoring whitespace and
 # punctuation. Keys are compared as the lowercase normalised form.
@@ -117,9 +117,10 @@ _NAME_RULES: dict[str, str] = {
     "review": "REVIEW",
     "in review": "REVIEW",
     "code review": "REVIEW",
-    "done": "DONE",
-    "closed": "DONE",
-    "resolved": "DONE",
+    "done": "APPROVED",
+    "closed": "APPROVED",
+    "resolved": "APPROVED",
+    "approved": "APPROVED",
     "cancelled": "CANCELLED",
     "canceled": "CANCELLED",
     "wontfix": "CANCELLED",
@@ -408,6 +409,26 @@ def cmd_set_transitions(args: argparse.Namespace) -> int:
     if not isinstance(transitions, dict):
         return _fail("--transitions-json must be a JSON object")
 
+    # Alias legacy DONE key on the way in (#48). When a caller passes a
+    # JSON block with `"DONE"` (and not also `"APPROVED"`), rewrite to
+    # `"APPROVED"` and surface a deprecation warning. When BOTH keys are
+    # present the input is ambiguous — refuse so the caller picks one.
+    deprecation_warnings: list[str] = []
+    if "DONE" in transitions:
+        if "APPROVED" in transitions:
+            return _fail(
+                "transitions cannot carry both `DONE` and `APPROVED` — "
+                "DONE was renamed to APPROVED in 0.3.23 (#48); pick one"
+            )
+        sys.stderr.write(
+            "warning: transitions key `DONE` is deprecated; use "
+            "`APPROVED`. Auto-upgrading on this write (#48).\n"
+        )
+        deprecation_warnings.append(
+            "transitions.DONE is deprecated; use APPROVED (#48)"
+        )
+        transitions = _tr._alias_done_to_approved(transitions)
+
     data = kanban_io.load(p)
     backend = data.setdefault("backend", {"driver": "jira"})
     if backend.get("driver") != "jira":
@@ -429,7 +450,11 @@ def cmd_set_transitions(args: argparse.Namespace) -> int:
 
     jira_cfg["transitions"] = transitions
     kanban_io.save(p, data)
-    _emit({"ok": True, "transitions": transitions, "warnings": errs})
+    _emit({
+        "ok": True,
+        "transitions": transitions,
+        "warnings": errs + deprecation_warnings,
+    })
     return 0
 
 
@@ -935,8 +960,14 @@ def cmd_emit_jira_code(args: argparse.Namespace) -> int:
     if not cfg.get("transitions"):
         return _fail("no transitions defined — run /kanban:initjira first")
 
+    # Schema bumped to /3 in 0.3.23 (#48): canonical state DONE → APPROVED
+    # in the transitions block. Receivers older than 0.3.23 see the
+    # unknown APPROVED key and ignore it (Python dict round-trip is
+    # forgiving) — the agent on that machine just won't be able to
+    # transition --to APPROVED until the plugin is updated. v1 / v2 / v3
+    # are all accepted on import; v3 is the wire format we emit.
     code: dict[str, Any] = {
-        "schema": "kanban-jira-code/2",
+        "schema": "kanban-jira-code/3",
         "boardUrl": cfg.get("boardUrl"),
         "boardId": cfg.get("boardId"),
         "projectKey": cfg.get("projectKey"),
@@ -968,15 +999,23 @@ def cmd_import_jira_code(args: argparse.Namespace) -> int:
     if not isinstance(code, dict):
         return _fail("code must be a JSON object")
     schema = code.get("schema")
-    if schema not in ("kanban-jira-code/1", "kanban-jira-code/2"):
+    if schema not in (
+        "kanban-jira-code/1",
+        "kanban-jira-code/2",
+        "kanban-jira-code/3",
+    ):
         return _fail(
             f"unsupported code schema {schema!r}; "
-            "expected kanban-jira-code/1 or /2"
+            "expected kanban-jira-code/1, /2, or /3"
         )
 
     transitions = code.get("transitions")
     if not isinstance(transitions, dict) or not transitions:
         return _fail("code is missing `transitions`")
+    # Auto-upgrade /1 + /2 payloads carrying the legacy DONE key (#48).
+    # _alias_done_to_approved is idempotent — payloads already on /3
+    # with APPROVED pass through unchanged.
+    transitions = _tr._alias_done_to_approved(transitions)
     errs = _tr.validate(transitions)
     if errs:
         return _fail("transitions invalid", errors=errs)
@@ -1005,9 +1044,13 @@ def cmd_import_jira_code(args: argparse.Namespace) -> int:
             "fieldName": code["ap"].get("fieldName", ""),
             "registered": [],   # populated live via cmd_live_list_aps when needed
         }
-    # Conventions arrive only on /2 codes. Normalize so unknown future
+    # Conventions arrive on /2 and /3 codes. Normalize so unknown future
     # fields are dropped and `notes` is always a list.
-    incoming_conv = code.get("conventions") if schema == "kanban-jira-code/2" else None
+    incoming_conv = (
+        code.get("conventions")
+        if schema in ("kanban-jira-code/2", "kanban-jira-code/3")
+        else None
+    )
     cfg["conventions"] = _cv.normalize(incoming_conv)
     cfg = {k: v for k, v in cfg.items() if v is not None}
 
@@ -1701,6 +1744,17 @@ def cmd_transition(args: argparse.Namespace) -> int:
     if not p.exists():
         _fail(f"kanban.json not found at {p}")
         return 1
+    # Alias legacy --to DONE → APPROVED with stderr deprecation warning
+    # (#48). The driver layer also normalises, but doing it here lets us
+    # surface the deprecation message at the CLI surface where humans /
+    # slash command spec writers will see it.
+    if args.to == "DONE":
+        sys.stderr.write(
+            "warning: --to DONE is deprecated; use --to APPROVED. "
+            "DONE was renamed in 0.3.23 (#48) to disambiguate from the "
+            "Jira workflow status `Done`. Continuing with APPROVED.\n"
+        )
+        args.to = "APPROVED"
     data = kanban_io.load(p)
     from drivers import get_driver
     from drivers.base import CommentKind
@@ -1854,14 +1908,14 @@ def _build_precheck_block(
         rows.append(f"  AP:           {ap}   ⚠ NOT YOU (you are {repo_ap or 'unassigned'})")
         warnings.append("ap-mismatch")
 
-    if column in {"DONE", "CANCELLED"}:
+    if column in {"APPROVED", "CANCELLED"}:
         rows.append(f"  ⚠ This card is closed ({column}). Do not modify it.")
         warnings.append(f"closed-{column.lower()}")
 
     if column == "REVIEW" and repo_ap and ap == repo_ap:
         rows.append(
             "  ⚠ This card is awaiting human review and is owned by you. "
-            "Do not push it to DONE — anti-self-approve will refuse."
+            "Do not push it to APPROVED — anti-self-approve will refuse."
         )
         warnings.append("awaiting-review-self")
 
@@ -2631,7 +2685,7 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
 
     Skip strategy:
       - tasks already in `.claude/.migration-map.json` → skip (mapped)
-      - column in {DONE, CANCELLED} and not --include-done → skip
+      - column in {APPROVED, CANCELLED} and not --include-done → skip
 
     Per-task work (when not --dry-run):
       1. driver.create_task(TaskInput) — base issue
@@ -2691,7 +2745,7 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
         if not local_id or local_id in mapping:
             continue
         col = t.get("column")
-        if col in {"DONE", "CANCELLED"} and not args.include_done:
+        if col in {"APPROVED", "DONE", "CANCELLED"} and not args.include_done:
             continue
         result = _resolve_priority(t.get("priority"), valid_priority_names)
         if result is False:
@@ -2725,7 +2779,7 @@ def cmd_import_tasks(args: argparse.Namespace) -> int:
                             "key": mapping[local_id]})
             continue
         col = t.get("column")
-        if col in {"DONE", "CANCELLED"} and not args.include_done:
+        if col in {"APPROVED", "DONE", "CANCELLED"} and not args.include_done:
             skipped.append({"id": local_id, "reason": f"closed-{col.lower()}"})
             continue
         if args.dry_run:
@@ -2991,7 +3045,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("transition")
     s.add_argument("--kanban-path", required=True)
     s.add_argument("--key", required=True)
-    s.add_argument("--to", required=True, choices=("TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"))
+    # Accept legacy DONE alias for back-compat (#48). cmd_transition
+    # normalises to APPROVED and emits a stderr deprecation warning.
+    s.add_argument(
+        "--to", required=True,
+        choices=("TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "DONE", "CANCELLED"),
+    )
     s.add_argument("--reason")
     s.add_argument(
         "--blocked-by",

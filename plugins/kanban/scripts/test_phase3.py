@@ -53,7 +53,7 @@ def _mk_data(ap_field_id="customfield_10042", registered=None, partial=False):
                 "statusMap": {
                     "TODO": "To Do",
                     "DOING": "In Progress",
-                    "DONE": "Done",
+                    "APPROVED": "Done",
                     "REVIEW": "In Review",
                     "BLOCKED": "Blocked",
                     "CANCELLED": "Cancelled",
@@ -69,7 +69,7 @@ def _mk_data(ap_field_id="customfield_10042", registered=None, partial=False):
         "meta": {
             "priorities": ["P0", "P1"],
             "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x",
             "updated_at": "x",
         },
@@ -221,7 +221,7 @@ def test_transition_refuses_self_approve():
         from drivers.jira import SelfApproveRefused
 
         try:
-            drv.transition("AGENT-1", "DONE")
+            drv.transition("AGENT-1", "APPROVED")
             assert False, "should have refused"
         except SelfApproveRefused as e:
             assert "agent-fin" in str(e)
@@ -295,8 +295,8 @@ def test_transition_allows_when_ap_differs():
         calls = []
         _attach_mock(drv, queue, calls)
 
-        t = drv.transition("AGENT-1", "DONE")
-        assert t.column == "DONE"
+        t = drv.transition("AGENT-1", "APPROVED")
+        assert t.column == "APPROVED"
 
 
 # --- jira_setup CLI tests ------------------------------------------------

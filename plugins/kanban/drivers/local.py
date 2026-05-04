@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from lib import kanban_io
+from lib import transitions as _tr
 from drivers.base import (
     AgentRef,
     Comment,
@@ -29,7 +30,7 @@ from drivers.base import (
 )
 
 
-LOCAL_COLUMNS = ("TODO", "DOING", "DONE", "BLOCKED")
+LOCAL_COLUMNS = ("TODO", "DOING", "APPROVED", "BLOCKED")
 
 
 def _now() -> str:
@@ -169,20 +170,27 @@ class LocalDriver:
         return _to_task(raw)
 
     def transition(self, key: str, to_column: str, **kwargs: Any) -> Task:
+        # Alias legacy DONE → APPROVED (#48). Internal storage and checks
+        # only see the canonical name; CLI / slash command surfaces emit
+        # a deprecation warning before reaching here.
+        to_column = _tr.normalize_canonical(to_column)
         if to_column not in LOCAL_COLUMNS:
             raise ValueError(
                 f"local driver only supports {LOCAL_COLUMNS}; got {to_column!r}"
             )
         data = self._load()
         raw = self._find(data, key)
-        if raw["column"] == "DONE":
-            raise ValueError("DONE is terminal — cannot transition")
+        # Compare against the normalised stored value; older kanban.json
+        # files load with column="DONE" rewritten to "APPROVED" by
+        # kanban_io._normalize_legacy_columns.
+        if raw["column"] == "APPROVED":
+            raise ValueError("APPROVED is terminal — cannot transition")
         ts = _now()
         raw["column"] = to_column
         raw["updated"] = ts
         if to_column == "DOING" and not raw.get("started"):
             raw["started"] = ts
-        if to_column == "DONE":
+        if to_column == "APPROVED":
             raw["completed"] = ts
             if not raw.get("started"):
                 raw["started"] = ts

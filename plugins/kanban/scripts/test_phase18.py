@@ -86,7 +86,7 @@ def test_ap_cf_jql_id():
 _TRANSITIONS = {
     "TODO": {"status": "Selected for Development"},
     "DOING": {"status": "In Progress"},
-    "DONE": {"status": "Done"},
+    "APPROVED": {"status": "Done"},
 }
 
 
@@ -215,7 +215,7 @@ def _seed_kanban(td, *, with_agent_account=True):
         "version": "0.2",
         "backend": {"driver": "jira", "jira": jira_cfg},
         "meta": {"priorities": ["P0"], "categories": [],
-                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                 "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))

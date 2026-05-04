@@ -65,7 +65,7 @@ def _seed_local_kanban(td: pathlib.Path) -> pathlib.Path:
         "backend": {"driver": "local"},
         "meta": {"priorities": ["P0"], "categories": [],
                  "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                             "DONE", "CANCELLED"],
+                             "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))
@@ -83,7 +83,7 @@ def _seed_jira_kanban(td: pathlib.Path) -> pathlib.Path:
         }},
         "meta": {"priorities": ["P0"], "categories": [],
                  "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                             "DONE", "CANCELLED"],
+                             "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }))

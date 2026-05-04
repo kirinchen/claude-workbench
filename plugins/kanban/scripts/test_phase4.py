@@ -44,7 +44,7 @@ def _mk_data(*, registered=("agent-fin",), partial=False):
                 "statusMap": {
                     "TODO": "To Do",
                     "DOING": "In Progress",
-                    "DONE": "Done",
+                    "APPROVED": "Done",
                     "REVIEW": "In Review",
                     "BLOCKED": "Blocked",
                     "CANCELLED": "Cancelled",
@@ -60,7 +60,7 @@ def _mk_data(*, registered=("agent-fin",), partial=False):
         "meta": {
             "priorities": ["P0", "P1"],
             "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x",
             "updated_at": "x",
         },
@@ -286,7 +286,7 @@ def test_sync_summary_local_skipped():
                     "meta": {
                         "priorities": ["P0"],
                         "categories": [],
-                        "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                        "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
                         "created_at": "x",
                         "updated_at": "x",
                     },
@@ -365,7 +365,7 @@ def test_jira_sync_hook_silent_for_local():
                     "meta": {
                         "priorities": ["P0"],
                         "categories": [],
-                        "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+                        "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
                         "created_at": "x",
                         "updated_at": "x",
                     },

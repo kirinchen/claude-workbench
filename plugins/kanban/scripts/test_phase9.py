@@ -297,7 +297,7 @@ def _seed_v03_kanban(td) -> pathlib.Path:
         },
         "meta": {
             "priorities": ["P0"], "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x", "updated_at": "x",
         },
         "tasks": [],

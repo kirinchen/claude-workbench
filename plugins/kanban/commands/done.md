@@ -1,5 +1,5 @@
 ---
-description: Mark a task (default: current DOING) as DONE.
+description: Mark a task (default: current DOING) as APPROVED.
 argument-hint: [<task-id>] [--note=<text>]
 allowed-tools: Read, Bash(python3:*), Bash(date:*)
 ---
@@ -30,7 +30,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py done \
   [--task-id task-NNN] [--note '<text>']
 ```
 
-The helper enforces DONE-only-from-DOING, sets `completed`, appends the
+The helper enforces APPROVED-only-from-DOING, sets `completed`, appends the
 note as a comment, and writes atomically. **Do not** call Write/Edit on
 `kanban.json`.
 
@@ -44,16 +44,16 @@ note as a comment, and writes atomically. **Do not** call Write/Edit on
 
 Format:
 
-> ✓ <id> "<title>" → DONE.
+> ✓ <id> "<title>" → APPROVED.
 > Unblocked: <id-1>, <id-2> (was waiting on <id>).
 
 Omit the "Unblocked" line when none.
 
 ## Jira flow
 
-In Jira mode, `/kanban:done` transitions DOING → REVIEW. The DONE step is
+In Jira mode, `/kanban:done` transitions DOING → REVIEW. The APPROVED step is
 reserved for a human reviewer — anti-self-approve refuses if the same AP
-tries to push to DONE.
+tries to push to APPROVED.
 
 Identify the target key from `$ARGUMENTS`. If absent, find the single DOING
 card with this repo's AP set (use `/kanban:status` to enumerate; if there
@@ -96,5 +96,5 @@ on the user's behalf — that's a team policy decision.
 - Never retroactively edit `created` or `started`.
 - Never close multiple tasks in one invocation.
 - Never call Write/Edit on `kanban.json` — go through the helper.
-- Jira mode: never push REVIEW → DONE for a card whose AP equals this
+- Jira mode: never push REVIEW → APPROVED for a card whose AP equals this
   repo's AP. The plugin refuses; do not retry.

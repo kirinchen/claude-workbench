@@ -72,7 +72,7 @@ def _mk_jira_kanban_data(*, project_key: str = "AGENT"):
             "transitions": {
                 "TODO": {"status": "To Do"},
                 "DOING": {"status": "In Progress"},
-                "DONE": {"status": "Done"},
+                "APPROVED": {"status": "Done"},
             },
             "ap": {"fieldId": "customfield_10042",
                    "fieldName": "Claude Agent",
@@ -80,7 +80,7 @@ def _mk_jira_kanban_data(*, project_key: str = "AGENT"):
         }},
         "meta": {"priorities": ["P0", "P1"], "categories": [],
                  "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                             "DONE", "CANCELLED"],
+                             "APPROVED", "CANCELLED"],
                  "created_at": "x", "updated_at": "x"},
         "tasks": [],
     }

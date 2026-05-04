@@ -61,7 +61,7 @@ def test_dsl_user_example():
     assert out["REVIEW"]["status"] == "In Progress"
     assert out["REVIEW"]["addLabels"] == ["kanban:review"]
     assert out["REVIEW"]["assignee"] == {"accountId": "kirin-acct"}
-    assert out["DONE"] == {"status": "Done"}
+    assert out["APPROVED"] == {"status": "Done"}
     assert out["CANCELLED"] == {"status": "Done", "addLabels": ["kanban:cancelled"]}
 
 
@@ -122,7 +122,7 @@ def test_suggester_non_english():
     ]
     res = _tr.suggest_from_jira(found)
     assert res.suggestions["DOING"]["status"] == "進行中"
-    assert res.suggestions["DONE"]["status"] == "完成"
+    assert res.suggestions["APPROVED"]["status"] == "完成"
     assert "TODO" in res.suggestions  # picked first new-category status
     assert "TODO" in res.ambiguous     # but flagged as ambiguous
     assert set(res.unmapped) == {"BLOCKED", "REVIEW", "CANCELLED"}
@@ -138,7 +138,7 @@ def test_suggester_english_exact_match_wins():
     # Exact-name match → confidence 1.0
     assert res.suggestions["TODO"]["confidence"] == 1.0
     assert res.suggestions["DOING"]["confidence"] == 1.0
-    assert res.suggestions["DONE"]["confidence"] == 1.0
+    assert res.suggestions["APPROVED"]["confidence"] == 1.0
 
 
 # --- Legacy migration ----------------------------------------------------
@@ -147,7 +147,7 @@ def test_suggester_english_exact_match_wins():
 def test_migrate_legacy_lossless():
     legacy = {
         "projectKey": "AGENT",
-        "statusMap": {"TODO": "To Do", "DOING": "In Progress", "DONE": "Done"},
+        "statusMap": {"TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done"},
         "partial": True,
         "labelFallback": {
             "BLOCKED": "kanban:blocked",
@@ -162,7 +162,7 @@ def test_migrate_legacy_lossless():
     t = mig["transitions"]
     assert t["TODO"] == {"status": "To Do"}
     assert t["DOING"] == {"status": "In Progress"}
-    assert t["DONE"] == {"status": "Done"}
+    assert t["APPROVED"] == {"status": "Done"}
     assert t["BLOCKED"] == {"status": "In Progress", "addLabels": ["kanban:blocked"]}
     assert t["REVIEW"] == {"status": "In Progress", "addLabels": ["kanban:review"]}
     assert t["CANCELLED"] == {"status": "Done", "addLabels": ["kanban:cancelled"]}
@@ -184,7 +184,7 @@ def test_kanban_io_auto_migrates_on_load():
             "driver": "jira",
             "jira": {
                 "projectKey": "AGENT",
-                "statusMap": {"TODO": "To Do", "DOING": "In Progress", "DONE": "Done"},
+                "statusMap": {"TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done"},
                 "partial": True,
                 "labelFallback": {"BLOCKED": "kanban:blocked"},
             },
@@ -192,7 +192,7 @@ def test_kanban_io_auto_migrates_on_load():
         "meta": {
             "priorities": ["P0"],
             "categories": [],
-            "columns": ["TODO", "DOING", "DONE", "BLOCKED"],
+            "columns": ["TODO", "DOING", "APPROVED", "BLOCKED"],
             "created_at": "x",
             "updated_at": "x",
         },
@@ -226,7 +226,7 @@ def _seed_jira_data():
                     "REVIEW":    {"status": "In Progress",
                                   "addLabels": ["kanban:review"],
                                   "assignee": {"accountId": "kirin-acct"}},
-                    "DONE":      {"status": "Done"},
+                    "APPROVED":      {"status": "Done"},
                     "CANCELLED": {"status": "Done", "addLabels": ["kanban:cancelled"]},
                 },
                 "ap": {
@@ -239,7 +239,7 @@ def _seed_jira_data():
         "meta": {
             "priorities": ["P0"],
             "categories": [],
-            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+            "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
             "created_at": "x",
             "updated_at": "x",
         },
@@ -305,7 +305,7 @@ def test_disambiguate_shared_in_progress():
             _issue("AGENT-4", "Done", labels=["kanban:cancelled"])
         ).column == "CANCELLED"
         # Done with no labels → DONE
-        assert drv._issue_to_task(_issue("AGENT-5", "Done")).column == "DONE"
+        assert drv._issue_to_task(_issue("AGENT-5", "Done")).column == "APPROVED"
 
 
 def test_compound_transition_to_review():
@@ -383,7 +383,7 @@ def test_self_approve_refused_v03():
         from drivers.jira import SelfApproveRefused
 
         try:
-            drv.transition("AGENT-7", "DONE")
+            drv.transition("AGENT-7", "APPROVED")
             assert False, "should have raised"
         except SelfApproveRefused as e:
             assert "agent-fin" in str(e)
@@ -423,14 +423,14 @@ def test_set_transitions_cli_writes_v03_shape():
                 "driver": "jira",
                 "jira": {
                     "projectKey": "AGENT",
-                    "statusMap": {"TODO": "To Do", "DOING": "In Progress", "DONE": "Done"},
+                    "statusMap": {"TODO": "To Do", "DOING": "In Progress", "APPROVED": "Done"},
                     "partial": True,
                     "labelFallback": {"BLOCKED": "kanban:blocked"},
                 },
             },
             "meta": {
                 "priorities": ["P0"], "categories": [],
-                "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                 "created_at": "x", "updated_at": "x",
             },
             "tasks": [],
@@ -439,7 +439,7 @@ def test_set_transitions_cli_writes_v03_shape():
         new_transitions = {
             "TODO": {"status": "Selected for Development"},
             "DOING": {"status": "In Progress"},
-            "DONE": {"status": "Done"},
+            "APPROVED": {"status": "Done"},
         }
         out = _run(
             "set-transitions",
@@ -467,7 +467,7 @@ def test_set_transitions_cli_validates():
             "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
             "meta": {
                 "priorities": ["P0"], "categories": [],
-                "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "DONE", "CANCELLED"],
+                "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
                 "created_at": "x", "updated_at": "x",
             },
             "tasks": [],

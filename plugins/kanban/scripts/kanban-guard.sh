@@ -48,7 +48,7 @@ kanban-guard: Direct edits to kanban.json are blocked.
 Use a /kanban:* slash command instead:
   /kanban:init    — create kanban.json
   /kanban:next    — pick a task and move it to DOING
-  /kanban:done    — close a task (DOING → DONE)
+  /kanban:done    — close a task (DOING → APPROVED)
   /kanban:block   — move a task to BLOCKED
   /kanban:status  — read-only summary
 

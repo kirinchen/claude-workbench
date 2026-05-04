@@ -45,7 +45,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kanban_local.py next \
   [--category <cat>] [--priority <prio>] [--task-id task-NNN]
 ```
 
-The helper enforces all dependency / priority / DONE-immutability rules and
+The helper enforces all dependency / priority / APPROVED-immutability rules and
 writes the file via atomic `os.replace`, sidestepping the kanban-guard
 PreToolUse hook. **Do not** call the Write or Edit tool on `kanban.json`.
 
@@ -71,6 +71,6 @@ ambiguous rather than guessing.
 
 - **Jira mode**: never auto-pick from TODO. The deprecation nudge above
   is the only correct behavior. See #33 for the rationale.
-- Never start a task whose deps are not all DONE (local mode — helper enforces).
-- Never start a task in DONE or BLOCKED.
+- Never start a task whose deps are not all APPROVED (local mode — helper enforces).
+- Never start a task in APPROVED or BLOCKED.
 - Never call the Write/Edit tool on `kanban.json` — go through the helper.

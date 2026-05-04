@@ -13,7 +13,7 @@ Never hardcode these letters. Always read `meta.priorities` from the project's k
 
 ## Selecting the next TODO task
 
-1. Build the candidate set: `tasks` where `column == "TODO"` and every id in `depends` is in `DONE`.
+1. Build the candidate set: `tasks` where `column == "TODO"` and every id in `depends` is in `APPROVED`.
 2. Apply filters the user passed (`--category`, `--priority`, tag filters).
 3. Sort by:
    1. `priorityIndex` ascending (using `meta.priorities.indexOf(task.priority)`).
