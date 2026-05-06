@@ -101,6 +101,17 @@ def _attach_mock(drv, queue, calls):
         transport=_mock_transport(queue, calls),
         sleep=lambda _: None,
     )
+    # Pre-seed status-category cache (#50) so transition tests don't
+    # need a separate Jira API call. APPROVED → "Done" → category=done
+    # exercises the strict guard path; intermediate statuses get
+    # `indeterminate` / `new`.
+    drv._status_categories = {
+        "To Do": "new",
+        "In Progress": "indeterminate",
+        "Done": "done",
+        "REVIEW": "indeterminate",
+        "In Review": "indeterminate",
+    }
 
 
 # --- ap_registry tests ---------------------------------------------------

@@ -271,6 +271,20 @@ def _attach_mock(drv, queue, calls):
     drv._client = JiraClient(
         drv.base_url, drv.email, drv._token, transport=t, sleep=lambda _: None
     )
+    # Pre-seed status-category cache (#50) so transition tests skip
+    # the live Jira lookup. Default mapping covers the canonical Jira
+    # workflow names that show up across phase 7's seeded DSLs.
+    drv._status_categories = {
+        "To Do": "new",
+        "Selected for Development": "new",
+        "Backlog": "new",
+        "In Progress": "indeterminate",
+        "進行中": "indeterminate",
+        "REVIEW": "indeterminate",
+        "In Review": "indeterminate",
+        "Done": "done",
+        "完成": "done",
+    }
 
 
 def _issue(key, status, labels=(), assignee=None, ap_value=None):

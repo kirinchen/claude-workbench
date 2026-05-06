@@ -92,6 +92,13 @@ class JiraDriver:
         self.email = env.get("JIRA_AGENT_EMAIL", "")
         self._token = env.get("JIRA_API_TOKEN", "")
         self._client: JiraClient | None = None
+        # Lazy cache of `{status_name: category_key}` for the project.
+        # Populated on first call to `_get_status_category` and reused
+        # within the driver instance. Used by anti-self-approve to
+        # distinguish a true terminal-Done transition from an
+        # intermediate APPROVED step (#50). `None` until populated;
+        # `{}` if the lookup ever failed (avoid retry storms).
+        self._status_categories: dict[str, str] | None = None
 
     # --- helpers -------------------------------------------------------
 
@@ -111,6 +118,43 @@ class JiraDriver:
     def _canonical_to_status(self, column: str) -> str | None:
         spec = self._canonical_spec(column)
         return spec.get("status") if spec else None
+
+    def _get_status_category(self, status_name: str) -> str | None:
+        """Return the Jira statusCategory key (`new`, `indeterminate`,
+        `done`) for the given status display name, or None if the
+        lookup couldn't resolve it.
+
+        Lazy-populates a per-instance cache on first call. On API
+        failure we cache an empty map so subsequent calls don't hammer
+        Jira; the caller treats None as "unknown — fail closed" (#50).
+
+        Used by anti-self-approve to tell apart a true terminal-Done
+        transition (block) from an intermediate APPROVED step where
+        the DSL maps APPROVED to a non-terminal Jira status — e.g.
+        `transitions.APPROVED.status == "REVIEW"` for teams that use
+        a soft "agent done, awaiting human approval" intermediate
+        before the human pushes REVIEW → Done.
+        """
+        if not status_name:
+            return None
+        if self._status_categories is None:
+            self._status_categories = {}
+            if not self.project_key:
+                return None
+            try:
+                client = self._client_or_raise()
+                types = client.get_project_statuses(self.project_key) or []
+            except (JiraError, RuntimeError):
+                # Lookup failed — keep the empty cache so we don't retry
+                # on every transition; caller treats None as unknown.
+                return None
+            for issue_type in types:
+                for status in (issue_type or {}).get("statuses") or []:
+                    nm = status.get("name") or ""
+                    cat = (status.get("statusCategory") or {}).get("key")
+                    if nm and cat and nm not in self._status_categories:
+                        self._status_categories[nm] = cat
+        return self._status_categories.get(status_name)
 
     def _issue_to_task(self, issue: dict[str, Any]) -> Task:
         f = issue.get("fields") or {}
@@ -408,10 +452,38 @@ class JiraDriver:
             if flavor_spec.get("assignee"):
                 spec["assignee"] = flavor_spec["assignee"]
 
+        # Early category check — fail fast on lookup failure before
+        # spending a get_task hit. Per #50, anti-self-approve must only
+        # fire when the target Jira status is the workflow's true
+        # terminal Done — not for teams whose DSL maps APPROVED to an
+        # intermediate status (e.g. canonical APPROVED → Jira "REVIEW"
+        # with the `kanban_awaiting_approval` label, where the agent is
+        # just signalling completion; the human still has to push
+        # REVIEW → Done). The status's `statusCategory` key is the
+        # Jira-native semantic flag:
+        #   `done`          → guard applies (true approval)
+        #   `indeterminate` → intermediate, allow
+        #   `new`           → also intermediate, allow
+        #   None (lookup failed) → fail closed (refuse with a distinct
+        #     message so the user can tell "Jira API hiccup" apart from
+        #     "you're trying to self-approve")
+        target_category: str | None = None
+        if to_column == "APPROVED":
+            target_category = self._get_status_category(target_status)
+            if target_category is None:
+                raise RuntimeError(
+                    f"cannot verify whether status {target_status!r} is the "
+                    f"workflow's terminal Done state (Jira status-category "
+                    f"lookup failed). For safety, refusing the transition — "
+                    f"anti-self-approve cannot be skipped without "
+                    f"verification. Retry in a moment, or run /kanban:whoami "
+                    f"to check Jira credentials. See #50."
+                )
+
         # One pre-flight read serves anti-self-approve, the already-in-
         # target-status fast path, and the blocked_by idempotency check.
         existing_for_status = self.get_task(key)
-        if to_column == "APPROVED":
+        if to_column == "APPROVED" and target_category == "done":
             current_ap = self._current_repo_ap()
             if current_ap and existing_for_status.ap and existing_for_status.ap == current_ap:
                 # Only refuse when the agent itself owns the work.
@@ -439,6 +511,8 @@ class JiraDriver:
                         "(or assign the card to that human first if you "
                         "are recording on their behalf)"
                     )
+        # else (target_category in {"indeterminate", "new"}): intermediate
+        # state, no self-approve concern (#50).
         client = self._client_or_raise()
 
         # Step 0 — blocked_by issue links (only meaningful when transitioning

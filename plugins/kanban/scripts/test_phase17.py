@@ -76,6 +76,16 @@ def _attach_mock(drv, queue, calls):
         drv.base_url, drv.email, drv._token,
         transport=t, sleep=lambda _: None,
     )
+    # Pre-seed the status-category cache so anti-self-approve doesn't
+    # need a separate Jira API hit during these tests (#50). Phase 17's
+    # DSL maps APPROVED → "Done" (statusCategory=done), so the guard
+    # paths exercised here remain the strict-block path.
+    drv._status_categories = {
+        "To Do": "new",
+        "In Progress": "indeterminate",
+        "Done": "done",
+        "REVIEW": "indeterminate",
+    }
 
 
 def _seed_repo_ap(repo: pathlib.Path, ap: str = "agent-fin"):

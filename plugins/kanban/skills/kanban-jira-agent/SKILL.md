@@ -130,8 +130,27 @@ Treat each mention as a directive. Process:
 - `/kanban:done` transitions DOING → In Review with a system comment. The
   human reviewer (or another AP) approves the card by transitioning it to
   Done in the Jira UI.
-- DO NOT push your own card to Done. The plugin refuses (anti-self-approve);
-  the Jira workflow may also reject it. This is intentional.
+- DO NOT push your own card to a Jira status with `statusCategory == done`
+  (typically that's the Jira `Done` column). The plugin's anti-self-approve
+  guard refuses; the Jira workflow may also reject it. This is intentional.
+
+### Anti-self-approve precise contract (#50)
+
+The guard fires only when the canonical APPROVED transition's target Jira
+status has `statusCategory == "done"`. Teams whose DSL maps canonical
+APPROVED to a non-terminal status (e.g. `transitions.APPROVED.status ==
+"REVIEW"` plus `addLabels: ["kanban_awaiting_approval"]` for a soft "agent
+done, awaiting human approval" intermediate) are NOT blocked — the agent
+is signalling completion, not approving its own work; the human still has
+to push REVIEW → Done. This is the common pattern when teams use canonical
+REVIEW for "agent has options for owner to pick" (with flavor
+`needs_decision`) and canonical APPROVED for "agent finished, please
+review" (with `kanban_awaiting_approval`).
+
+If you ever see `cannot verify whether status ... is the workflow's
+terminal Done state`, that's a Jira API hiccup blocking the lookup —
+retry, or run `/kanban:whoami` to check credentials. NOT a self-approve
+refusal.
 
 ## Linking to repo docs
 
