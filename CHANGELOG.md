@@ -15,6 +15,58 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-06 (kanban anti-self-approve keyed on statusCategory)
+
+### Fixed
+- **kanban 0.3.24** — anti-self-approve guard now keys on the target
+  Jira status's `statusCategory` rather than just the canonical name
+  `APPROVED`. Closes #50.
+
+  **The bug**: pre-fix, `transition --to APPROVED` (or the legacy
+  `--to DONE` alias) blocked **any** agent-driven transition to
+  canonical APPROVED when the agent owned the card. But teams whose
+  DSL maps canonical APPROVED to a non-terminal Jira status (e.g.
+  `transitions.APPROVED.status == "REVIEW"` plus `addLabels:
+  ["kanban_awaiting_approval"]` for a soft "agent done, awaiting
+  human approval" intermediate) got blocked on a path that's
+  semantically NOT a self-approval — the agent is just signalling
+  completion; the human still has to push REVIEW → Done.
+
+  Reporter (`narrative-fin-agent`) had to PATCH labels via Jira REST
+  directly to recover, breaking the "DSL is the only thing touching
+  transitions/labels" invariant.
+
+  **The fix**: query Jira's `statusCategory` for the target status
+  (lazy-cached via `get_project_statuses` per driver instance):
+
+  - `category == "done"` → fire the strict guard (true approval —
+    existing behavior preserved when DSL maps to a Jira terminal Done)
+  - `category in {"indeterminate", "new"}` → allow (intermediate
+    stage; the actual #50 fix)
+  - `category is None` (lookup failed) → refuse with a **distinct**
+    error message so the caller can tell "Jira API hiccup" apart from
+    "you're trying to self-approve". Lookup is cached even on failure
+    to avoid retry storms; user can retry the operation.
+
+  Strict (fail-closed) policy on lookup failure preserves the safety
+  invariant — anti-self-approve must not be skippable just because
+  the network hiccuped. The distinct error wording lets a human
+  retrying after a transient failure tell what's going on.
+
+  **Performance**: one extra `get_project_statuses` call per driver
+  lifetime; cached after that. For a `/kanban:doing` session with
+  multiple transitions, the cost is amortised over the session.
+
+  **kanban-jira-agent SKILL** updated with the precise contract and
+  the failure-mode error message so agents can recognise it.
+
+  Phase 29 covers seven cases: strict block when category=done +
+  AP=mine + assignee=agent (existing behavior preserved); allow when
+  category=indeterminate (the #50 fix); allow when category=new;
+  lookup failure → distinct error (NOT SelfApproveRefused); recording
+  for another human still works on done category; lazy cache reused
+  on second transition; cache failure not retried.
+
 ## 2026-05-04 (kanban canonical DONE → APPROVED rename)
 
 ### Changed

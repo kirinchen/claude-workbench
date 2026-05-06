@@ -117,6 +117,18 @@ def _attach_mock(drv, queue, calls):
         drv.base_url, drv.email, drv._token,
         transport=t, sleep=lambda _: None,
     )
+    # Pre-seed status-category cache (#50) so transition tests skip
+    # the lookup hop. Phase 19's locale tests use 審查 / 完成 etc.
+    drv._status_categories = {
+        "To Do": "new",
+        "In Progress": "indeterminate",
+        "REVIEW": "indeterminate",
+        "Done": "done",
+        "Resolved": "done",
+        "進行中": "indeterminate",
+        "審查": "indeterminate",
+        "完成": "done",
+    }
 
 
 def _seed_repo_ap(repo: pathlib.Path, ap: str = "agent-fin"):
