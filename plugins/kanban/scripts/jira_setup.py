@@ -1011,6 +1011,103 @@ def cmd_push_board_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _apply_pulled_board_config(
+    data: dict[str, Any], pulled: dict[str, Any]
+) -> dict[str, Any]:
+    """In-place merge: overwrite `data['backend']['jira']` with the
+    pulled board config while preserving per-machine fields
+    (`agentAccountId`, `ap.registered`). Used by both the explicit
+    `pull-board-config` subcommand and the passive-sync entry point.
+    Returns the same `data` dict (mutated)."""
+    backend = data.setdefault("backend", {"driver": "jira"})
+    existing_cfg = dict(backend.get("jira") or {})
+
+    new_cfg = dict(pulled)
+    if existing_cfg.get("agentAccountId"):
+        new_cfg["agentAccountId"] = existing_cfg["agentAccountId"]
+    # Preserve the local AP roster on `ap.registered` (the on-Jira
+    # config carries fieldId/fieldName but not the registered list).
+    if (existing_cfg.get("ap") or {}).get("registered"):
+        new_cfg.setdefault("ap", {}).setdefault("registered", [])
+        new_cfg["ap"]["registered"] = list(existing_cfg["ap"]["registered"])
+        # If pulled `ap` was missing fieldId, fall back to existing.
+        if not new_cfg["ap"].get("fieldId") and (existing_cfg.get("ap") or {}).get("fieldId"):
+            new_cfg["ap"]["fieldId"] = existing_cfg["ap"]["fieldId"]
+            new_cfg["ap"]["fieldName"] = existing_cfg["ap"].get("fieldName", "")
+
+    backend["driver"] = "jira"
+    backend["jira"] = new_cfg
+    return data
+
+
+def _maybe_passive_sync_board_config(
+    p: Path, data: dict[str, Any]
+) -> dict[str, Any]:
+    """If the local board-config cache is stale, attempt a pull from
+    Jira and persist the result. Best-effort — failures print a stderr
+    warning and return the unchanged data so the caller can continue
+    with the (possibly stale) cache.
+
+    Skipped silently when:
+    - backend.driver != "jira" (no Jira to sync against)
+    - cache is fresh (within CACHE_TTL_HOURS of the last pull)
+    - no projectKey configured yet
+    - Jira credentials missing (no client to call)
+    - the property doesn't exist on Jira yet (404 — common when no one
+      has pushed yet; not a warning condition)
+
+    Returns the (possibly mutated) `data` dict.
+    """
+    from lib import board_config as _bc
+
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return data
+    if not _bc.is_cache_stale(p.parent):
+        return data
+
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey")
+    if not project_key:
+        return data
+
+    client = _client_from_env_or_none()
+    if client is None:
+        # No credentials — silently skip. The user will see this when
+        # they run /kanban:whoami (token row reads "missing"); no need
+        # to nag here.
+        return data
+
+    try:
+        remote = _bc.pull(client, project_key)
+    except _bc.BoardConfigError as e:
+        if not getattr(e, "not_found", False):
+            # Permission denied / network / malformed — surface to
+            # stderr but don't fail the caller. Stale cache is fine.
+            sys.stderr.write(
+                f"warning: passive board-config sync failed "
+                f"({e}); continuing with local cache\n"
+            )
+        return data
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(
+            f"warning: passive board-config sync failed "
+            f"({type(e).__name__}: {e}); continuing with local cache\n"
+        )
+        return data
+
+    _apply_pulled_board_config(data, remote)
+    try:
+        kanban_io.save(p, data)
+        _bc.mark_synced(p.parent)
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(
+            f"warning: board config pulled but persist failed "
+            f"({type(e).__name__}: {e})\n"
+        )
+    return data
+
+
 def cmd_pull_board_config(args: argparse.Namespace) -> int:
     """Pull the Jira project's `kanban-config` property and overwrite
     the local kanban.json's `backend.jira` block with it. Records the
@@ -1044,23 +1141,7 @@ def cmd_pull_board_config(args: argparse.Namespace) -> int:
     except _bc.BoardConfigError as e:
         return _fail(str(e), notFound=getattr(e, "not_found", False))
 
-    # Merge: the pulled config is authoritative for shared fields.
-    # Preserve the per-machine pieces that Jira-side doesn't carry.
-    new_cfg = dict(remote)
-    if existing_cfg.get("agentAccountId"):
-        new_cfg["agentAccountId"] = existing_cfg["agentAccountId"]
-    # Preserve the local AP roster on `ap.registered` (the on-Jira
-    # config carries fieldId/fieldName but not the registered list).
-    if (existing_cfg.get("ap") or {}).get("registered"):
-        new_cfg.setdefault("ap", {}).setdefault("registered", [])
-        new_cfg["ap"]["registered"] = list(existing_cfg["ap"]["registered"])
-        # If pulled `ap` was missing fieldId, fall back to existing.
-        if not new_cfg["ap"].get("fieldId") and (existing_cfg.get("ap") or {}).get("fieldId"):
-            new_cfg["ap"]["fieldId"] = existing_cfg["ap"]["fieldId"]
-            new_cfg["ap"]["fieldName"] = existing_cfg["ap"].get("fieldName", "")
-
-    backend["driver"] = "jira"
-    backend["jira"] = new_cfg
+    _apply_pulled_board_config(data, remote)
     kanban_io.save(p, data)
     _bc.mark_synced(p.parent)
 
@@ -1068,7 +1149,45 @@ def cmd_pull_board_config(args: argparse.Namespace) -> int:
         "ok": True,
         "projectKey": project_key,
         "propertyKey": _bc.PROPERTY_KEY,
-        "transitionsCount": len(new_cfg.get("transitions") or {}),
+        "transitionsCount": len(
+            ((data.get("backend") or {}).get("jira") or {}).get("transitions") or {}
+        ),
+    })
+    return 0
+
+
+def cmd_read_board_config_cache(args: argparse.Namespace) -> int:
+    """Tiny read-only helper — returns the local cache state for the
+    board-config property without making any Jira API call. Used by
+    /kanban:whoami to render a "Board config" row showing where the
+    config lives + how stale this machine's cache is.
+
+    Output: {ok, projectKey, propertyKey, cachedAt, cacheAgeHours,
+             stale}.
+    """
+    from lib import board_config as _bc
+
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+    cfg = backend.get("jira") or {}
+    project_key = cfg.get("projectKey") or ""
+
+    age = _bc.cache_age_hours(p.parent)
+    cached_at = _bc._read_cached_at(p.parent)  # internal; safe in same package
+
+    _emit({
+        "ok": True,
+        "projectKey": project_key,
+        "propertyKey": _bc.PROPERTY_KEY,
+        "cachedAt": cached_at,
+        "cacheAgeHours": (round(age, 2) if age is not None else None),
+        "stale": _bc.is_cache_stale(p.parent),
+        "ttlHours": _bc.CACHE_TTL_HOURS,
     })
     return 0
 
@@ -2418,7 +2537,13 @@ def _detect_unanswered_questions(
 
 
 def cmd_sync_summary(args: argparse.Namespace) -> int:
-    """Render an open-cards summary for the current repo's AP."""
+    """Render an open-cards summary for the current repo's AP.
+
+    Also the canonical entry point for passive board-config sync —
+    `/kanban:sync` runs at SessionStart, so we opportunistically check
+    the cache TTL and refresh from the Jira project property when
+    stale (>= 8h). Best-effort; failures don't block the summary.
+    """
     p = Path(args.kanban_path)
     if not p.exists():
         _fail(f"kanban.json not found at {p}")
@@ -2428,6 +2553,12 @@ def cmd_sync_summary(args: argparse.Namespace) -> int:
     if backend.get("driver") != "jira":
         _emit({"summary": "", "skip": "not in jira mode"})
         return 0
+
+    # Passive board-config sync — refresh local cache from Jira if
+    # stale. Returns the (possibly updated) data so subsequent driver
+    # construction sees the fresh transitions/conventions/etc.
+    data = _maybe_passive_sync_board_config(p, data)
+    backend = data.get("backend") or {}
 
     repo_ap = _read_repo_ap(p)
     cfg = backend.get("jira") or {}
@@ -3363,6 +3494,15 @@ def build_parser() -> argparse.ArgumentParser:
              "pull when the local cache is empty.",
     )
     s.set_defaults(func=cmd_pull_board_config)
+
+    s = sub.add_parser(
+        "read-board-config-cache",
+        help="Read-only metadata about the local board-config cache "
+             "(projectKey, cachedAt, cacheAgeHours, stale). No Jira API "
+             "call. Used by /kanban:whoami for the cache-age row.",
+    )
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_read_board_config_cache)
 
     s = sub.add_parser(
         "read-board-config",

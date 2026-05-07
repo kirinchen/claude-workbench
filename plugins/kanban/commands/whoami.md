@@ -84,6 +84,22 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py mcp-conflict-scan \
 The `Jira MCP` row reports `✓ none` (empty conflicts) or
 `⚠ N detected: <comma-list>` (so the user knows what to scope away).
 
+Read the board-config cache state (no Jira API call):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-board-config-cache \
+  --kanban-path '<kanban.json path>'
+```
+
+Returns `{cachedAt, cacheAgeHours, stale, ttlHours, projectKey, propertyKey}`.
+The `Board config` row maps from these:
+
+| Response | Board config row reads |
+|---|---|
+| `cachedAt: null` | `Jira project <projectKey> properties.kanban-config (never synced — run /kanban:pull-board-config)` |
+| `cachedAt` set, `stale: false` | `Jira project <projectKey> properties.kanban-config (synced <cacheAgeHours>h ago, fresh)` |
+| `cachedAt` set, `stale: true` | `Jira project <projectKey> properties.kanban-config (synced <cacheAgeHours>h ago, ⚠ stale — auto-syncs on next /kanban:sync)` |
+
 Render:
 
 ```
@@ -98,6 +114,7 @@ AP (this repo):   <ap or "(unset — run /kanban:assign-ap <name>)">
 AP (registered):  <live comma-list or "(empty — run /kanban:register-ap <name>)" or "<list> (offline — local hint)">
 Token:            <validity row>
 Transitions:      <count> defined  (e.g. TODO→..., DOING→..., ...)
+Board config:     <cache row>
 Jira MCP:         <conflict row>
 ```
 

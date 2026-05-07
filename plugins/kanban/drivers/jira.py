@@ -293,7 +293,7 @@ class JiraDriver:
                 status = self._canonical_to_status(filter.column)
                 if status:
                     clauses.append(f'status = "{status}"')
-                elif self.partial and filter.column in self.label_fallback:
+                elif getattr(self, "partial", False) and filter.column in getattr(self, "label_fallback", {}):
                     clauses.append(f'labels = "{self.label_fallback[filter.column]}"')
             if filter.assignee:
                 clauses.append(f'assignee = "{filter.assignee}"')
