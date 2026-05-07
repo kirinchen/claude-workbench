@@ -212,6 +212,40 @@ class JiraClient:
         """Returns a list of issue-types each with their `statuses` array."""
         return self._request("GET", f"/rest/api/3/project/{project_key}/statuses")
 
+    def get_project_property(
+        self, project_key: str, property_key: str
+    ) -> dict[str, Any]:
+        """Read a project entity property — structured JSON keyed under
+        the given property name. Used by the kanban plugin to store
+        board-level config (transitions DSL, AP field, conventions) on
+        the Jira project itself, replacing the per-machine `import-jira-
+        code` paste flow (#issue-after-50).
+
+        Returns the full envelope shape:
+            {"key": "<property_key>", "value": <user-supplied JSON>}
+        Raises `JiraError(404)` when the property hasn't been set yet —
+        callers usually treat that as "no board config yet, fall back
+        to local DSL setup."
+        """
+        return self._request(
+            "GET",
+            f"/rest/api/3/project/{project_key}/properties/{property_key}",
+        )
+
+    def set_project_property(
+        self, project_key: str, property_key: str, value: Any
+    ) -> None:
+        """Write a project entity property. Requires the agent's Jira
+        account to have project-admin role; non-admin writers get 403.
+        Properties cap at 32KB per value (Atlassian limit) — well above
+        what a typical transitions/conventions block needs.
+        """
+        self._request(
+            "PUT",
+            f"/rest/api/3/project/{project_key}/properties/{property_key}",
+            body=value,
+        )
+
     def search_jql(
         self,
         jql: str,

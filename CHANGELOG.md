@@ -15,6 +15,87 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-07 (kanban board-config helper layer — PR 1 of 3)
+
+### Added
+- **kanban 0.3.25** — `lib/board_config.py` + three new helper
+  subcommands lay the foundation for moving the canonical shared
+  board config off per-receiver paste flows
+  (`/kanban:showjira-code` → `/kanban:import-jira-code` round-trip)
+  onto the **Jira project itself**, stored under property key
+  `kanban-config`. Multi-machine teams stop drifting silently when
+  one repo updates the rules.
+
+  This is **PR 1 of 3**. Helpers + tests only — no slash commands,
+  no driver-level passive sync, no removal of the old paste flow yet.
+  PR 2 wires `/kanban:push-board-config` / `/kanban:pull-board-config`
+  / `/kanban:show-board-config` and adds 8h-TTL passive sync at
+  driver init. PR 3 removes `showjira-code` / `import-jira-code` /
+  `initjira-by-code` and ships the migration command.
+
+  **Storage model**:
+  - **Jira project property `kanban-config`** — authoritative; written
+    by push (requires Jira project-admin role), read by pull. 32KB
+    Atlassian-imposed cap, plenty for transitions DSL + conventions.
+  - **`kanban.json#backend.jira`** — git-tracked per-machine cache.
+    Mirrors the property's value. Survives clones; auto-commits on
+    pull just like any other state change.
+  - **`.claude/kanban-agent.json#boardConfigCachedAt`** — ISO 8601
+    timestamp of the last successful pull on this machine. Drives the
+    8-hour passive-sync TTL (constant `CACHE_TTL_HOURS=8` in
+    `lib/board_config`).
+
+  **Authority precedence**: Jira-side wins on read; local push only
+  fires when an admin runs `/kanban:push-board-config` explicitly.
+  Two agents pushing simultaneously is last-writer-wins (Atlassian
+  doesn't expose ETag versioning on properties).
+
+  **Offline behaviour**: when Jira is unreachable, pull fails — the
+  local cache continues to serve. PR 2 will surface a "using stale
+  cache" warning in `/kanban:whoami`.
+
+  **New `lib/board_config.py` surface**:
+  - `push(client, project_key, config)` — writes property; raises
+    `BoardConfigError` with permission-clear message on 403
+  - `pull(client, project_key)` — returns the unwrapped config dict;
+    distinguishes 404 ("no config yet") via `not_found` attribute
+  - `cache_age_hours(repo_root)` — float | None
+  - `is_cache_stale(repo_root, ttl_hours=None)` — bool, default 8h TTL
+  - `mark_synced(repo_root, ts=None)` — writes
+    `.claude/kanban-agent.json#boardConfigCachedAt`, preserves other
+    fields (`ap`, `lastMentionSeenAt`, etc.)
+
+  **New `JiraClient` methods** (`lib/jira_client.py`):
+  - `get_project_property(key, prop_key)` — full envelope
+    `{"key", "value"}`
+  - `set_project_property(key, prop_key, value)` — body is the JSON
+    value to store
+
+  **New helper subcommands** (`scripts/jira_setup.py`):
+  - `push-board-config --kanban-path P` — strips per-machine fields
+    (`agentAccountId`, `ap.registered`) before writing; marks local
+    cache as freshly synced too
+  - `pull-board-config --kanban-path P [--project-key K]` — overwrites
+    `backend.jira` from Jira; **preserves** per-machine fields
+    (`agentAccountId`, `ap.registered`); records `cachedAt`
+  - `read-board-config [--kanban-path P] [--project-key K]` — print
+    Jira-side config without touching local state
+
+  **Coexistence**: `showjira-code` / `import-jira-code` /
+  `initjira-by-code` keep working unchanged in 0.3.25. PR 3 removes
+  them.
+
+  Phase 30 covers eleven cases: push happy path; push 403 →
+  permission-denied with admin-role hint; pull happy path; pull 404
+  → distinct `not_found` error; cache age None when unset; cache age
+  float when set (3h tolerance); stale-cache logic across no-cache /
+  fresh / past-TTL / custom TTL; mark_synced preserves other fields;
+  push command strips per-machine fields; pull command preserves
+  per-machine fields and records `cachedAt`; read command does not
+  touch local kanban.json or `.claude/kanban-agent.json`.
+
+  All 30 phases green.
+
 ## 2026-05-06 (kanban anti-self-approve keyed on statusCategory)
 
 ### Fixed

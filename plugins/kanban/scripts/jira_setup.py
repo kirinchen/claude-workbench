@@ -941,6 +941,177 @@ def cmd_resolve_doc_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_push_board_config(args: argparse.Namespace) -> int:
+    """Push the local `backend.jira` block to the Jira project's
+    `kanban-config` property — the new authoritative storage location
+    for board-level config (replacing /kanban:showjira-code paste-flow,
+    rolling out across 0.3.25+).
+
+    What gets pushed: transitions DSL, ap.fieldId/fieldName, boardId,
+    boardUrl, projectKey, conventions. Per-machine fields
+    (`agentAccountId`, `ap.registered`) are stripped so two machines
+    pushing don't fight over them.
+
+    Requires Jira project-admin role on the agent's account; non-admin
+    pushes return a clear permission-error message.
+    """
+    from lib import board_config as _bc
+
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.get("backend") or {}
+    if backend.get("driver") != "jira":
+        return _fail("backend.driver must be 'jira'")
+
+    cfg = dict(backend.get("jira") or {})
+    if not cfg.get("transitions"):
+        return _fail("no transitions defined — run /kanban:initjira first")
+
+    project_key = cfg.get("projectKey")
+    if not project_key:
+        return _fail("backend.jira.projectKey is empty")
+
+    # Strip per-machine / per-account fields. The shared canonical
+    # config is everything that should be identical across teammates;
+    # `agentAccountId` and `ap.registered` are local state.
+    payload = {
+        "boardUrl": cfg.get("boardUrl"),
+        "boardId": cfg.get("boardId"),
+        "projectKey": project_key,
+        "transitions": cfg.get("transitions"),
+    }
+    ap = cfg.get("ap") or {}
+    if ap.get("fieldId"):
+        payload["ap"] = {
+            "fieldId": ap["fieldId"],
+            "fieldName": ap.get("fieldName", ""),
+        }
+    payload["conventions"] = _cv.normalize(cfg.get("conventions"))
+    # Drop nulls so the on-Jira blob stays minimal.
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    client = _client_from_env()
+    try:
+        _bc.push(client, project_key, payload)
+    except _bc.BoardConfigError as e:
+        return _fail(str(e))
+
+    # Mark this machine's cache as freshly synced too — the local
+    # kanban.json content matches what we just pushed, so no immediate
+    # passive sync is needed.
+    _bc.mark_synced(p.parent)
+    _emit({
+        "ok": True,
+        "projectKey": project_key,
+        "propertyKey": _bc.PROPERTY_KEY,
+        "fieldsPushed": sorted(payload.keys()),
+    })
+    return 0
+
+
+def cmd_pull_board_config(args: argparse.Namespace) -> int:
+    """Pull the Jira project's `kanban-config` property and overwrite
+    the local kanban.json's `backend.jira` block with it. Records the
+    sync timestamp in `.claude/kanban-agent.json#boardConfigCachedAt`
+    so passive-sync TTL tracking works on the next driver call.
+
+    Per-machine fields are preserved across the overwrite:
+    `agentAccountId` (which is the shared agent account, but commonly
+    populated from /kanban:initjira step 1) and `ap.registered` (the
+    live AP roster pulled separately via /kanban:live-list-aps).
+    """
+    from lib import board_config as _bc
+
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    data = kanban_io.load(p)
+    backend = data.setdefault("backend", {"driver": "jira"})
+    existing_cfg = dict(backend.get("jira") or {})
+
+    project_key = existing_cfg.get("projectKey") or args.project_key
+    if not project_key:
+        return _fail(
+            "backend.jira.projectKey unset and --project-key not given — "
+            "set the project key in kanban.json or pass --project-key"
+        )
+
+    client = _client_from_env()
+    try:
+        remote = _bc.pull(client, project_key)
+    except _bc.BoardConfigError as e:
+        return _fail(str(e), notFound=getattr(e, "not_found", False))
+
+    # Merge: the pulled config is authoritative for shared fields.
+    # Preserve the per-machine pieces that Jira-side doesn't carry.
+    new_cfg = dict(remote)
+    if existing_cfg.get("agentAccountId"):
+        new_cfg["agentAccountId"] = existing_cfg["agentAccountId"]
+    # Preserve the local AP roster on `ap.registered` (the on-Jira
+    # config carries fieldId/fieldName but not the registered list).
+    if (existing_cfg.get("ap") or {}).get("registered"):
+        new_cfg.setdefault("ap", {}).setdefault("registered", [])
+        new_cfg["ap"]["registered"] = list(existing_cfg["ap"]["registered"])
+        # If pulled `ap` was missing fieldId, fall back to existing.
+        if not new_cfg["ap"].get("fieldId") and (existing_cfg.get("ap") or {}).get("fieldId"):
+            new_cfg["ap"]["fieldId"] = existing_cfg["ap"]["fieldId"]
+            new_cfg["ap"]["fieldName"] = existing_cfg["ap"].get("fieldName", "")
+
+    backend["driver"] = "jira"
+    backend["jira"] = new_cfg
+    kanban_io.save(p, data)
+    _bc.mark_synced(p.parent)
+
+    _emit({
+        "ok": True,
+        "projectKey": project_key,
+        "propertyKey": _bc.PROPERTY_KEY,
+        "transitionsCount": len(new_cfg.get("transitions") or {}),
+    })
+    return 0
+
+
+def cmd_read_board_config(args: argparse.Namespace) -> int:
+    """Read the Jira project's `kanban-config` property without
+    touching local state. Used by /kanban:show-board-config for
+    discovery — humans inspect what's currently published on Jira
+    without disturbing the local cache.
+    """
+    from lib import board_config as _bc
+
+    project_key = args.project_key
+    if not project_key:
+        # Fall through to reading from kanban.json for convenience.
+        if args.kanban_path:
+            p = Path(args.kanban_path)
+            if p.exists():
+                data = kanban_io.load(p)
+                project_key = (
+                    (data.get("backend") or {}).get("jira") or {}
+                ).get("projectKey")
+        if not project_key:
+            return _fail(
+                "--project-key required (or pass --kanban-path to read it "
+                "from backend.jira.projectKey)"
+            )
+
+    client = _client_from_env()
+    try:
+        config = _bc.pull(client, project_key)
+    except _bc.BoardConfigError as e:
+        return _fail(str(e), notFound=getattr(e, "not_found", False))
+
+    _emit({
+        "ok": True,
+        "projectKey": project_key,
+        "propertyKey": _bc.PROPERTY_KEY,
+        "config": config,
+    })
+    return 0
+
+
 def cmd_emit_jira_code(args: argparse.Namespace) -> int:
     """Print the shareable backend.jira block as compact JSON.
 
@@ -3163,6 +3334,47 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--code-json", required=True,
                    help="the JSON code emitted by /kanban:showjira-code on the source machine")
     s.set_defaults(func=cmd_import_jira_code)
+
+    # Board-config helpers (#after-50, kanban 0.3.25+). The
+    # authoritative shared config lives on the Jira project itself
+    # under property key `kanban-config`; these subcommands push/pull/
+    # read that property and keep the local kanban.json + per-machine
+    # cache timestamp in sync. Three slash commands are wired in PR 2:
+    # /kanban:push-board-config, /kanban:pull-board-config, and
+    # /kanban:show-board-config (for discovery).
+    s = sub.add_parser(
+        "push-board-config",
+        help="Write local backend.jira to Jira project property "
+             "(kanban-config); requires project-admin on Jira",
+    )
+    s.add_argument("--kanban-path", required=True)
+    s.set_defaults(func=cmd_push_board_config)
+
+    s = sub.add_parser(
+        "pull-board-config",
+        help="Pull kanban-config from Jira project property and "
+             "overwrite local backend.jira (preserves per-machine fields)",
+    )
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument(
+        "--project-key",
+        help="Override the project key — defaults to "
+             "backend.jira.projectKey from kanban.json. Useful on first "
+             "pull when the local cache is empty.",
+    )
+    s.set_defaults(func=cmd_pull_board_config)
+
+    s = sub.add_parser(
+        "read-board-config",
+        help="Read-only snapshot of the Jira-side kanban-config "
+             "property. Doesn't touch local state.",
+    )
+    s.add_argument("--kanban-path",
+                   help="optional; used to look up projectKey if "
+                        "--project-key is not given")
+    s.add_argument("--project-key",
+                   help="explicit project key (overrides kanban.json lookup)")
+    s.set_defaults(func=cmd_read_board_config)
 
     s = sub.add_parser("live-list-aps")
     s.add_argument("--kanban-path", required=True)
