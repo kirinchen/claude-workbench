@@ -132,6 +132,14 @@ def pull(client: Any, project_key: str) -> dict[str, Any]:
             )
             err.not_found = True  # type: ignore[attr-defined]
             raise err from e
+        if e.status_code == 403:
+            raise BoardConfigError(
+                f"permission denied reading project property "
+                f"{PROPERTY_KEY!r} on {project_key!r}: agent's Jira "
+                f"account doesn't have permission to read project "
+                f"entity properties on this project. Ask a project "
+                f"admin to grant project-read access."
+            ) from e
         raise BoardConfigError(
             f"jira: {e.detail or e} (status={e.status_code})"
         ) from e

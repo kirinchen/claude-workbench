@@ -15,6 +15,92 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-07 (kanban board-config slash commands + passive sync — PR 2 of 3)
+
+### Added
+- **kanban 0.3.26** — three new slash commands and SessionStart-
+  triggered passive sync wire up the helpers from PR 1 (#52, 0.3.25).
+  Multi-machine teams now stay in sync without manual paste flow.
+  This is **PR 2 of 3**; PR 3 removes `showjira-code` /
+  `import-jira-code` / `initjira-by-code` and ships the migration
+  command.
+
+  **New slash commands**:
+  - `/kanban:push-board-config` — admin uploads this repo's
+    `backend.jira` block to the Jira project property `kanban-config`
+    (the canonical shared source). Strips per-machine fields
+    (`agentAccountId`, `ap.registered`) before pushing. Requires
+    Jira project-admin role; non-admin pushes get a clear permission
+    message pointing at the role grant.
+  - `/kanban:pull-board-config [--project-key K]` — anyone can pull
+    the latest config from Jira. Overwrites local `backend.jira`,
+    preserves per-machine fields, records `cachedAt`. Resets the 8h
+    TTL clock for passive sync. Useful when you know the team just
+    pushed and don't want to wait for the next session, or when
+    bootstrapping a fresh repo.
+  - `/kanban:show-board-config` — read-only inspection of the
+    Jira-side payload. Doesn't touch local state, doesn't reset the
+    cache TTL. Useful for spotting drift between local cache and the
+    canonical Jira-side config.
+
+  **Passive sync at SessionStart** (`cmd_sync_summary`):
+  When the local board-config cache is older than `CACHE_TTL_HOURS`
+  (8h, defined in `lib/board_config`), `/kanban:sync` opportunistically
+  pulls from Jira before rendering its open-cards summary. The pull
+  result feeds the same session — fresh transitions / conventions
+  are honored immediately. Best-effort:
+  - 404 (no config on Jira yet) — silent skip; common during
+    early adoption.
+  - 403 (permission denied) — stderr warning; continue with stale
+    cache.
+  - missing credentials — silent skip; the token row in
+    `/kanban:whoami` already surfaces this.
+  - any other failure — stderr warning; continue.
+
+  **`/kanban:whoami`** gains a `Board config:` row showing where the
+  config lives on Jira plus the local cache age:
+  ```
+  Board config:  Jira project AGENT properties.kanban-config
+                 (synced 3h ago, fresh)
+  ```
+  Or for never-synced state:
+  ```
+  Board config:  Jira project AGENT properties.kanban-config
+                 (never synced — run /kanban:pull-board-config)
+  ```
+  Backed by a tiny new helper subcommand `read-board-config-cache`
+  that returns metadata (cachedAt, cacheAgeHours, stale, ttlHours)
+  without making any Jira call.
+
+  **Internal**: shared merge helper `_apply_pulled_board_config` used
+  by both the explicit `pull-board-config` subcommand and the new
+  `_maybe_passive_sync_board_config` entry point. Identical merge
+  semantics — Jira-side wins on shared fields, per-machine fields
+  preserved.
+
+  **Drive-by fix**: latent bug in `JiraDriver.list_tasks` that
+  referenced uninitialised `self.partial` / `self.label_fallback`
+  attributes (legacy v0.2 fields removed in v0.3 migrate_legacy).
+  Triggered when iterating columns whose canonical → Jira status
+  mapping was undefined. Defensive `getattr(..., False)` /
+  `getattr(..., {})` so the lookup falls through cleanly.
+
+  **Coexistence**: `/kanban:showjira-code`, `/kanban:import-jira-code`,
+  `/kanban:initjira-by-code` continue to work unchanged. PR 3
+  removes them along with their helper subcommands.
+
+  Phase 31 covers ten cases: passive sync local-mode no-op; fresh-
+  cache no-op (no Jira call); stale + successful pull (overwrites
+  local + preserves per-machine + records cachedAt); stale + 404
+  silent skip; stale + 403 warns + continues; stale + missing
+  credentials silent skip; `read-board-config-cache` never-synced /
+  fresh / stale; `cmd_sync_summary` end-to-end with stale cache
+  (pull then summary). Plus 3 phase-18 sync_summary tests updated to
+  pre-mark the cache fresh (so passive sync doesn't consume their
+  reconcile mock queue).
+
+  All 31 phases green.
+
 ## 2026-05-07 (kanban board-config helper layer — PR 1 of 3)
 
 ### Added

@@ -339,6 +339,12 @@ def test_sync_summary_appends_drift_reminder_when_present():
 
     with tempfile.TemporaryDirectory() as td:
         kp = _seed_kanban(td, with_agent_account=False)
+        # Mark board-config cache as freshly synced so cmd_sync_summary's
+        # passive-sync entry (added in 0.3.26) skips and the queue we
+        # set up below is consumed exactly by the reconcile path.
+        from datetime import datetime, timezone
+        from lib import board_config as _bc
+        _bc.mark_synced(pathlib.Path(td), datetime.now(timezone.utc))
         import drivers as _drv_mod
         d_orig = _drv_mod.get_driver
         _drv_mod.get_driver = lambda data, root: _StubDrv()
@@ -371,6 +377,9 @@ def test_sync_summary_omits_drift_reminder_when_clean():
 
     with tempfile.TemporaryDirectory() as td:
         kp = _seed_kanban(td, with_agent_account=False)
+        from datetime import datetime, timezone
+        from lib import board_config as _bc
+        _bc.mark_synced(pathlib.Path(td), datetime.now(timezone.utc))
         import drivers as _drv_mod
         d_orig = _drv_mod.get_driver
         _drv_mod.get_driver = lambda data, root: _StubDrv()
@@ -403,6 +412,9 @@ def test_sync_summary_drift_detection_silent_on_failure():
 
     with tempfile.TemporaryDirectory() as td:
         kp = _seed_kanban(td, with_agent_account=False)
+        from datetime import datetime, timezone
+        from lib import board_config as _bc
+        _bc.mark_synced(pathlib.Path(td), datetime.now(timezone.utc))
         import drivers as _drv_mod
         d_orig = _drv_mod.get_driver
         _drv_mod.get_driver = lambda data, root: _StubDrv()
