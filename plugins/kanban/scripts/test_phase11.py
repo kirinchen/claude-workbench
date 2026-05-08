@@ -160,120 +160,10 @@ def _run(*args, env_extra=None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, env=env, text=True)
 
 
-def test_emit_default_v2_with_empty_conventions():
-    with tempfile.TemporaryDirectory() as raw:
-        td = pathlib.Path(raw)
-        kp = _seed_jira(td)
-        out = _run("emit-jira-code", "--kanban-path", str(kp),
-                   env_extra=_isolated_home(td))
-        assert out.returncode == 0, out.stderr
-        code = json.loads(out.stdout)["code"]
-        assert code["schema"] == "kanban-jira-code/3"
-        assert code["conventions"] == {"notes": []}
-
-
-def test_emit_preserves_notes_and_toggle():
-    with tempfile.TemporaryDirectory() as raw:
-        td = pathlib.Path(raw)
-        kp = _seed_jira(td, conventions={
-            "notes": ["use CANCELLED not DELETE",
-                      "Review 一律 assign kirin"],
-            "blockedRequiresLink": True,
-        })
-        out = _run("emit-jira-code", "--kanban-path", str(kp),
-                   env_extra=_isolated_home(td))
-        assert out.returncode == 0
-        code = json.loads(out.stdout)["code"]
-        assert code["conventions"]["notes"] == [
-            "use CANCELLED not DELETE", "Review 一律 assign kirin"
-        ]
-        assert code["conventions"]["blockedRequiresLink"] is True
-
-
-def test_import_v1_back_compat():
-    """Old code with schema=/1 still importable; conventions silently empty."""
-    with tempfile.TemporaryDirectory() as raw:
-        td = pathlib.Path(raw)
-        kp = pathlib.Path(td) / "kanban.json"
-        kp.write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-        v1_code = {
-            "schema": "kanban-jira-code/1",
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1, "projectKey": "AGENT",
-            "transitions": {"DOING": {"status": "In Progress"}},
-        }
-        out = _run("import-jira-code",
-                   "--kanban-path", str(kp),
-                   "--code-json", json.dumps(v1_code),
-                   env_extra=_isolated_home(td))
-        assert out.returncode == 0, out.stderr
-        j = json.loads(out.stdout)
-        assert j["ok"] is True
-        assert j["schema"] == "kanban-jira-code/1"
-        assert j["conventions"] == {"notes": []}
-        assert j["ackRequired"] is False
-
-
-def test_import_v2_with_notes_sets_ack_required():
-    with tempfile.TemporaryDirectory() as raw:
-        td = pathlib.Path(raw)
-        kp = pathlib.Path(td) / "kanban.json"
-        kp.write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": {"projectKey": "AGENT"}},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-        v2_code = {
-            "schema": "kanban-jira-code/3",
-            "boardUrl": "https://acme.atlassian.net/jira/software/projects/AGENT/boards/1",
-            "boardId": 1, "projectKey": "AGENT",
-            "transitions": {"DOING": {"status": "In Progress"}},
-            "conventions": {
-                "notes": ["use CANCELLED not DELETE"],
-                "blockedRequiresLink": False,
-            },
-        }
-        out = _run("import-jira-code",
-                   "--kanban-path", str(kp),
-                   "--code-json", json.dumps(v2_code),
-                   env_extra=_isolated_home(td))
-        assert out.returncode == 0, out.stderr
-        j = json.loads(out.stdout)
-        assert j["ok"] is True
-        assert j["schema"] == "kanban-jira-code/3"
-        assert j["conventions"]["notes"] == ["use CANCELLED not DELETE"]
-        assert j["ackRequired"] is True
-
-
-def test_import_rejects_unknown_schema():
-    with tempfile.TemporaryDirectory() as raw:
-        td = pathlib.Path(raw)
-        kp = pathlib.Path(td) / "kanban.json"
-        kp.write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": {"projectKey": "X"}},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW", "APPROVED", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-        out = _run("import-jira-code",
-                   "--kanban-path", str(kp),
-                   "--code-json", json.dumps({"schema": "kanban-jira-code/3"}),
-                   env_extra=_isolated_home(td))
-        assert out.returncode != 0
-        j = json.loads(out.stdout)
-        assert j["ok"] is False
+# Note: emit-jira-code / import-jira-code subcommand tests were removed
+# in 0.3.27 alongside the underlying paste-flow commands. Board-config
+# round-trip is exercised by phase 30 (helpers) and phase 31 (passive
+# sync via push/pull).
 
 
 # --- CLI: set/read/record-ack ------------------------------------------
@@ -367,11 +257,6 @@ def main() -> int:
         ("is_empty", test_is_empty),
         ("hash_stability", test_hash_stability),
         ("record_ack_preserves_existing_fields", test_record_ack_preserves_existing_fields),
-        ("emit_default_v2_with_empty_conventions", test_emit_default_v2_with_empty_conventions),
-        ("emit_preserves_notes_and_toggle", test_emit_preserves_notes_and_toggle),
-        ("import_v1_back_compat", test_import_v1_back_compat),
-        ("import_v2_with_notes_sets_ack_required", test_import_v2_with_notes_sets_ack_required),
-        ("import_rejects_unknown_schema", test_import_rejects_unknown_schema),
         ("set_conventions_writes_and_warns", test_set_conventions_writes_and_warns),
         ("read_conventions_returns_ack_state", test_read_conventions_returns_ack_state),
         ("record_ack_then_read_shows_acked", test_record_ack_then_read_shows_acked),

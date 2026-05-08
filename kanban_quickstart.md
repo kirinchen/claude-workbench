@@ -196,60 +196,77 @@ full v0.2 design.
 
 ---
 
-## 8b. Multi-machine / multi-repo setup (kanban v0.3+)
+## 8b. Multi-machine / multi-repo setup (kanban v0.3.27+)
 
 The biggest source of friction is "I set this up on machine A — does
 machine B / repo B / teammate C have to redo all five steps?"
 
 Setup splits into three layers, each with a different lifecycle:
 
-| Layer | What | When you redo it |
+| Layer | Where it lives | When you redo it |
 |---|---|---|
-| **Per-board** (shareable) | `transitions`, AP custom-field id, board metadata, `conventions` notes | Once. Then `/kanban:showjira-code` and any teammate / repo can `/kanban:import-jira-code` paste the JSON to inherit it. |
-| **Per-machine** | Jira credentials in `~/.claude-workbench/.env` (base URL, agent email, API token) | Once per machine. After that all repos on that machine share the credentials. |
+| **Per-board** (shareable) | Jira project property `kanban-config` (transitions, AP custom-field id, board metadata, `conventions` notes) | **Once**, by an admin via `/kanban:push-board-config`. Receivers pull automatically on `/kanban:sync` (8h TTL) or via `/kanban:pull-board-config`. |
+| **Per-machine** | Jira credentials in `~/.claude-workbench/.env` (base URL, agent email, API token) | Once per machine. All repos on that machine share. |
 | **Per-repo** | This repo's AP in `.claude/kanban-agent.json` | Once per repo. Each repo picks its own AP from the live Jira options list. |
 
 ### Cheatsheet
 
 | Scenario | What you run on the new side |
 |---|---|
-| **All-new machine + all-new repo** | `/kanban:init` → `/kanban:import-jira-code` (does credentials + paste code + assign AP in one flow) |
-| **Same machine, new repo** | `/kanban:init` → `/kanban:import-jira-code` (credentials auto-skipped — already on this machine; only paste code + assign AP run interactively) |
-| **Same repo, different machine** (you cloned a repo that's already in Jira mode) | `git pull` → `/kanban:reset-credentials`. `kanban.json` already carries the full `backend.jira` block via git, so the only thing this machine needs is your per-machine Jira token. **No need to re-paste the code.** |
-| **Existing repo already in Jira mode on this machine** | Nothing — already set up. `/kanban:whoami` to verify. |
-
-> **Why same-repo-different-machine is easy**: `kanban.json` is committed
-> by the `kanban-autocommit.sh` PostToolUse hook and travels with `git
-> push` / `git pull`. The `backend.jira` block (transitions, projectKey,
-> ap.fieldId, conventions) is the same payload `/kanban:showjira-code`
-> would emit — except git is doing the transport for you. The only
-> per-machine state is your Jira API token in `~/.claude-workbench/.env`,
-> which is not in git (and shouldn't be — each machine should have its
-> own token).
+| **All-new machine + all-new repo (board already configured)** | `/kanban:init` → `/kanban:initjira` (auto-detects existing `kanban-config`, pulls it, skips DSL/AP-discovery, only asks for credentials + AP assignment) |
+| **All-new machine + first repo on a fresh board** | `/kanban:init` → `/kanban:initjira` (5-step interactive: credentials → board URL → DSL → AP field → AP assignment) → `/kanban:push-board-config` to publish for future joiners (admin role required) |
+| **Same machine, new repo** | `/kanban:init` → `/kanban:initjira` (credentials auto-skipped; auto-detects board config + skips DSL/AP-discovery; only AP assignment is interactive) |
+| **Same repo, different machine** | `git pull` → `/kanban:reset-credentials`. The committed `kanban.json` carries the cached `backend.jira` block, and `/kanban:sync` will refresh from Jira on next session anyway. |
+| **Existing repo already in Jira mode on this machine** | Nothing — already set up. `/kanban:whoami` to verify (cache-age row tells you when it last synced). |
 
 ### How it works
 
-On the source machine:
+The team's canonical config lives on the Jira project itself, under
+property key `kanban-config`. Admins push it once; everyone else's
+local `kanban.json` is a per-machine cache that auto-refreshes every
+8 hours via the passive sync inside `/kanban:sync`.
 
+**Admin (publisher):**
 ```
-> /kanban:showjira-code
-```
-
-prints a JSON code (`kanban-jira-code/2`) containing the per-board config — `transitions`, `ap.fieldId`, `boardId`, `projectKey`, `conventions`. Tokens are NOT in the code; they stay per-machine in `~/.claude-workbench/.env`.
-
-On any other machine / repo:
-
-```
-> /kanban:init                  # scaffold kanban.json (local mode)
-> /kanban:import-jira-code      # paste the JSON; runs credentials (if needed) + assign AP
+> /kanban:push-board-config
+✓ Pushed 6 fields to Jira project AGENT properties.kanban-config
 ```
 
-The receiver asks for Jira credentials only the first time on a given machine. If `conventions.notes` is non-empty, the receiver also has to type `I have read these` to acknowledge before init completes (the friction is intentional — see issue #10).
+**Anyone else (receiver):**
+```
+> /kanban:init                # scaffold kanban.json (local mode)
+> /kanban:initjira            # auto-detects board config, pulls,
+                              #   asks for credentials + AP assignment
+> /kanban:doing               # ready to work
+```
 
-Versions to be aware of:
-- `kanban-jira-code/1` (v0.3.0+) — transitions + AP field
-- `kanban-jira-code/2` (v0.3.4+) — adds `conventions` (notes + `blockedRequiresLink`)
-- v0.3.4+ receivers accept both schemas; v0.3.4 senders default to /2
+Or, on an already-Jira-mode repo whose cache is stale:
+```
+> /kanban:sync                # passive sync if cache > 8h
+```
+
+Or to force a refresh now:
+```
+> /kanban:pull-board-config
+```
+
+> **Why publishing once works for everyone**: when conventions, transitions,
+> or any team-wide setting changes, the admin re-runs
+> `/kanban:push-board-config` on their repo. Within 8 hours every
+> teammate's next `/kanban:sync` automatically pulls the new version,
+> the conventions ack-hash forces a re-acknowledgement if notes
+> changed, and per-machine fields (`agentAccountId`, `ap.registered`)
+> stay untouched. No paste flow, no drift.
+
+> **Permissions**: pushing requires Jira project-admin role on the
+> agent's account. Pulls only need normal project access. If a non-
+> admin runs `/kanban:push-board-config`, the helper returns a clear
+> permission-error pointing at the role grant.
+
+Migration from earlier (≤ 0.3.26) plugin versions that used the
+`/kanban:showjira-code` paste flow: have a project-admin run
+`/kanban:push-board-config` once on the source repo. Done — every
+other repo / machine pulls automatically next session.
 
 ---
 

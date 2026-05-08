@@ -5,10 +5,10 @@ allowed-tools: Read, Bash(python3:*), AskUserQuestion
 
 # /kanban:edit-conventions
 
-Interactive editor for `backend.jira.conventions`. Use this on the team's
-**source-of-truth repo** (the one whose `/kanban:showjira-code` other
-machines paste from). After editing, regenerate the share code so
-teammates see the new rules on their next import.
+Interactive editor for `backend.jira.conventions`. After editing, push
+to the Jira project so teammates see the new rules on their next
+`/kanban:sync` (passive sync, ≤ 8h) or immediate
+`/kanban:pull-board-config`.
 
 ## 0. Pre-flight
 
@@ -68,26 +68,32 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py set-conventions \
 
 Surface any `warnings[]` from the response (notes too long, etc.).
 
-## 5. Suggest re-share
+## 5. Suggest push to Jira
 
-After a successful edit, remind the user:
+After a successful edit, the local cache is updated but the Jira
+project property (`kanban-config`) still has the old conventions.
+Remind the user to publish:
 
 ```
-✓ Conventions updated.
+✓ Conventions updated locally.
 
-Teammates on other repos / machines will see the new rules the next
-time they re-import. To push the update now:
+To make these rules live for teammates, push to Jira:
 
-  1. Run /kanban:showjira-code in this repo
-  2. Share the printed JSON with your team
-  3. Each teammate runs /kanban:import-jira-code on their repo and
-     pastes the new code (the ack flow re-fires because the hash changed)
+  /kanban:push-board-config   (requires Jira project-admin role)
+
+After push, teammates pick up the new conventions automatically on
+their next /kanban:sync (within 8h) or immediately via
+/kanban:pull-board-config. The ack flow re-fires for everyone because
+the conventions hash changed.
+
+If you don't have admin role, ask the project admin to push, or
+share the diff via Slack and let them edit + push from their repo.
 ```
 
 ## Absolute rules
 
 - Never invent notes or toggle values — every change comes from the user.
 - Never bypass the length guardrails silently — warn and re-prompt.
-- Never write conventions on behalf of another repo. The source-of-truth
-  is wherever the user is running this command. Other repos pull via
-  `/kanban:import-jira-code`.
+- Never write conventions on behalf of another repo. The user is the
+  source of truth for what their team agreed; other repos receive the
+  conventions via `/kanban:pull-board-config` (or passive sync).

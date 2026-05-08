@@ -268,67 +268,14 @@ def test_set_transitions_rejects_both_keys():
         assert "cannot carry both" in j["error"]
 
 
-# --- (i) (j) emit / import jira-code with v2/v3 -------------------------
-
-
-def test_import_jira_code_accepts_v2_with_done():
-    """A v2 payload carrying transitions.DONE imports cleanly and persists
-    transitions.APPROVED on disk."""
-    with tempfile.TemporaryDirectory() as td:
-        kp = _seed_jira_kanban(pathlib.Path(td))
-        v2_code = {
-            "schema": "kanban-jira-code/2",
-            "boardUrl": "https://x/jira/projects/AGENT/boards/1",
-            "boardId": 1,
-            "projectKey": "AGENT",
-            "transitions": {
-                "TODO": {"status": "To Do"},
-                "DOING": {"status": "In Progress"},
-                "DONE": {"status": "Done"},
-            },
-        }
-
-        class A:
-            kanban_path = str(kp)
-            code_json = json.dumps(v2_code)
-
-        rc, out, err = _capture(_jira_setup.cmd_import_jira_code, A())
-        assert rc == 0, (out, err)
-        on_disk = json.loads(kp.read_text())
-        cfg = on_disk["backend"]["jira"]
-        assert "APPROVED" in cfg["transitions"]
-        assert "DONE" not in cfg["transitions"]
-
-
-def test_emit_jira_code_outputs_v3():
-    with tempfile.TemporaryDirectory() as td:
-        kp = pathlib.Path(td) / "kanban.json"
-        kp.write_text(json.dumps({
-            "version": "0.2",
-            "backend": {"driver": "jira", "jira": {
-                "boardUrl": "https://x/jira/projects/AGENT/boards/1",
-                "boardId": 1, "projectKey": "AGENT",
-                "transitions": {
-                    "TODO": {"status": "To Do"},
-                    "APPROVED": {"status": "Done"},
-                },
-            }},
-            "meta": {"priorities": ["P0"], "categories": [],
-                     "columns": ["TODO", "DOING", "BLOCKED", "REVIEW",
-                                 "APPROVED", "CANCELLED"],
-                     "created_at": "x", "updated_at": "x"},
-            "tasks": [],
-        }))
-
-        class A:
-            kanban_path = str(kp)
-            include_agent_account = False
-
-        rc, out, err = _capture(_jira_setup.cmd_emit_jira_code, A())
-        assert rc == 0, (out, err)
-        j = json.loads(out)
-        assert j["code"]["schema"] == "kanban-jira-code/3"
-        assert "APPROVED" in j["code"]["transitions"]
+# --- (i) (j) emit / import jira-code subcommands removed in 0.3.27 ------
+# The kanban-jira-code paste flow was retired in favour of board-config
+# storage on Jira project properties. Migration semantics for legacy
+# transitions.DONE keys are now exercised via:
+#   - lib.transitions._alias_done_to_approved (covered above)
+#   - cmd_pull_board_config / cmd_push_board_config in phases 30 + 31
+# (no test stub here; the old emit/import tests were removed alongside
+# their underlying subcommands.)
 
 
 # --- (k) cmd_transition --to DONE alias ---------------------------------
@@ -400,9 +347,6 @@ def main() -> int:
          test_set_transitions_accepts_done_with_warning),
         ("set_transitions_rejects_both_keys",
          test_set_transitions_rejects_both_keys),
-        ("import_jira_code_accepts_v2_with_done",
-         test_import_jira_code_accepts_v2_with_done),
-        ("emit_jira_code_outputs_v3", test_emit_jira_code_outputs_v3),
         ("cmd_transition_to_done_aliases_with_warning",
          test_cmd_transition_to_done_aliases_with_warning),
     ]

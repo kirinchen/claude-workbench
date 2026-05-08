@@ -61,31 +61,33 @@
 | 指令 | 做什麼 |
 |---|---|
 | `/kanban:init` | 在當前專案建立 `kanban.json` + schema |
-| `/kanban:initjira` | 把專案從 local 切到 Jira-backed（5-step 互動式） |
-| `/kanban:import-jira-code` | 從另一個 repo 匯出的 code bootstrap 或 re-sync Jira mode |
-| `/kanban:showjira-code` | 把這個 repo 的 Jira 設定印成可分享的 JSON（給 `import-jira-code` 貼用） |
+| `/kanban:initjira` | 把專案從 local 切到 Jira-backed（5-step 互動式；偵測到 board 已有 config 時跳過 DSL/AP-discovery，直接 pull） |
 | `/kanban:reset-credentials` | 設定或更新這台機器的 Jira credentials *(secret-safe — 你自己在自己 terminal 跑)* |
+| `/kanban:push-board-config` | 把這個 repo 的 `backend.jira` 推到 Jira project property `kanban-config`（admin-only；team 共用權威設定） |
+| `/kanban:pull-board-config` | 從 Jira-side 權威 config 重新整理 local cache（`/kanban:sync` 每 8h 自動觸發；這個指令強制立即跑） |
+| `/kanban:show-board-config` | 唯讀檢視 Jira-side `kanban-config` 內容 |
 | `/kanban:assign-ap <name>` | 設定這個 repo 的 Agent Property（寫進 `.claude/kanban-agent.json`） |
 | `/kanban:register-ap <name>` | 註冊新的 AP value 到 Jira AP custom field |
 | `/kanban:fix-ap-screen` | 把 AP custom field attach 到專案 screen（修 issue #6） |
 | `/kanban:edit-conventions` | 撰寫或編輯團隊 `conventions` block — narrative notes + per-team toggles |
 | `/kanban:show-conventions` | 顯示團隊 `conventions` block（read-only） |
 | `/kanban:enable-automation` | 裝一個 trigger 讓 Claude Code 在 `kanban.json` 變動時自動跑（cron / git hook） |
-| `/kanban:whoami` | 顯示目前的 driver / board / AP / token 有效性 |
+| `/kanban:whoami` | 顯示目前的 driver / board / AP / token 有效性 / board-config cache age |
 
 ### 已 Deprecated
 
 | 指令 | 替代 |
 |---|---|
-| `/kanban:initjira-by-code` | `/kanban:import-jira-code`（#34） |
 | `/kanban:next`（Jira mode） | `/kanban:doing`（#33） |
+| `/kanban:showjira-code`、`/kanban:import-jira-code`、`/kanban:initjira-by-code` | `/kanban:push-board-config` + `/kanban:pull-board-config`（0.3.27 移除 — migration 步驟看 CHANGELOG） |
 
 ## 核心概念
 
 - **Canonical columns**：`TODO → DOING → BLOCKED → REVIEW → APPROVED → CANCELLED`。Slash command 永遠講 canonical 名稱；Jira driver 透過 `transitions` DSL 翻譯。
 - **Compound transitions**（`v0.3+`）：`BLOCKED > In Progress + Label` 讓多個 canonical state 共享同一個 Jira status，靠 label disambiguate — 詳見 `epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`。
 - **Agent Property (AP)**：一個 Jira single-select custom field，把卡片 routing 到特定 agent / repo。每個 repo 在 `.claude/kanban-agent.json#ap` 宣告自己的 AP；像 `/kanban:doing` 這類命令會用它 filter（`cf[<id>] = "<repo's ap>"`）。
-- **Conventions**：per-team narrative notes + opt-in toggles（例如 `blockedRequiresLink: true`），跟著 `/kanban:showjira-code` 一起傳遞。接收端必須明確 acknowledge 才能完成 `import-jira-code`。
+- **Conventions**：per-team narrative notes + opt-in toggles（例如 `blockedRequiresLink: true`），存在 Jira project 的 `kanban-config` property；接收端在 `/kanban:pull-board-config`（或 `/kanban:sync` 的 passive sync）拉到新內容後必須明確 acknowledge 才能繼續工作。
+- **Board config single-source-of-truth**（since 0.3.27）：team 共用設定存在 Jira project property `kanban-config`。Admin 用 `/kanban:push-board-config` 推；其他人用 `/kanban:pull-board-config` 拉（手動或 8h passive-sync TTL 自動）。Local `kanban.json#backend.jira` 是 per-machine cache。
 
 ## Hooks
 

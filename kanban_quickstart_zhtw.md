@@ -187,56 +187,71 @@ init 完之後：
 
 ---
 
-## 8b. 多機器 / 多 repo setup（kanban v0.3+）
+## 8b. 多機器 / 多 repo setup（kanban v0.3.27+）
 
 最常見的卡關：「我在 A 機器設好了——B 機器 / B repo / 同事 C 是不是要把五步 init 全跑一次？」
 
 Setup 拆成**三層**，每層有自己的生命週期：
 
-| 層級 | 內容 | 何時要重跑 |
+| 層級 | 存在哪 | 何時要重跑 |
 |---|---|---|
-| **Per-board（可分享）** | `transitions`、AP custom field id、board metadata、`conventions` 規則 | **一次**。然後 `/kanban:showjira-code`，任何同事 / repo 用 `/kanban:import-jira-code` 貼 JSON 就繼承 |
-| **Per-machine（每台必做）** | Jira 憑證（`~/.claude-workbench/.env`：base URL、agent email、API token） | 每台機器一次。之後該台所有 repo 共用 |
+| **Per-board（可分享）** | Jira project property `kanban-config`（transitions、AP custom field id、board metadata、`conventions` 規則） | **一次**，admin 執行 `/kanban:push-board-config`。其他人用 `/kanban:sync`（8h TTL 自動 passive sync）或 `/kanban:pull-board-config` 拉 |
+| **Per-machine（每台必做）** | Jira 憑證（`~/.claude-workbench/.env`） | 每台機器一次 |
 | **Per-repo（每個 repo 必做）** | 這個 repo 用哪個 AP（`.claude/kanban-agent.json`） | 每個 repo 一次。各自從 Jira live options 挑 |
 
 ### Cheatsheet
 
 | 情境 | 新 receiver 端要跑的 |
 |---|---|
-| **全新機器 + 全新 repo** | `/kanban:init` → `/kanban:import-jira-code`（一個指令做完憑證 + 貼 code + 選 AP） |
-| **同機器 + 新 repo** | `/kanban:init` → `/kanban:import-jira-code`（憑證自動跳過——本機已有；只剩貼 code + 選 AP 互動） |
-| **同 repo + 換機器**（clone 一個已經是 jira mode 的 repo） | `git pull` → `/kanban:reset-credentials`。`kanban.json` 已經帶完整 `backend.jira` block 透過 git 過來了，這台只缺自己這台機器的 Jira token。**不用重貼 code。** |
-| **既有 repo 已是 jira mode 在這台** | 啥都不用——已 setup。`/kanban:whoami` 可驗證 |
-
-> **為什麼同 repo 換機器這麼簡單**：`kanban.json` 會被 `kanban-autocommit.sh`
-> PostToolUse hook 自動 commit，跟著 `git push` / `git pull` 走。`backend.jira`
-> block（transitions、projectKey、ap.fieldId、conventions）就是
-> `/kanban:showjira-code` 印出來那份 JSON——只是 git 幫你做傳輸。唯一 per-machine
-> 的東西是你 `~/.claude-workbench/.env` 裡的 Jira API token，那個不在 git 裡
-> （也不該在——每台機器各拿一張 token 比較安全）。
+| **全新機器 + 全新 repo（board 已有 config）** | `/kanban:init` → `/kanban:initjira`（自動偵測 `kanban-config`，pull 下來，跳過 DSL/AP-discovery，只問憑證 + 選 AP） |
+| **全新機器 + 第一個 repo（fresh board）** | `/kanban:init` → `/kanban:initjira`（5-step 互動：憑證 → board URL → DSL → AP field → 選 AP）→ `/kanban:push-board-config` 推到 Jira 給未來 joiner 用（admin role required） |
+| **同機器 + 新 repo** | `/kanban:init` → `/kanban:initjira`（憑證自動跳過；偵測到 board config + 跳過 DSL/AP-discovery；只剩選 AP 互動） |
+| **同 repo + 換機器** | `git pull` → `/kanban:reset-credentials`。`kanban.json` 帶 cached `backend.jira`，下次 session 的 `/kanban:sync` 會自動從 Jira 重整。 |
+| **既有 repo 已是 jira mode 在這台** | 啥都不用——已 setup。`/kanban:whoami` 可驗證（cache-age row 顯示上次 sync 時間） |
 
 ### 運作原理
 
-來源端：
+Team 共用設定存在 Jira project 上，property key 是 `kanban-config`。
+Admin 推一次；其他人 local `kanban.json` 是 per-machine cache，每 8
+小時透過 `/kanban:sync` 內建的 passive sync 自動更新。
 
+**Admin（發布者）：**
 ```
-> /kanban:showjira-code
-```
-
-印出 `kanban-jira-code/2` 格式 JSON，含 per-board 設定——`transitions`、`ap.fieldId`、`boardId`、`projectKey`、`conventions`。**Token 不在 code 內**——憑證永遠 per-machine 留在 `~/.claude-workbench/.env`。
-
-接收端（任何另一台機器 / 另一個 repo）：
-
-```
-> /kanban:init                  # scaffold kanban.json (local mode)
-> /kanban:import-jira-code      # 貼 JSON；視情況跑憑證 + 選 AP
+> /kanban:push-board-config
+✓ Pushed 6 fields to Jira project AGENT properties.kanban-config
 ```
 
-第一次在某台機器跑時會問憑證；同台第二個 repo 時自動跳過。如果 code 帶 `conventions.notes` 非空，接收端必須輸入 `I have read these` 才能完成 init（這個 friction 是刻意的——詳見 issue #10）。
+**其他人（接收者）：**
+```
+> /kanban:init                # scaffold kanban.json (local mode)
+> /kanban:initjira            # 自動偵測 board config + pull，
+                              #   只問憑證 + 選 AP
+> /kanban:doing               # 開工
+```
 
-版本相容性：
-- `kanban-jira-code/1`（v0.3.0+）—— transitions + AP field
-- `kanban-jira-code/2`（v0.3.4+）—— 加上 `conventions`（notes + `blockedRequiresLink`）
+或在已是 jira mode 但 cache 有點舊的 repo：
+```
+> /kanban:sync                # cache > 8h 時自動 passive sync
+```
+
+或要立刻強制 refresh：
+```
+> /kanban:pull-board-config
+```
+
+> **為什麼一次 publish 大家都跟到**：當 conventions、transitions、或任何
+> team-wide 設定改變，admin 在自己 repo 重跑 `/kanban:push-board-config`。
+> 8 小時內每個 teammate 下次 `/kanban:sync` 自動拉到新版本，conventions
+> ack-hash 也會因為 notes 改變強制重新 acknowledge，per-machine 欄位
+> （`agentAccountId`、`ap.registered`）保留不動。沒有 paste flow，沒 drift。
+
+> **權限**：push 需要 agent Jira account 在那個 project 有 admin role。
+> Pull 只需正常 project access。Non-admin 跑 `/kanban:push-board-config`
+> 時 helper 會回明確 permission-error 訊息指向 role grant。
+
+從舊版（≤ 0.3.26 用 `/kanban:showjira-code` paste flow）migration：
+請 project-admin 在來源 repo 跑一次 `/kanban:push-board-config`。完成
+——其他 repo / 機器下次 session 自動 pull。
 - v0.3.4+ 接收端兩種都收；v0.3.4 來源端預設輸出 /2
 
 ---

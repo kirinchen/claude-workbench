@@ -31,10 +31,12 @@ This board has no team conventions defined yet.
 
 Conventions are short notes the team agrees on (e.g. "use CANCELLED, not
 DELETE", "[@Kirin]-tagged tasks aren't claimed by agents") plus a couple
-of per-team toggles. They travel with /kanban:showjira-code so teammates
-on other repos / machines see the same rules at import time.
+of per-team toggles. They live on the Jira project's `kanban-config`
+property so teammates on other repos / machines see the same rules
+automatically on `/kanban:sync`.
 
-Author them via /kanban:edit-conventions.
+Author them via /kanban:edit-conventions, then publish via
+/kanban:push-board-config (requires Jira project-admin role).
 ```
 
 Otherwise:
@@ -55,7 +57,7 @@ Acknowledgement: <✓ acknowledged | ⚠ not acknowledged in this repo>
 
 If `alreadyAcked` is false, append:
 
-> Run `/kanban:import-jira-code` (re-paste the same code) to ack, or
+> Run `/kanban:pull-board-config` to refresh and re-acknowledge, or
 > just type `I have read these` next time you re-init.
 
 ## Absolute rules
