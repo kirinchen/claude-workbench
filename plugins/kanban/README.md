@@ -61,31 +61,33 @@ The complete list reflects what's installed in your environment — Claude Code'
 | Command | What it does |
 |---|---|
 | `/kanban:init` | Initialize `kanban.json` + schema in the current project |
-| `/kanban:initjira` | Switch project from local to Jira-backed (5-step interactive) |
-| `/kanban:import-jira-code` | Bootstrap or re-sync Jira mode from a code emitted by another repo |
-| `/kanban:showjira-code` | Print this repo's Jira mapping as shareable JSON (paste-ready for `import-jira-code`) |
+| `/kanban:initjira` | Switch project from local to Jira-backed (5-step interactive; auto-detects existing board config and skips DSL/AP-discovery when found) |
 | `/kanban:reset-credentials` | Set or rotate Jira credentials on this machine *(secret-safe — runs in your own terminal)* |
+| `/kanban:push-board-config` | Publish this repo's `backend.jira` to the Jira project property `kanban-config` (admin-only; canonical source for all teammates) |
+| `/kanban:pull-board-config` | Refresh local cache from the Jira-side canonical config (auto-fires every 8h on `/kanban:sync`; this command forces it) |
+| `/kanban:show-board-config` | Read-only inspection of the Jira-side `kanban-config` payload |
 | `/kanban:assign-ap <name>` | Set the current repo's Agent Property (AP) — written to `.claude/kanban-agent.json` |
 | `/kanban:register-ap <name>` | Register a new AP value to the Jira AP custom field |
 | `/kanban:fix-ap-screen` | Attach the AP custom field to project screens (recovers from issue #6) |
 | `/kanban:edit-conventions` | Author or edit the team's `conventions` block — narrative notes + per-team toggles |
 | `/kanban:show-conventions` | Display the team's `conventions` block (read-only) |
 | `/kanban:enable-automation` | Install a trigger so Claude Code runs on `kanban.json` changes (cron / git hook) |
-| `/kanban:whoami` | Show current driver / board / AP / token validity |
+| `/kanban:whoami` | Show current driver / board / AP / token validity / board-config cache age |
 
 ### Deprecated
 
 | Command | Replaced by |
 |---|---|
-| `/kanban:initjira-by-code` | `/kanban:import-jira-code` (#34) |
 | `/kanban:next` (Jira mode) | `/kanban:doing` (#33) |
+| `/kanban:showjira-code`, `/kanban:import-jira-code`, `/kanban:initjira-by-code` | `/kanban:push-board-config` + `/kanban:pull-board-config` (removed in 0.3.27 — see CHANGELOG migration steps) |
 
 ## Core concepts
 
 - **Canonical columns**: `TODO → DOING → BLOCKED → REVIEW → APPROVED → CANCELLED`. Slash commands always speak canonical names; the Jira driver translates via the `transitions` DSL.
 - **Compound transitions** (`v0.3+`): `BLOCKED > In Progress + Label` lets multiple canonical states share one Jira status, disambiguated by labels — see `epic/kanban_plugin_ Jira_backend_driver_UPDATE.md`.
 - **Agent Property (AP)**: a Jira single-select custom field that routes cards to specific agents/repos. Each repo declares its AP in `.claude/kanban-agent.json#ap`; commands like `/kanban:doing` filter by it (`cf[<id>] = "<repo's ap>"`).
-- **Conventions**: per-team narrative notes + opt-in toggles (e.g. `blockedRequiresLink: true`) that travel with `/kanban:showjira-code`. Receivers must explicitly acknowledge before `import-jira-code` completes.
+- **Conventions**: per-team narrative notes + opt-in toggles (e.g. `blockedRequiresLink: true`) stored on the Jira project's `kanban-config` property; receivers must explicitly acknowledge new conventions after `/kanban:pull-board-config` (or the passive sync inside `/kanban:sync`).
+- **Board config single-source-of-truth (since 0.3.27)**: the team's canonical config lives on Jira project property `kanban-config`. Admins push via `/kanban:push-board-config`; everyone else pulls (manually or via the 8h passive-sync TTL). Local `kanban.json#backend.jira` is a per-machine cache.
 
 ## Hooks
 

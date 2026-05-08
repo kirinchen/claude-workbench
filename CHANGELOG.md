@@ -15,6 +15,88 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-08 (kanban paste-flow removal + initjira auto-detect — PR 3 of 3)
+
+### Removed (BREAKING for ≤ 0.3.26 users mid-paste)
+- **kanban 0.3.27** — completes the showjira-code → board-config
+  replacement. Three slash commands and two helper subcommands are
+  gone. The `/kanban:initjira` interactive flow gains a Step 2.5
+  auto-detect that pulls existing board config and skips DSL +
+  AP-discovery when found. Multi-machine bootstrap now happens via
+  Jira project property `kanban-config`, single source of truth.
+
+  **Removed slash commands**:
+  - `/kanban:showjira-code`
+  - `/kanban:import-jira-code`
+  - `/kanban:initjira-by-code` (was already a deprecation shim from #34)
+
+  **Removed helper subcommands** (`scripts/jira_setup.py`):
+  - `cmd_emit_jira_code` + its argparse subparser
+  - `cmd_import_jira_code` + its argparse subparser
+
+  **Removed test phase**: `test_phase8.py` (entire file — emit/import
+  round-trip coverage). Phase 11 conventions tests for emit/import
+  also dropped (the conventions block itself + its set/read/ack flow
+  stays fully covered). Phase 28 emit/import migration tests dropped
+  (the underlying `_alias_done_to_approved` semantics still tested
+  directly).
+
+  **Migration steps for 0.3.26 → 0.3.27**:
+
+  Existing teams that were using the paste flow have a one-time
+  migration. Pick the source repo (whichever one had the
+  authoritative `backend.jira` block) and run, as a Jira
+  **project-admin** account:
+
+  ```
+  /kanban:push-board-config
+  ```
+
+  Done — every other repo / machine on the same Jira project picks
+  up the config automatically on its next `/kanban:sync` (8h passive
+  TTL) or via `/kanban:pull-board-config`. No paste, no drift.
+
+  If your `kanban.json` is fresh (no `transitions` block populated),
+  re-run `/kanban:initjira` — Step 2.5 will probe for existing board
+  config and pull it without needing the interactive DSL setup.
+
+  **`/kanban:initjira` Step 2.5** (new): after credential capture
+  and board URL parsing (now yielding `projectKey`), the spec runs
+  `pull-board-config --project-key <KEY>` to probe for an existing
+  `kanban-config` property. Three outcomes:
+  - **200 OK** — pull succeeds; skip Steps 3 + 4 (DSL + AP-discovery);
+    jump to Step 5 (assign AP).
+  - **404** — board has no published config yet (first agent on this
+    board); fall through to interactive Steps 3 + 4 as before. The
+    `Done` summary at the end recommends `/kanban:push-board-config`
+    to publish for future joiners.
+  - **Other error** — surface verbatim; fall through to interactive
+    flow.
+
+  **Cross-references swept** (paste-flow → push/pull-board-config):
+  - `commands/{reset-credentials,edit-conventions,show-conventions,push-board-config,initjira}.md`
+  - `lib/conventions.py` (ack-hash docstring)
+  - `templates/kanban.schema.json` (conventions description)
+  - `plugins/kanban/README.md` + `README_zhtw.md` (slash-command
+    table, deprecated section, core concepts including a new
+    "Board config single-source-of-truth (since 0.3.27)" item)
+  - `kanban_quickstart.md` + `kanban_quickstart_zhtw.md` (entire 8b
+    Multi-machine setup section rewritten — three-layer storage
+    table now points at Jira project property; cheatsheet covers
+    the new bootstrap paths; "How it works" walks through admin
+    push + receiver pull)
+
+  Phase 32 covers seven cases: cmd_emit_jira_code attribute removed;
+  cmd_import_jira_code attribute removed; old command markdown files
+  absent; emit/import argparse subcommands no longer accepted (rc !=
+  0 with "invalid choice"); initjira step 2.5 probe finds board
+  config; step 2.5 probe gets 404 → notFound signal for fallback;
+  step 2.5 bootstrap-with-explicit-project-key path (fresh repo
+  flipping from local to jira after pulling).
+
+  All 31 phases green (the loop in test_all.sh skips phase 8 since
+  its file was removed alongside emit/import).
+
 ## 2026-05-07 (kanban board-config slash commands + passive sync — PR 2 of 3)
 
 ### Added

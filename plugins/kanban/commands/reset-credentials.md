@@ -14,7 +14,9 @@ Two main use cases:
   (transitions, projectKey, ap.fieldId, conventions) already — config
   travels via git. The only thing this machine is missing is your
   Jira API token, which is per-machine by design. Run this command to
-  capture it, no need to re-paste the code via `/kanban:import-jira-code`.
+  capture it, no need to re-pull the board config — that lands
+  automatically on next `/kanban:sync` (or run `/kanban:pull-board-config`
+  to force it now).
 - **Token rotation.** Existing token expired, was rotated by an admin,
   or was exposed; replace it.
 

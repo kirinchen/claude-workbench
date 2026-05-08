@@ -943,9 +943,9 @@ def cmd_resolve_doc_link(args: argparse.Namespace) -> int:
 
 def cmd_push_board_config(args: argparse.Namespace) -> int:
     """Push the local `backend.jira` block to the Jira project's
-    `kanban-config` property — the new authoritative storage location
-    for board-level config (replacing /kanban:showjira-code paste-flow,
-    rolling out across 0.3.25+).
+    `kanban-config` property — the authoritative storage location for
+    board-level config since 0.3.27 (replaced an earlier paste-based
+    `kanban-jira-code` flow that lived in 0.3.0–0.3.26).
 
     What gets pushed: transitions DSL, ap.fieldId/fieldName, boardId,
     boardUrl, projectKey, conventions. Per-machine fields
@@ -1227,134 +1227,6 @@ def cmd_read_board_config(args: argparse.Namespace) -> int:
         "projectKey": project_key,
         "propertyKey": _bc.PROPERTY_KEY,
         "config": config,
-    })
-    return 0
-
-
-def cmd_emit_jira_code(args: argparse.Namespace) -> int:
-    """Print the shareable backend.jira block as compact JSON.
-
-    Strips per-machine / per-repo specifics (`registered` AP roster,
-    `agentAccountId` if --include-agent-account is not set). The output is
-    safe to share via Slack / wiki / pasted into another machine's
-    /kanban:initjira-by-code.
-    """
-    p = Path(args.kanban_path)
-    if not p.exists():
-        return _fail(f"kanban.json not found at {p}")
-    data = kanban_io.load(p)
-    backend = data.get("backend") or {}
-    if backend.get("driver") != "jira":
-        return _fail("backend.driver must be 'jira'")
-    cfg = dict(backend.get("jira") or {})
-    if not cfg.get("transitions"):
-        return _fail("no transitions defined — run /kanban:initjira first")
-
-    # Schema bumped to /3 in 0.3.23 (#48): canonical state DONE → APPROVED
-    # in the transitions block. Receivers older than 0.3.23 see the
-    # unknown APPROVED key and ignore it (Python dict round-trip is
-    # forgiving) — the agent on that machine just won't be able to
-    # transition --to APPROVED until the plugin is updated. v1 / v2 / v3
-    # are all accepted on import; v3 is the wire format we emit.
-    code: dict[str, Any] = {
-        "schema": "kanban-jira-code/3",
-        "boardUrl": cfg.get("boardUrl"),
-        "boardId": cfg.get("boardId"),
-        "projectKey": cfg.get("projectKey"),
-        "transitions": cfg.get("transitions"),
-    }
-    if args.include_agent_account and cfg.get("agentAccountId"):
-        code["agentAccountId"] = cfg["agentAccountId"]
-    ap = cfg.get("ap") or {}
-    if ap.get("fieldId"):
-        code["ap"] = {"fieldId": ap["fieldId"], "fieldName": ap.get("fieldName", "")}
-        # `registered` deliberately omitted — that's live state on Jira.
-    # Always include the conventions block (empty by default — the slot
-    # itself nudges teams to write their rules down). v1 receivers ignore it.
-    code["conventions"] = _cv.normalize(cfg.get("conventions"))
-
-    _emit({"ok": True, "code": code})
-    return 0
-
-
-def cmd_import_jira_code(args: argparse.Namespace) -> int:
-    """Import a shareable code into this repo's kanban.json."""
-    p = Path(args.kanban_path)
-    if not p.exists():
-        return _fail(f"kanban.json not found at {p}")
-    try:
-        code = json.loads(args.code_json)
-    except json.JSONDecodeError as e:
-        return _fail(f"code is not valid JSON: {e}")
-    if not isinstance(code, dict):
-        return _fail("code must be a JSON object")
-    schema = code.get("schema")
-    if schema not in (
-        "kanban-jira-code/1",
-        "kanban-jira-code/2",
-        "kanban-jira-code/3",
-    ):
-        return _fail(
-            f"unsupported code schema {schema!r}; "
-            "expected kanban-jira-code/1, /2, or /3"
-        )
-
-    transitions = code.get("transitions")
-    if not isinstance(transitions, dict) or not transitions:
-        return _fail("code is missing `transitions`")
-    # Auto-upgrade /1 + /2 payloads carrying the legacy DONE key (#48).
-    # _alias_done_to_approved is idempotent — payloads already on /3
-    # with APPROVED pass through unchanged.
-    transitions = _tr._alias_done_to_approved(transitions)
-    errs = _tr.validate(transitions)
-    if errs:
-        return _fail("transitions invalid", errors=errs)
-
-    project_key = code.get("projectKey")
-    board_id = code.get("boardId")
-    if not project_key or not isinstance(board_id, int):
-        return _fail("code is missing `projectKey` or `boardId`")
-
-    # Build the new backend.jira. Pull agentAccountId from the existing
-    # kanban.json if not present in the code (the agentAccountId is shared
-    # per-Atlassian-account, not per-board, but a fresh repo may already
-    # have it from /kanban:initjira-by-code's credential step).
-    data = kanban_io.load(p)
-    existing_cfg = (data.get("backend") or {}).get("jira") or {}
-    cfg: dict[str, Any] = {
-        "boardUrl": code.get("boardUrl") or existing_cfg.get("boardUrl"),
-        "boardId": board_id,
-        "projectKey": project_key,
-        "agentAccountId": code.get("agentAccountId") or existing_cfg.get("agentAccountId"),
-        "transitions": transitions,
-    }
-    if code.get("ap") and isinstance(code["ap"], dict) and code["ap"].get("fieldId"):
-        cfg["ap"] = {
-            "fieldId": code["ap"]["fieldId"],
-            "fieldName": code["ap"].get("fieldName", ""),
-            "registered": [],   # populated live via cmd_live_list_aps when needed
-        }
-    # Conventions arrive on /2 and /3 codes. Normalize so unknown future
-    # fields are dropped and `notes` is always a list.
-    incoming_conv = (
-        code.get("conventions")
-        if schema in ("kanban-jira-code/2", "kanban-jira-code/3")
-        else None
-    )
-    cfg["conventions"] = _cv.normalize(incoming_conv)
-    cfg = {k: v for k, v in cfg.items() if v is not None}
-
-    data["backend"] = {"driver": "jira", "jira": cfg}
-    meta = data.setdefault("meta", {})
-    meta["columns"] = list(CANONICAL_COLUMNS)
-    kanban_io.save(p, data)
-    _emit({
-        "ok": True,
-        "imported": cfg,
-        "schema": schema,
-        "conventions": cfg["conventions"],
-        "ackRequired": not _cv.is_empty(cfg["conventions"])
-                       and not _cv.has_recent_ack(p.parent, cfg["conventions"]),
     })
     return 0
 
@@ -3449,22 +3321,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--branch",
                    help="git branch for the URL; defaults to current branch then 'main'")
     s.set_defaults(func=cmd_resolve_doc_link)
-
-    s = sub.add_parser("emit-jira-code")
-    s.add_argument("--kanban-path", required=True)
-    s.add_argument(
-        "--include-agent-account",
-        action="store_true",
-        help="include `agentAccountId` in the code (only meaningful when "
-             "the receiving machine uses the same shared agent Atlassian account)",
-    )
-    s.set_defaults(func=cmd_emit_jira_code)
-
-    s = sub.add_parser("import-jira-code")
-    s.add_argument("--kanban-path", required=True)
-    s.add_argument("--code-json", required=True,
-                   help="the JSON code emitted by /kanban:showjira-code on the source machine")
-    s.set_defaults(func=cmd_import_jira_code)
 
     # Board-config helpers (#after-50, kanban 0.3.25+). The
     # authoritative shared config lives on the Jira project itself

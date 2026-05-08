@@ -116,10 +116,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py \
 
 Print `✓ project=<projectName> (<projectKey>); board=<boardName> (<boardType>)`.
 
-> **Tip — already configured the same board in another repo or machine?**
-> Skip this entire flow: run `/kanban:showjira-code` in the source repo,
-> copy the printed JSON, then run `/kanban:import-jira-code` in this repo
-> and paste it. Jumps straight from credentials to step 5 (assign AP).
+## Step 2.5/5 — Auto-detect existing board config (kanban 0.3.27+)
+
+Before walking the user through transitions DSL + AP-field discovery,
+check whether someone has already published the team's canonical
+config to this Jira project. If yes, **skip Steps 3 and 4** entirely
+and pull the published config straight into this repo's kanban.json.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py pull-board-config \
+  --kanban-path '<kanban.json path>' --project-key '<KEY>'
+```
+
+| Response | Action |
+|---|---|
+| `{ok: true, projectKey, propertyKey, transitionsCount}` | print `✓ Pulled board config from Jira project <projectKey> (<transitionsCount> transitions). Skipping interactive setup; jumping to Step 5 (assign AP).` Continue to Step 5 (Step 3 + Step 4 are already covered by the pulled config). |
+| `{ok: false, notFound: true, ...}` | board has no published config yet (the first agent on this board) — fall through to Steps 3 + 4 for interactive setup. After Step 5 completes, the bottom of this command suggests `/kanban:push-board-config` so future joiners auto-bootstrap. |
+| `{ok: false, error: ...}` (other) | surface the error verbatim — most likely permission or network. Continue with interactive Steps 3 + 4 as the fallback. |
 
 ## Step 3/5 — Compound transitions (canonical → Jira)
 
@@ -423,6 +436,17 @@ Try:
   • /kanban:status       — read live Jira state for this AP
   • /kanban:doing         — claim the next TODO for this AP
 ```
+
+If the interactive Steps 3 + 4 ran (i.e. Step 2.5 didn't auto-pull
+because the board didn't have a published config yet), append a hint:
+
+```
+Next: publish your config so teammates / future repos auto-bootstrap:
+  • /kanban:push-board-config   — requires Jira project-admin role
+```
+
+Skip this hint when Step 2.5 already pulled an existing config (the
+team already has a published version; this repo just inherited it).
 
 ## Absolute rules
 

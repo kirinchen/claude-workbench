@@ -12,9 +12,13 @@ the same Jira project** will receive your config on their next stale-
 cache refresh (within 8 hours), or immediately on `/kanban:pull-
 board-config`.
 
-This replaces the older `/kanban:showjira-code` → paste →
-`/kanban:import-jira-code` round-trip flow. **Single source of truth
-on Jira**; receivers don't have to be told the steps.
+**Single source of truth on Jira**; receivers don't have to be told
+the steps — they get the latest config automatically on `/kanban:sync`
+(8h passive-sync TTL) or via `/kanban:pull-board-config` on demand.
+
+(0.3.27 retired the older `kanban-jira-code` paste flow. Older repos
+that never published board config can do so via this command — see
+the migration guide in CHANGELOG 0.3.27.)
 
 ## Permission requirement
 

@@ -89,7 +89,7 @@
               "properties": {
                 "notes": {
                   "type": "array",
-                  "description": "Short prose notes shown to anyone importing the board code. Receivers are required to acknowledge before /kanban:import-jira-code completes.",
+                  "description": "Short prose notes the team agrees on. Receivers acknowledge them after /kanban:pull-board-config (or the passive-sync trigger inside /kanban:sync) lands new content; ack hash gates further work until the user confirms they've read the rules.",
                   "items": { "type": "string" }
                 },
                 "blockedRequiresLink": {
