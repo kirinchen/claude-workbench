@@ -769,6 +769,66 @@ class JiraDriver:
             registered.append(name)
         ap_block["registered"] = registered
 
+    # --- mutation primitives (#55) ------------------------------------
+
+    def update_description(self, key: str, description: str) -> Task:
+        """PUT a new description (rendered as ADF). Returns refreshed Task."""
+        client = self._client_or_raise()
+        adf = text_to_adf(description or "")
+        client.update_issue(key, {"description": adf})
+        card_cache.invalidate(self.project_root, key)
+        return self.get_task(key)
+
+    def update_summary(self, key: str, summary: str) -> Task:
+        """PUT a new summary (card title). Returns refreshed Task."""
+        client = self._client_or_raise()
+        if not summary or not summary.strip():
+            raise ValueError("summary must be non-empty")
+        client.update_issue(key, {"summary": summary})
+        card_cache.invalidate(self.project_root, key)
+        return self.get_task(key)
+
+    def update_labels(
+        self,
+        key: str,
+        *,
+        add: list[str] | None = None,
+        remove: list[str] | None = None,
+    ) -> Task:
+        """Read existing labels, mutate, PUT whole list. Returns refreshed Task.
+
+        Mirrors the merge logic used by the compound `transition` write
+        (Step B): we treat the server's label set as the source of truth,
+        compute the merged list locally, and PUT only when it actually
+        changes (no-op writes are skipped).
+        """
+        add = list(add or [])
+        remove = list(remove or [])
+        if not add and not remove:
+            raise ValueError("update_labels requires at least one of add/remove")
+        client = self._client_or_raise()
+        existing = self.get_task(key)
+        current_labels = list(existing.custom.get("raw_labels") or existing.tags or [])
+        updated = [l for l in current_labels if l not in remove]
+        for l in add:
+            if l not in updated:
+                updated.append(l)
+        if updated != current_labels:
+            client.update_issue(key, {"labels": updated})
+            card_cache.invalidate(self.project_root, key)
+        return self.get_task(key)
+
+    def delete_issue(self, key: str, *, cascade: bool = False) -> None:
+        """DELETE the card. Cascades to subtasks when `cascade=True`.
+
+        Caller (jira_setup.cmd_delete_issue) is responsible for writing
+        the audit snapshot BEFORE invoking this — by the time we return,
+        the card and its Jira changelog are gone.
+        """
+        client = self._client_or_raise()
+        client.delete_issue(key, delete_subtasks=cascade)
+        card_cache.invalidate(self.project_root, key)
+
     # --- repo identity ------------------------------------------------
 
     def _current_repo_ap(self) -> str | None:

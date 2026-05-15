@@ -238,3 +238,28 @@ class LocalDriver:
 
     def register_ap(self, name: str) -> None:
         raise NotSupported("local driver does not support agent properties")
+
+    # Mutation primitives (#55) — local mode edits kanban.json directly,
+    # so a slash-command wrapper for these would just duplicate Edit on
+    # the file. Stubs raise NotSupported until/unless a use case appears.
+    def update_description(self, key: str, description: str) -> Task:
+        raise NotSupported(
+            "update_description is jira-only; edit kanban.json directly in local mode"
+        )
+
+    def update_summary(self, key: str, summary: str) -> Task:
+        raise NotSupported(
+            "update_summary is jira-only; edit kanban.json directly in local mode"
+        )
+
+    def update_labels(
+        self, key: str, *, add: list[str] | None = None, remove: list[str] | None = None
+    ) -> Task:
+        raise NotSupported(
+            "update_labels is jira-only; edit kanban.json directly in local mode"
+        )
+
+    def delete_issue(self, key: str, *, cascade: bool = False) -> None:
+        raise NotSupported(
+            "delete_issue is jira-only; edit kanban.json directly in local mode"
+        )

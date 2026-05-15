@@ -2289,7 +2289,19 @@ def _parse_iso(ts: str | None):
         try:
             return datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except (ValueError, TypeError):
+            pass
+        # Jira Cloud commonly emits offsets without a colon, e.g.
+        # "2026-04-30T10:00:00.000+0000". Python 3.10 fromisoformat
+        # rejects that form (3.11+ accepts it). Insert the colon and
+        # retry so the recent-APPROVED guard (#55) and other consumers
+        # don't silently treat real Jira timestamps as unparseable.
+        try:
+            if len(ts) >= 5 and ts[-5] in "+-" and ts[-3] != ":":
+                fixed = ts[:-2] + ":" + ts[-2:]
+                return datetime.fromisoformat(fixed)
+        except (ValueError, TypeError):
             return None
+        return None
 
 
 def _detect_stale_doing(
@@ -3072,6 +3084,272 @@ def cmd_health(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- mutation primitives (#55) -------------------------------------------
+
+# Recent-APPROVED guard window for delete-issue. Cards approved within this
+# many days refuse delete unless --force is passed — protects against
+# accidental garbage-collection of work that just shipped.
+_DELETE_RECENT_APPROVED_DAYS = 7
+
+
+def _ap_mismatch_warning(driver: Any, key: str, repo_ap: str | None) -> list[str]:
+    """Compare card AP to repo AP. Returns ["ap-mismatch"] or [].
+
+    Costs one Jira read (get_task) and is the cheapest way to surface the
+    same warning shape produced by _build_precheck_block without running
+    the full precheck. Callers should treat the empty list as the
+    happy-path signal.
+    """
+    if not repo_ap:
+        return []
+    try:
+        t = driver.get_task(key)
+    except Exception:
+        return []  # don't block the mutation on a precheck miss
+    if t.ap and t.ap != repo_ap:
+        return ["ap-mismatch"]
+    return []
+
+
+def _resolve_body(args: argparse.Namespace) -> str:
+    """Resolve --body / --body-file (with `-` meaning stdin) into a string."""
+    body = getattr(args, "body", None)
+    body_file = getattr(args, "body_file", None)
+    if body is not None and body_file is not None:
+        raise ValueError("pass --body or --body-file, not both")
+    if body is not None:
+        return body
+    if body_file is None:
+        raise ValueError("one of --body or --body-file is required")
+    if body_file == "-":
+        return sys.stdin.read()
+    return Path(body_file).read_text()
+
+
+def cmd_update_description(args: argparse.Namespace) -> int:
+    """Replace a card's description. Default format is plain text (rendered to
+    ADF); pass --format adf to send a literal JSON ADF doc instead.
+
+    Surfaces ["ap-mismatch"] in `warnings` when the card belongs to a
+    different AP — does not refuse (override semantics match the rest of
+    the kanban mutating surface). The legacy precheck pattern lives in
+    `_build_precheck_block`; this command mirrors only the warning shape.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    try:
+        body = _resolve_body(args)
+    except ValueError as e:
+        return _fail(str(e))
+
+    data = kanban_io.load(p)
+    from drivers import get_driver
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+    warnings = _ap_mismatch_warning(driver, args.key, repo_ap)
+    if "ap-mismatch" in warnings and not args.override_ap:
+        # Surface the warning but still proceed — matches precheck-card's
+        # non-refusing behavior. The flag exists so callers can prove they
+        # saw the warning (and so /kanban:edit-description can require an
+        # explicit ack on the slash-command side).
+        pass
+
+    try:
+        if args.format == "adf":
+            # Body is already an ADF JSON doc — pass through without
+            # re-rendering. Useful when a previous read-back produced ADF
+            # that the caller wants to round-trip.
+            from lib.jira_client import JiraClient as _JC  # noqa: F401
+            adf_doc = json.loads(body)
+            client = driver._client_or_raise()  # noqa: SLF001
+            client.update_issue(args.key, {"description": adf_doc})
+            card_cache.invalidate(p.parent, args.key)
+        else:
+            driver.update_description(args.key, body)
+    except Exception as e:  # noqa: BLE001
+        return _fail(f"{type(e).__name__}: {e}")
+
+    _emit({"ok": True, "key": args.key, "warnings": warnings})
+    return 0
+
+
+def cmd_update_summary(args: argparse.Namespace) -> int:
+    """Rename a card (replace its summary)."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    if not args.summary or not args.summary.strip():
+        return _fail("--summary must be non-empty")
+    data = kanban_io.load(p)
+    from drivers import get_driver
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+    warnings = _ap_mismatch_warning(driver, args.key, repo_ap)
+    try:
+        driver.update_summary(args.key, args.summary)
+    except Exception as e:  # noqa: BLE001
+        return _fail(f"{type(e).__name__}: {e}")
+    _emit({"ok": True, "key": args.key, "warnings": warnings})
+    return 0
+
+
+def _label_allowlist(data: dict[str, Any]) -> list[str] | None:
+    """Return backend.jira.labels.allowed or None. Empty list returns None too
+    (treated as "no allowlist configured" — see schema)."""
+    block = ((data.get("backend") or {}).get("jira") or {}).get("labels") or {}
+    allowed = block.get("allowed")
+    if not allowed:
+        return None
+    return list(allowed)
+
+
+def _do_label_mutation(
+    args: argparse.Namespace, *, mode: str
+) -> int:
+    """Shared body for add-label / remove-label. `mode` is 'add' or 'remove'."""
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    labels = list(args.label or [])
+    if not labels:
+        return _fail(f"at least one --label is required for {mode}-label")
+    data = kanban_io.load(p)
+    if mode == "add":
+        allowed = _label_allowlist(data)
+        if allowed is not None:
+            rejected = [l for l in labels if l not in allowed]
+            if rejected:
+                return _fail(
+                    f"labels {rejected!r} are not in backend.jira.labels.allowed "
+                    f"({allowed!r}); add them to the allowlist or pick from it",
+                    kind="label-not-allowed",
+                )
+    from drivers import get_driver
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+    warnings = _ap_mismatch_warning(driver, args.key, repo_ap)
+    try:
+        if mode == "add":
+            t = driver.update_labels(args.key, add=labels)
+        else:
+            t = driver.update_labels(args.key, remove=labels)
+    except Exception as e:  # noqa: BLE001
+        return _fail(f"{type(e).__name__}: {e}")
+    _emit({
+        "ok": True,
+        "key": args.key,
+        "labels": list(t.custom.get("raw_labels") or t.tags or []),
+        "warnings": warnings,
+    })
+    return 0
+
+
+def cmd_add_label(args: argparse.Namespace) -> int:
+    return _do_label_mutation(args, mode="add")
+
+
+def cmd_remove_label(args: argparse.Namespace) -> int:
+    return _do_label_mutation(args, mode="remove")
+
+
+def _audit_dir(project_root: Path) -> Path:
+    return project_root / ".claude" / ".kanban-cache" / "audit"
+
+
+def cmd_delete_issue(args: argparse.Namespace) -> int:
+    """Delete a Jira card, refusing without --confirm.
+
+    The card's full snapshot is written to `.claude/.kanban-cache/audit/`
+    BEFORE the DELETE so the trail survives the deletion. Jira's own
+    changelog goes away with the card, so this on-disk log is the only
+    record left.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    if not args.confirm:
+        return _fail(
+            "delete-issue refuses without --confirm — pass --confirm to proceed "
+            "(this is destructive; an audit snapshot is written before the delete)",
+            kind="needs-confirm",
+        )
+    data = kanban_io.load(p)
+    from drivers import get_driver
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+
+    # Read the snapshot BEFORE deleting; if the read fails we abort.
+    try:
+        existing = driver.get_task(args.key)
+    except Exception as e:  # noqa: BLE001
+        return _fail(
+            f"could not read {args.key} for audit snapshot ({type(e).__name__}: {e}); "
+            "refusing to delete without a recoverable record"
+        )
+
+    # Recent-APPROVED guard — refuse if the card just shipped, unless --force.
+    if existing.column == "APPROVED" and not args.force:
+        completed = existing.completed or existing.updated
+        if completed:
+            try:
+                from datetime import datetime, timezone
+                done_dt = _parse_iso(completed)
+                age_days = (datetime.now(timezone.utc) - done_dt).days
+                if age_days < _DELETE_RECENT_APPROVED_DAYS:
+                    return _fail(
+                        f"{args.key} was APPROVED {age_days}d ago — refusing to "
+                        f"delete a card approved in the last {_DELETE_RECENT_APPROVED_DAYS}d. "
+                        "Pass --force if this is intentional.",
+                        kind="recent-approved",
+                    )
+            except Exception:
+                pass  # parse failure → fall through (don't block on a date bug)
+
+    audit_dir = _audit_dir(p.parent)
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    ts = _now_iso().replace(":", "").replace("-", "")
+    audit_path = audit_dir / f"{args.key}-{ts}.json"
+    snapshot = {
+        "key": existing.id,
+        "summary": existing.title,
+        "description": existing.description,
+        "labels": list(existing.custom.get("raw_labels") or existing.tags or []),
+        "status": existing.custom.get("raw_status") or existing.column,
+        "column": existing.column,
+        "assignee": (
+            getattr(existing.assignee, "accountId", None)
+            if existing.assignee is not None else None
+        ),
+        "ap": existing.ap,
+        "comments_count": len(existing.comments or []),
+        "deleted_at": _now_iso(),
+        "deleted_by_ap": repo_ap,
+        "force": bool(args.force),
+        "cascade_subtasks": bool(args.cascade_subtasks),
+    }
+    audit_path.write_text(json.dumps(snapshot, indent=2) + "\n")
+
+    try:
+        driver.delete_issue(args.key, cascade=args.cascade_subtasks)
+    except Exception as e:  # noqa: BLE001
+        # Audit file already written — leave it so the operator can see
+        # what was attempted and why it failed.
+        return _fail(f"{type(e).__name__}: {e}")
+
+    _emit({
+        "ok": True,
+        "key": args.key,
+        "audit_path": str(audit_path),
+        "cascade": bool(args.cascade_subtasks),
+    })
+    return 0
+
+
 # --- entry point ----------------------------------------------------------
 
 
@@ -3466,6 +3744,59 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true",
                    help="write even if validation reports issues")
     s.set_defaults(func=cmd_set_transitions)
+
+    # --- mutation primitives (#55) ------------------------------------
+
+    s = sub.add_parser("update-description")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    g = s.add_mutually_exclusive_group(required=True)
+    g.add_argument("--body", help="inline description body (plain text by default)")
+    g.add_argument("--body-file",
+                   help="path to a file containing the body, or '-' for stdin")
+    s.add_argument("--format", choices=("text", "adf"), default="text",
+                   help="how to interpret the body — 'text' renders to ADF (default); "
+                        "'adf' expects a literal ADF JSON document")
+    s.add_argument("--override-ap", action="store_true",
+                   help="acknowledge AP-mismatch warning (currently surfaced but non-blocking; "
+                        "kept for forward compat with a future strict mode)")
+    s.set_defaults(func=cmd_update_description)
+
+    s = sub.add_parser("update-summary")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--summary", required=True)
+    s.add_argument("--override-ap", action="store_true")
+    s.set_defaults(func=cmd_update_summary)
+
+    s = sub.add_parser("add-label")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--label", action="append", required=True,
+                   help="label to add (repeatable). Validated against "
+                        "backend.jira.labels.allowed if configured")
+    s.add_argument("--override-ap", action="store_true")
+    s.set_defaults(func=cmd_add_label)
+
+    s = sub.add_parser("remove-label")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--label", action="append", required=True,
+                   help="label to remove (repeatable)")
+    s.add_argument("--override-ap", action="store_true")
+    s.set_defaults(func=cmd_remove_label)
+
+    s = sub.add_parser("delete-issue")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--key", required=True)
+    s.add_argument("--confirm", action="store_true",
+                   help="REQUIRED; without this flag delete-issue refuses")
+    s.add_argument("--cascade-subtasks", action="store_true",
+                   help="also delete sub-tasks of this card (Jira default: leave orphaned)")
+    s.add_argument("--force", action="store_true",
+                   help="override the recent-APPROVED guard (default: refuse if "
+                        "the card was approved within the last 7 days)")
+    s.set_defaults(func=cmd_delete_issue)
 
     return p
 

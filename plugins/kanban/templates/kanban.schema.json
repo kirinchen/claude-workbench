@@ -82,6 +82,19 @@
                 }
               }
             },
+            "labels": {
+              "type": "object",
+              "description": "Optional team-defined label rules. Currently only `allowed` is consumed (by /kanban:label --add). Absence means no allowlist — all labels accepted.",
+              "additionalProperties": false,
+              "properties": {
+                "allowed": {
+                  "type": "array",
+                  "description": "If set and non-empty, /kanban:label --add rejects labels not in this list. Removal is never gated.",
+                  "items": { "type": "string" },
+                  "uniqueItems": true
+                }
+              }
+            },
             "conventions": {
               "type": "object",
               "description": "Soft team agreements — narrative notes that travel with the board mapping (kanban-jira-code/2 schema). Length guardrails are advisory; helpers warn but don't reject.",
