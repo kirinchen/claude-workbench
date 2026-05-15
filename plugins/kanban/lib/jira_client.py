@@ -355,6 +355,16 @@ class JiraClient:
             body={"fields": fields},
         )
 
+    def delete_issue(self, key: str, *, delete_subtasks: bool = False) -> None:
+        """DELETE /rest/api/3/issue/{key}. Used by /kanban:delete (#55).
+
+        `delete_subtasks=True` cascades to children; default leaves them
+        orphaned (Jira's own default). A 403 here means the agent's
+        account lacks "Delete Issues" permission in the project.
+        """
+        params = {"deleteSubtasks": "true" if delete_subtasks else "false"}
+        self._request("DELETE", f"/rest/api/3/issue/{key}", query=params)
+
     # --- screens (0.3.2: AP-field association, #6) -------------------
 
     def list_screens(self, *, query: str | None = None) -> dict[str, Any]:

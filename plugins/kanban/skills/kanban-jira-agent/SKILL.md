@@ -69,6 +69,29 @@ path and confuses operators. Existing built-in `kanban:blocked` /
   Jira URL, the plugin injects context above your prompt. Read it before
   acting; pay close attention to ⚠ warnings about AP mismatch.
 
+## Mutating primitives
+
+Beyond `transition` / `reply` / `question`, the plugin exposes these
+stand-alone mutations (added in 0.3.28, closes #55). Use them instead
+of bypassing to a direct Jira API call:
+
+| Command | Use case |
+|---|---|
+| `/kanban:edit-description <KEY> --body "..."` (or `--from-file -`) | Consolidate sub-card content back into a parent, rewrite a stale TODO list, fix acceptance criteria. |
+| `/kanban:label <KEY> --add L --remove L` | Mark a card `kanban:cancelled` / `wontfix` / custom team tags without forcing a status change. |
+| `/kanban:rename <KEY> "<new summary>"` | Rename after scope clarification or typo fix. |
+| `/kanban:delete <KEY> --confirm` | Garbage-collect agent-spawned sub-cards that turned out to be wrong scope. **Destructive** — confirm with the user before invoking; the helper writes an audit snapshot to `.claude/.kanban-cache/audit/` before issuing the DELETE. |
+
+The first three rely on Jira's native changelog for the audit trail
+(it records the before/after) — no on-disk log is written. Only
+`delete` writes a snapshot, because the changelog disappears with the
+card.
+
+AP-mismatch is surfaced as `warnings: ["ap-mismatch"]` but is
+**non-blocking** — a user explicitly asking the agent to edit a
+teammate's description is a valid flow. If the user didn't ask, don't
+do it.
+
 ## When you're @-mentioned by a human
 
 `SessionStart` and `/kanban:sync` will surface mentions in this format:
@@ -187,7 +210,14 @@ after the branch is deleted.
 
 ## Forbidden
 
-- Direct Jira API calls (curl, fetch, any HTTP client)
+- Direct Jira API calls (curl, fetch, any HTTP client) — every
+  supported mutation has a `/kanban:*` wrapper. Beyond
+  `transition` / `reply` / `question` / `create-sub`, the
+  primitives in **Mutating primitives** above cover description,
+  label, rename, and delete. If you find a mutation that isn't
+  wrapped, file an issue rather than bypassing; the wrappers carry
+  AP-mismatch warnings and (for delete) the only audit log that
+  survives the card's deletion.
 - Atlassian Rovo MCP, mcp-atlassian, jira-mcp, or any other Jira MCP — your
   plugin is the only sanctioned path
 - Editing `kanban.json` directly (the `kanban-guard.sh` PreToolUse hook
