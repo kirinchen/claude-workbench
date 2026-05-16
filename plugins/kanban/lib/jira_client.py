@@ -489,21 +489,24 @@ def _text_to_inline_nodes(text: str) -> list[dict[str, Any]]:
 
 
 def text_to_adf(text: str) -> dict[str, Any]:
-    """Wrap a plain-text body in Atlassian Document Format.
+    """Wrap a markdown-or-plain body in Atlassian Document Format.
 
-    Used for comments and issue descriptions. URLs in the body are
-    detected and wrapped in ADF `link` marks so they render clickable
-    in Jira UI; non-URL spans stay as plain text. SPEC §9 prefix is
-    added at the driver layer.
+    Used for comments and issue descriptions. The body is parsed as a
+    markdown subset (headings, bold/italic, code spans + fences,
+    bullet/ordered lists, blockquotes, ``[text](url)`` links) and
+    emitted as proper ADF nodes; bare URLs in text are still
+    auto-linkified so plain-text payloads round-trip unchanged. The
+    SPEC §9 prefix is added at the driver layer.
+
+    Markdown support was added after #57 to fix the "agent emits
+    ``## Heading`` and Jira shows the literal hashes" bug. See
+    ``lib/markdown_adf.py`` for the supported subset.
     """
-    nodes = _text_to_inline_nodes(text) or [{"type": "text", "text": ""}]
-    return {
-        "type": "doc",
-        "version": 1,
-        "content": [
-            {"type": "paragraph", "content": nodes},
-        ],
-    }
+    # Local import — markdown_adf is a sibling lib module. Imported at
+    # call time so the import graph stays acyclic if either module
+    # grows additional cross-references later.
+    from lib.markdown_adf import markdown_to_adf
+    return markdown_to_adf(text or "")
 
 
 def adf_to_text(adf: dict[str, Any] | None) -> str:
@@ -577,14 +580,24 @@ def text_to_adf_with_mention(
 ) -> dict[str, Any]:
     """Build an ADF doc that prepends `prefix_text` (as its own paragraph,
     rendered bold) then a paragraph that begins with an @-mention node
-    followed by ` body_text`.
+    followed by the reply body.
 
     Used by /kanban:reply so the bot's reply notifies the human via Jira's
     native mention plumbing. Empty `prefix_text` collapses the prefix
     paragraph (used when caller already wrapped the prefix elsewhere). The
-    prefix renders as bold via an ADF `strong` mark — ADF doesn't parse
-    markdown, so emitting `**...**` literals would render verbatim (#27).
+    prefix renders as bold via an ADF `strong` mark — markdown in
+    `prefix_text` is intentionally NOT parsed because the SPEC §9 prefix
+    text is fixed-shape and rendering ``**...**`` literally there would
+    show stars instead of bold (#27).
+
+    The reply body, by contrast, IS parsed as markdown (subset documented
+    in `lib/markdown_adf.py`). When the body is a single paragraph it
+    sits inline with the @mention chip — preserving the chat-bubble
+    look. Multi-paragraph / list / code-fence bodies put the mention on
+    its own paragraph and emit the body's blocks as siblings, so
+    structured replies render correctly.
     """
+    from lib.markdown_adf import markdown_to_adf
     content: list[dict[str, Any]] = []
     if prefix_text:
         content.append({
@@ -595,31 +608,41 @@ def text_to_adf_with_mention(
                 "marks": [{"type": "strong"}],
             }],
         })
-    body_para: dict[str, Any] = {
-        "type": "paragraph",
-        "content": [
-            {
-                "type": "mention",
-                "attrs": {
-                    "id": mention_account_id,
-                    "text": f"@{mention_display}" if mention_display else "@",
-                },
-            },
-        ],
+    mention_node = {
+        "type": "mention",
+        "attrs": {
+            "id": mention_account_id,
+            "text": f"@{mention_display}" if mention_display else "@",
+        },
     }
-    if body_text:
-        # Leading space separates the mention chip from the body text.
-        # Merge it into the first plain-text inline node when possible
-        # (avoids fragmenting ADF into [" ", text] when [" text"] is
-        # equivalent and matches existing test expectations); fall back
-        # to a standalone space node when the body starts with a
-        # link-marked URL.
-        nodes = _text_to_inline_nodes(body_text)
-        if nodes and not nodes[0].get("marks"):
-            nodes[0]["text"] = " " + nodes[0]["text"]
-            body_para["content"].extend(nodes)
-        elif nodes:
-            body_para["content"].append({"type": "text", "text": " "})
-            body_para["content"].extend(nodes)
-    content.append(body_para)
+    if not body_text:
+        content.append({"type": "paragraph", "content": [mention_node]})
+        return {"type": "doc", "version": 1, "content": content}
+
+    body_doc = markdown_to_adf(body_text)
+    body_blocks = body_doc.get("content") or []
+    first = body_blocks[0] if body_blocks else None
+
+    if first and first.get("type") == "paragraph" and len(body_blocks) == 1:
+        # Single-paragraph reply — inline next to the mention chip with
+        # a leading space. Merge the space into the first inline text
+        # node when possible (avoids fragmenting ADF into [" ", text]
+        # for the common single-line case).
+        inline_nodes = list(first.get("content") or [])
+        merged: list[dict[str, Any]] = [mention_node]
+        if inline_nodes and inline_nodes[0].get("type") == "text" and not inline_nodes[0].get("marks"):
+            inline_nodes[0] = dict(inline_nodes[0])
+            inline_nodes[0]["text"] = " " + inline_nodes[0]["text"]
+            merged.extend(inline_nodes)
+        else:
+            merged.append({"type": "text", "text": " "})
+            merged.extend(inline_nodes)
+        content.append({"type": "paragraph", "content": merged})
+    else:
+        # Multi-block reply (lists, code fences, multiple paragraphs).
+        # Put the mention alone, then emit body blocks as siblings so
+        # each renders with its proper ADF shape.
+        content.append({"type": "paragraph", "content": [mention_node]})
+        content.extend(body_blocks)
+
     return {"type": "doc", "version": 1, "content": content}
