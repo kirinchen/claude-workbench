@@ -40,6 +40,7 @@ optimistic concurrency.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -59,16 +60,60 @@ CACHE_TTL_HOURS = 8
 # of the most recent successful pull.
 _CACHED_AT_FIELD = "boardConfigCachedAt"
 
+# Key, inside the pushed/pulled config dict, that carries push/pull
+# metadata (#57). Sibling of `transitions`/`ap`/`conventions`. Excluded
+# from the canonical hash so the hash represents the *content* and is
+# stable across re-pushes that only bump `_meta`.
+META_KEY = "_meta"
+
 
 class BoardConfigError(RuntimeError):
     """Raised when a push/pull operation fails in a way the caller
     should surface to the user (permission denied, malformed payload,
     Jira unreachable). Distinct from JiraError so callers can
     differentiate config-layer failures from underlying HTTP errors.
+
+    Optional attributes set on specific instances:
+      - `not_found` (True for 404 on pull)
+      - `if_match_mismatch` (True when push refused due to --if-match)
+      - `remote_meta` (the remote `_meta` snapshot on if-match failure,
+        so callers can format actionable error output)
     """
 
 
-def push(client: Any, project_key: str, config: dict[str, Any]) -> None:
+def canonical_hash(config: dict[str, Any]) -> str:
+    """Return `sha256:<hex>` of the canonical JSON of `config` with
+    `_meta` stripped (#57).
+
+    Canonicalization rules:
+      - `_meta` key is excluded so the hash describes the *content*,
+        not the version/pushedAt metadata wrapping it.
+      - keys are sorted at every level (`sort_keys=True`) so two
+        semantically-identical dicts that differ only in key order
+        produce the same hash.
+      - separators are tight (`,`/`:`) so whitespace differences in
+        upstream serializers don't change the hash.
+      - encoded as UTF-8 (ensures non-ASCII content roundtrips
+        deterministically; `ensure_ascii=False` keeps the JSON small
+        but the bytes are still UTF-8 and reproducible).
+    """
+    body = {k: v for k, v in config.items() if k != META_KEY}
+    canonical = json.dumps(
+        body, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def push(
+    client: Any,
+    project_key: str,
+    config: dict[str, Any],
+    *,
+    account_id: str | None = None,
+    if_match: str | None = None,
+    force: bool = False,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     """Write `config` to the Jira project's `kanban-config` property.
 
     `config` is the canonical JSON the team agrees on — typically the
@@ -76,9 +121,26 @@ def push(client: Any, project_key: str, config: dict[str, Any]) -> None:
     per-machine fields (`agentAccountId` is per-Atlassian-account, but
     the rest of the block is per-board and should round-trip).
 
-    Raises BoardConfigError on permission failure (403) or other
-    non-retryable issues with a readable message. Other HTTP errors
-    surface from the underlying client.
+    Versioning (#57):
+      - Before writing, the remote `_meta` is fetched. If it carries a
+        `hash` and the caller passed `if_match`, the two must match —
+        otherwise the push is refused with `BoardConfigError`
+        (`if_match_mismatch=True`, `remote_meta=<dict>`). Pass
+        `force=True` to bypass.
+      - A new `_meta` block is attached to the pushed payload with the
+        next `version` (monotonic counter, starts at 1), the content
+        `hash` (canonical_hash of the payload minus `_meta`), the
+        push timestamp, and (when `account_id` is given) the Atlassian
+        accountId of the pushing admin.
+
+    Any `_meta` already in `config` is ignored — push always
+    regenerates the block from the just-pulled remote version.
+
+    Returns the new `_meta` dict so callers can persist it into the
+    local cache.
+
+    Raises BoardConfigError on permission failure (403), `--if-match`
+    mismatch, or other non-retryable issues.
     """
     if not isinstance(config, dict) or not config:
         raise BoardConfigError("config must be a non-empty JSON object")
@@ -90,8 +152,60 @@ def push(client: Any, project_key: str, config: dict[str, Any]) -> None:
     # pay that import cost).
     from lib.jira_client import JiraError
 
+    # Read remote `_meta` so we can (a) honor --if-match and (b) pick
+    # the next version. Treat a 404 as "first push" — version starts
+    # at 1, no if-match check possible.
+    remote_meta: dict[str, Any] | None = None
     try:
-        client.set_project_property(project_key, PROPERTY_KEY, config)
+        remote = pull(client, project_key)
+    except BoardConfigError as e:
+        if not getattr(e, "not_found", False):
+            raise
+        remote = None
+    if isinstance(remote, dict):
+        m = remote.get(META_KEY)
+        if isinstance(m, dict):
+            remote_meta = m
+
+    remote_hash = (remote_meta or {}).get("hash")
+    if if_match is not None and not force:
+        # `if_match` is the hash the caller expected remote to still be
+        # at. If remote moved (someone else pushed since the caller
+        # pulled), refuse and hand the caller enough context to render
+        # an actionable error.
+        if remote_hash != if_match:
+            err = BoardConfigError(
+                f"remote board config moved since your last pull on "
+                f"project {project_key!r}: expected hash {if_match!r} but "
+                f"remote is {remote_hash!r} "
+                f"(remote version={(remote_meta or {}).get('version')}). "
+                f"Run /kanban:pull-board-config to fetch the new version, "
+                f"reconcile your changes, then push again — or pass "
+                f"--force to clobber."
+            )
+            err.if_match_mismatch = True  # type: ignore[attr-defined]
+            err.remote_meta = remote_meta or {}  # type: ignore[attr-defined]
+            raise err
+
+    prev_version = 0
+    if remote_meta is not None:
+        v = remote_meta.get("version")
+        if isinstance(v, int) and v > 0:
+            prev_version = v
+
+    body = {k: v for k, v in config.items() if k != META_KEY}
+    new_meta: dict[str, Any] = {
+        "version": prev_version + 1,
+        "hash": canonical_hash(body),
+        "pushedAt": (now or _utcnow()).isoformat(timespec="seconds"),
+    }
+    if account_id:
+        new_meta["pushedByAccountId"] = account_id
+
+    payload = {META_KEY: new_meta, **body}
+
+    try:
+        client.set_project_property(project_key, PROPERTY_KEY, payload)
     except JiraError as e:
         if e.status_code == 403:
             raise BoardConfigError(
@@ -104,6 +218,8 @@ def push(client: Any, project_key: str, config: dict[str, Any]) -> None:
         raise BoardConfigError(
             f"jira: {e.detail or e} (status={e.status_code})"
         ) from e
+
+    return new_meta
 
 
 def pull(client: Any, project_key: str) -> dict[str, Any]:

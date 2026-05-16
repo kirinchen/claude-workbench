@@ -38,6 +38,17 @@
             "boardId": { "type": "integer", "minimum": 1 },
             "projectKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
             "agentAccountId": { "type": "string" },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Push/pull metadata for the kanban-config Jira project property (#57). Managed by /kanban:push-board-config and /kanban:pull-board-config — users shouldn't hand-edit. `version` is a monotonic counter incremented on each push; `hash` is the canonical sha256 of the on-Jira config with `_meta` itself stripped, used as the optimistic-concurrency fence for `push --if-match`.",
+              "properties": {
+                "version": { "type": "integer", "minimum": 1 },
+                "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+                "pushedAt": { "type": "string", "format": "date-time" },
+                "pushedByAccountId": { "type": "string" }
+              }
+            },
             "transitions": {
               "type": "object",
               "description": "Canonical column -> compound transition spec. Each canonical column maps to a Jira status plus optional label add/remove and assignee. Multiple canonicals may share the same Jira status; reader disambiguates by labels (most-specific match wins).",

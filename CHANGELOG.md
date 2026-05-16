@@ -15,6 +15,48 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-16 (kanban versioned board config — #57)
+
+### Added
+- **kanban 0.3.29** — `/kanban:push-board-config` and
+  `/kanban:pull-board-config` now carry a `_meta` block (version,
+  content hash, pushedAt, pushedByAccountId) on every push of the
+  `kanban-config` Jira project property. Closes the silent-clobber
+  gap exposed by `0.3.27`: two admins pushing without an intervening
+  pull no longer overwrite each other without warning.
+
+  **Behavior:**
+  - Push reads the current remote `_meta` first. The new payload
+    bumps `version` by 1 and stores the canonical sha256 of the
+    just-pushed content (canonicalization sorts keys, tight
+    separators, `_meta` itself excluded so the hash describes content).
+  - Push refuses by default when the remote `_meta.hash` doesn't
+    match what this machine last pulled or pushed (auto-`--if-match`).
+    Resolve by `/kanban:pull-board-config`, reconcile, push again.
+    `--force` bypasses the fence for intentional clobbers.
+  - Pull stores `_meta` into local `backend.jira._meta`, so the next
+    push on this machine can fence correctly without an explicit
+    flag. A successful push also writes the freshly-minted `_meta`
+    back into local for the same reason.
+  - `/kanban:show-board-config` with `--kanban-path` now emits a
+    `diff` block identifying one of four sync states: `in-sync`,
+    `remote-ahead`, `local-edits`, `diverged` (or `unknown` when
+    local has no cached `_meta` yet).
+
+  **Schema**: `backend.jira._meta` declared as optional (writers
+  maintain it; users shouldn't hand-edit). Old payloads without
+  `_meta` migrate automatically — pull treats them as
+  `{version: 0, hash: null}` and the next push initializes `v1`.
+
+  **Out of scope**: real ETag concurrency at the Atlassian API level
+  (they don't offer it on entity properties); per-field version
+  history / rollback.
+
+  Tests: `scripts/test_phase34.py` adds 15 cases covering canonical
+  hash stability, first-push init, version bump, `--if-match` fence
+  (refuse + force), `cmd_push` auto-fill, `_meta` round-trip through
+  pull/push, and all four diff states.
+
 ## 2026-05-08 (kanban paste-flow removal + initjira auto-detect — PR 3 of 3)
 
 ### Removed (BREAKING for ≤ 0.3.26 users mid-paste)

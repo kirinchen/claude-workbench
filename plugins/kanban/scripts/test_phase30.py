@@ -129,7 +129,11 @@ def _seed_jira_kanban(td: pathlib.Path, *,
 
 
 def test_push_happy_path_calls_set_project_property():
-    queue = [_Response(204, b"", {})]
+    # push() reads the remote _meta first (404 → first push), then PUTs.
+    queue = [
+        _Response(404, b'{"errorMessages":["not found"]}', {}),
+        _Response(204, b"", {}),
+    ]
     calls: list[dict] = []
     client = _mock_client(queue, calls)
 
@@ -140,16 +144,28 @@ def test_push_happy_path_calls_set_project_property():
     }
     _bc.push(client, "AGENT", config)
 
-    assert len(calls) == 1
-    c = calls[0]
+    assert len(calls) == 2
+    assert calls[0]["method"] == "GET"
+    c = calls[1]
     assert c["method"] == "PUT"
     assert "/rest/api/3/project/AGENT/properties/kanban-config" in c["url"]
     body = json.loads((c["body"] or b"").decode())
+    # Caller's config is preserved verbatim, plus push() attaches _meta.
+    meta = body.pop("_meta")
     assert body == config
+    assert meta["version"] == 1
+    assert meta["hash"].startswith("sha256:") and len(meta["hash"]) == 7 + 64
+    assert meta["pushedAt"]
+    # No pushedByAccountId when not provided.
+    assert "pushedByAccountId" not in meta
 
 
 def test_push_403_raises_permission_denied_with_admin_hint():
-    queue = [_Response(403, b'{"errorMessages":["nope"]}', {})]
+    # GET (read remote meta) -> 404, then PUT -> 403.
+    queue = [
+        _Response(404, b'{"errorMessages":["not found"]}', {}),
+        _Response(403, b'{"errorMessages":["nope"]}', {}),
+    ]
     calls: list[dict] = []
     client = _mock_client(queue, calls)
 
@@ -285,18 +301,27 @@ def test_cmd_push_strips_per_machine_fields():
         td = pathlib.Path(raw)
         kp = _seed_jira_kanban(td, with_ap_registered=True,
                                with_agent_account=True)
-        queue = [_Response(204, b"", {})]
+        # push() does a GET first to read remote _meta (404 ⇒ first
+        # push, no fence), then PUTs the payload.
+        queue = [
+            _Response(404, b'{"errorMessages":["not found"]}', {}),
+            _Response(204, b"", {}),
+        ]
         calls: list[dict] = []
         client = _mock_client(queue, calls)
         orig = _patch_client_from_env(client)
         try:
-            class A: kanban_path = str(kp)
+            class A:
+                kanban_path = str(kp)
+                if_match = None
+                force = False
             rc, out, err = _capture(_jira_setup.cmd_push_board_config, A())
         finally:
             _restore_client_from_env(orig)
 
         assert rc == 0, (out, err)
-        body = json.loads((calls[0]["body"] or b"").decode())
+        put_call = next(c for c in calls if c["method"] == "PUT")
+        body = json.loads((put_call["body"] or b"").decode())
         # Per-machine fields stripped
         assert "agentAccountId" not in body
         assert "registered" not in (body.get("ap") or {})
@@ -304,6 +329,10 @@ def test_cmd_push_strips_per_machine_fields():
         assert body["projectKey"] == "AGENT"
         assert body["transitions"]
         assert body["ap"]["fieldId"] == "customfield_10042"
+        # _meta block attached
+        assert body["_meta"]["version"] == 1
+        # pushedByAccountId carries the seeded agentAccountId (5e-bot).
+        assert body["_meta"]["pushedByAccountId"] == "5e-bot"
 
 
 # --- (i) pull command preserves per-machine fields ----------------------
