@@ -1,6 +1,6 @@
 {
   "name": "kanban",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "description": "Kanban-driven workflow for Claude Code. Local kanban.json or Jira Cloud as the storage backend.",
   "author": { "name": "kirin" },
   "homepage": "https://github.com/kirin/claude-workbench",

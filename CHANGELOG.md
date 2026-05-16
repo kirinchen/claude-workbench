@@ -15,6 +15,51 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+## 2026-05-16 (kanban markdown → ADF — bug after #57)
+
+### Fixed
+- **kanban 0.3.30** — agent-emitted markdown now renders correctly in
+  Jira. Previously, `text_to_adf` wrapped any body in a single flat
+  paragraph, so a comment or description containing `## Heading`,
+  `- bullets`, or ``` ```code``` ``` showed up in the Jira UI with
+  the literal markdown source instead of styled blocks.
+
+  New `lib/markdown_adf.py` parses a markdown subset into proper ADF
+  nodes:
+  - Headings `#`..`######` (h1–h6); requires a space after the hashes
+    so `#123` stays a plain issue ref rather than an h1.
+  - Bold (`**...**` / `__...__`), italic (`*...*` / `_..._`), inline
+    code (`` `...` ``), explicit links `[text](url)`.
+  - Bare URLs still auto-linkify (pre-fix behavior preserved).
+  - Fenced code blocks (triple-backtick), with optional language tag
+    → `codeBlock` with `attrs.language`.
+  - Bullet lists (`-`/`*`/`+`) and ordered lists (`N.`) →
+    `bulletList`/`orderedList` of `listItem`s.
+  - Blockquotes (`>`) wrap inner paragraph(s).
+
+  Call-site impact:
+  - `text_to_adf()` now routes through `markdown_to_adf()`. All
+    existing callers (`drivers/jira.py` create / update description,
+    add comment) benefit automatically. Plain-text inputs round-trip
+    to the same single-paragraph + URL-auto-link shape as before, so
+    non-markdown payloads see zero regression.
+  - `text_to_adf_with_mention()` body now markdown-parses too.
+    Single-paragraph bodies still inline next to the @mention chip
+    (preserves the chat-bubble look); multi-block bodies put the
+    mention on its own paragraph and emit body blocks as siblings so
+    headings/lists/code-fences render correctly.
+  - The SPEC §9 prefix (#27) intentionally stays literal — it's a
+    fixed-shape label rendered bold via an ADF `strong` mark, not
+    user-supplied markdown.
+
+  Out of scope (would need a real CommonMark parser): tables,
+  setext-style headings, reference links, nested lists, escape
+  sequences, HTML passthrough.
+
+  Tests: `scripts/test_phase35.py` adds 22 cases covering every
+  supported markdown construct, plain-text round-trip equivalence,
+  mention single-line vs multi-block routing, and prefix-stays-literal.
+
 ## 2026-05-16 (kanban versioned board config — #57)
 
 ### Added
