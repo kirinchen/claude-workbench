@@ -34,22 +34,37 @@ admin role on this project — Jira UI: Project Settings → Permissions
   `/kanban:initjira` first.
 - Confirm `backend.driver == "jira"` and `backend.jira.transitions`
   is non-empty. The push payload comes from those local fields.
-- Warn the user this overwrites whatever's currently on the Jira
-  project property (last-writer-wins; Atlassian doesn't do ETag
-  versioning on properties). For routine pushes from a single source
-  repo this is the expected flow; for "sync from teammate" cases
-  consider `/kanban:pull-board-config` instead.
+- Each push attaches a `_meta` block (version, content hash, pushedAt,
+  pushedByAccountId — #57) so future pushes can detect "remote moved
+  since I pulled" without Atlassian-side ETag support. By default the
+  push is **fenced**: it refuses when remote's content hash doesn't
+  match the hash this machine last pulled or pushed. Pass `--force`
+  to bypass.
 
 ## 1. Push
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py push-board-config \
-  --kanban-path '<kanban.json path>'
+  --kanban-path '<kanban.json path>' \
+  [--force]
 ```
+
+Behavior:
+- The helper auto-fills `--if-match` from the local cached
+  `_meta.hash` (set by the last successful pull or push). First push
+  on a project with no remote `_meta` yet has no fence — it just
+  initializes `version: 1`.
+- If a teammate pushed since your last pull, the push is refused and
+  the response carries the remote's current `_meta` so you can see
+  who pushed, when, and at what hash. Resolve by running
+  `/kanban:pull-board-config`, reconciling any local edits, then
+  pushing again.
+- `--force` skips the fence — use only when intentionally clobbering.
 
 | Response | Action |
 |---|---|
-| `{ok: true, projectKey, propertyKey, fieldsPushed}` | print `✓ Pushed <fieldsPushed.length> fields to Jira project <projectKey> properties.<propertyKey>`; mention all teammates' next `/kanban:sync` will pick this up |
+| `{ok: true, projectKey, propertyKey, fieldsPushed, meta}` | print `✓ Pushed <fieldsPushed.length> fields to Jira project <projectKey> properties.<propertyKey> (v<meta.version>)`; mention all teammates' next `/kanban:sync` will pick this up |
+| `{ok: false, error, ifMatchMismatch: true, remoteMeta, expectedHash}` | surface verbatim; recommend `/kanban:pull-board-config` to fetch the new version, reconcile any local edits, then re-push |
 | `{ok: false, error}` mentioning `permission denied` | surface verbatim; explain admin role is required |
 | `{ok: false, error}` mentioning network / 4xx / 5xx | surface verbatim |
 
@@ -59,9 +74,11 @@ The agent strips per-machine fields before pushing:
 - `agentAccountId` — per-Atlassian-account, not per-board
 - `ap.registered` — local hint for the AP roster; Jira itself is the
   source of truth (read live via `/kanban:live-list-aps`)
+- `_meta` from local — push always regenerates `_meta` from the
+  freshly-fetched remote version + the new content hash.
 
 Pushed fields: `boardUrl`, `boardId`, `projectKey`, `transitions`,
-`ap.fieldId`, `ap.fieldName`, `conventions`.
+`ap.fieldId`, `ap.fieldName`, `conventions`, plus a fresh `_meta`.
 
 ## Absolute rules
 
@@ -70,8 +87,11 @@ Pushed fields: `boardUrl`, `boardId`, `projectKey`, `transitions`,
   clobbering theirs.
 - Never mock up the config — only push the actual `backend.jira`
   block from this repo's `kanban.json`.
-- Never write to `kanban.json` from this command (push is a one-way
-  upload to Jira; doesn't mutate the local cache except marking it
-  freshly synced).
+- The command writes the just-pushed `_meta` back into local
+  `kanban.json#backend.jira._meta` so the next push on this machine
+  can auto-fill `--if-match` without an intervening pull. Nothing
+  else in the local cache is mutated.
 - If push fails on permission, do NOT retry with a different account
   or workaround — the right move is to ask a project admin.
+- If push fails with `ifMatchMismatch: true`, do NOT auto-retry with
+  `--force` — that's the clobber path. Pull first, reconcile, push.

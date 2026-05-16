@@ -50,6 +50,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py pull-board-config \
 - `boardUrl`, `boardId`, `projectKey`
 - `ap.fieldId`, `ap.fieldName`
 - `conventions`
+- `_meta` (version / hash / pushedAt / pushedByAccountId — #57). This
+  becomes the auto-`--if-match` value for the next
+  `/kanban:push-board-config`, so the team-shared "I expect remote to
+  still be at this hash" fence works without manual book-keeping.
 
 **Preserved** (per-machine state):
 - `agentAccountId` — your local Atlassian account binding

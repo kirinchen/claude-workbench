@@ -40,9 +40,35 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jira_setup.py read-board-config \
 
 | Response | Action |
 |---|---|
-| `{ok: true, projectKey, propertyKey, config}` | pretty-print the `config` block (transitions, ap, conventions, etc.). Optionally diff against the local `backend.jira` from `kanban.json` and call out any drifted fields. |
+| `{ok: true, projectKey, propertyKey, config, diff}` | pretty-print the `config` block (transitions, ap, conventions, etc.). When `diff` is present (set whenever `--kanban-path` was provided), also render the sync state — see the table below. |
 | `{ok: false, notFound: true, error}` | print "no board config published on Jira project <projectKey> yet"; if the user has the canonical config locally, suggest `/kanban:push-board-config` |
 | `{ok: false, error}` mentioning permission / network | surface verbatim |
+
+## 2. Reading the diff (#57)
+
+When `--kanban-path` is given, the response carries a `diff` block:
+
+```
+diff: {
+  state: "in-sync" | "remote-ahead" | "local-edits" | "diverged" | "unknown",
+  localMeta:   { version, hash, pushedAt, pushedByAccountId } | null,
+  remoteMeta:  { version, hash, pushedAt, pushedByAccountId } | null,
+  localHash:   "sha256:..."   // current local content
+  remoteHash:  "sha256:..."   // current remote content
+  cachedHash:  "sha256:..."   // hash this machine last pulled/pushed
+  cachedVersion, remoteVersion
+}
+```
+
+Render guidance:
+
+| State | What it means | What to tell the user |
+|---|---|---|
+| `in-sync` | Local content unchanged since pull; remote unchanged too. | `✓ in sync (v<remoteVersion>)` |
+| `remote-ahead` | Local untouched; teammate pushed since your pull. | `⚠ remote ahead (you are at v<cachedVersion>, remote v<remoteVersion>). Run /kanban:pull-board-config to update.` |
+| `local-edits` | You edited local since the last pull; remote hasn't moved. | `⚠ uncommitted local changes. Push them with /kanban:push-board-config (or revert by re-pulling).` |
+| `diverged` | Both moved — manual reconciliation needed. | `‼ diverged: remote moved AND you have local edits. Pull, reconcile, push.` |
+| `unknown` | Local has no cached `_meta` yet (never pulled/pushed). | `(no local _meta — first push will initialize v1)` |
 
 ## Absolute rules
 

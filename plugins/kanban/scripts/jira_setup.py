@@ -948,9 +948,14 @@ def cmd_push_board_config(args: argparse.Namespace) -> int:
     `kanban-jira-code` flow that lived in 0.3.0–0.3.26).
 
     What gets pushed: transitions DSL, ap.fieldId/fieldName, boardId,
-    boardUrl, projectKey, conventions. Per-machine fields
-    (`agentAccountId`, `ap.registered`) are stripped so two machines
-    pushing don't fight over them.
+    boardUrl, projectKey, conventions, plus a `_meta` block managed by
+    push/pull (version, content hash, pushedAt, pushedByAccountId — see
+    #57). Per-machine fields (`agentAccountId`, `ap.registered`) are
+    stripped so two machines pushing don't fight over them.
+
+    Optimistic concurrency (#57): if `--if-match <hash>` is given (or
+    the local cache carries `backend.jira._meta.hash`), the push refuses
+    when remote moved since that hash. `--force` clobbers anyway.
 
     Requires Jira project-admin role on the agent's account; non-admin
     pushes return a clear permission-error message.
@@ -976,37 +981,67 @@ def cmd_push_board_config(args: argparse.Namespace) -> int:
     # Strip per-machine / per-account fields. The shared canonical
     # config is everything that should be identical across teammates;
     # `agentAccountId` and `ap.registered` are local state.
-    payload = {
-        "boardUrl": cfg.get("boardUrl"),
-        "boardId": cfg.get("boardId"),
-        "projectKey": project_key,
-        "transitions": cfg.get("transitions"),
-    }
-    ap = cfg.get("ap") or {}
-    if ap.get("fieldId"):
-        payload["ap"] = {
-            "fieldId": ap["fieldId"],
-            "fieldName": ap.get("fieldName", ""),
-        }
-    payload["conventions"] = _cv.normalize(cfg.get("conventions"))
-    # Drop nulls so the on-Jira blob stays minimal.
-    payload = {k: v for k, v in payload.items() if v is not None}
+    payload = _canonical_share(cfg)
 
+    # Decide which hash, if any, to pass to push as --if-match. The
+    # rare slash-command override is `--force`; otherwise the auto-fill
+    # uses the cached `_meta.hash` from the last pull (or last push).
+    # No cached hash + no explicit --if-match means first push — push
+    # proceeds without a fence (acceptable: no prior version to clobber).
+    force = bool(getattr(args, "force", False))
+    if_match = getattr(args, "if_match", None)
+    if if_match is None and not force:
+        existing_meta = cfg.get(_bc.META_KEY)
+        if isinstance(existing_meta, dict):
+            cached = existing_meta.get("hash")
+            if isinstance(cached, str) and cached:
+                if_match = cached
+
+    # Resolve the pushing admin's accountId for audit purposes. Prefer
+    # the locally-cached value (cheaper, populated by /kanban:initjira);
+    # fall back to a live /myself lookup so the trail is never empty.
+    account_id = cfg.get("agentAccountId") or None
     client = _client_from_env()
-    try:
-        _bc.push(client, project_key, payload)
-    except _bc.BoardConfigError as e:
-        return _fail(str(e))
+    if not account_id:
+        try:
+            me = client.get_myself()
+            account_id = me.get("accountId") or None
+        except Exception:  # noqa: BLE001
+            # /myself shouldn't be the reason a push fails; pushedBy
+            # gets omitted in this edge case and the rest of `_meta`
+            # still goes through.
+            account_id = None
 
-    # Mark this machine's cache as freshly synced too — the local
-    # kanban.json content matches what we just pushed, so no immediate
-    # passive sync is needed.
+    try:
+        new_meta = _bc.push(
+            client, project_key, payload,
+            account_id=account_id,
+            if_match=if_match,
+            force=force,
+        )
+    except _bc.BoardConfigError as e:
+        extras: dict[str, Any] = {}
+        if getattr(e, "if_match_mismatch", False):
+            extras["ifMatchMismatch"] = True
+            extras["remoteMeta"] = getattr(e, "remote_meta", {}) or {}
+            extras["expectedHash"] = if_match
+        return _fail(str(e), **extras)
+
+    # Mirror the just-pushed `_meta` back into the local cache so the
+    # *next* push on this machine can auto-fill --if-match without
+    # needing an intervening pull. Same reason `mark_synced` is called:
+    # we're treating "successful push" as "this machine is in sync".
+    new_cfg = dict(cfg)
+    new_cfg[_bc.META_KEY] = new_meta
+    backend["jira"] = new_cfg
+    kanban_io.save(p, data)
     _bc.mark_synced(p.parent)
     _emit({
         "ok": True,
         "projectKey": project_key,
         "propertyKey": _bc.PROPERTY_KEY,
         "fieldsPushed": sorted(payload.keys()),
+        "meta": new_meta,
     })
     return 0
 
@@ -1163,7 +1198,13 @@ def cmd_read_board_config_cache(args: argparse.Namespace) -> int:
     config lives + how stale this machine's cache is.
 
     Output: {ok, projectKey, propertyKey, cachedAt, cacheAgeHours,
-             stale}.
+             stale, meta, localHash, localMatchesMeta}.
+
+    `meta` is the cached `_meta` block from the last pull/push (#57);
+    `localHash` is the canonical hash of the current
+    `backend.jira` minus _meta — when it differs from `meta.hash`, the
+    local config has been edited since the cached pull/push and the
+    next push will create a new version.
     """
     from lib import board_config as _bc
 
@@ -1180,6 +1221,13 @@ def cmd_read_board_config_cache(args: argparse.Namespace) -> int:
     age = _bc.cache_age_hours(p.parent)
     cached_at = _bc._read_cached_at(p.parent)  # internal; safe in same package
 
+    meta = cfg.get(_bc.META_KEY) if isinstance(cfg.get(_bc.META_KEY), dict) else None
+    local_hash = _bc.canonical_hash(_canonical_share(cfg))
+    local_matches_meta = (
+        bool(meta) and isinstance(meta.get("hash"), str)
+        and meta.get("hash") == local_hash
+    )
+
     _emit({
         "ok": True,
         "projectKey": project_key,
@@ -1188,8 +1236,39 @@ def cmd_read_board_config_cache(args: argparse.Namespace) -> int:
         "cacheAgeHours": (round(age, 2) if age is not None else None),
         "stale": _bc.is_cache_stale(p.parent),
         "ttlHours": _bc.CACHE_TTL_HOURS,
+        "meta": meta,
+        "localHash": local_hash,
+        "localMatchesMeta": local_matches_meta,
     })
     return 0
+
+
+def _canonical_share(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Build the shared-canonical view of a `backend.jira` block — the
+    same shape `cmd_push_board_config` would push. Per-machine fields
+    (`agentAccountId`, `ap.registered`, `_meta`) are stripped so the
+    hash compares apples-to-apples against the remote `_meta.hash`.
+
+    Kept separate from `cmd_push_board_config` so callers that only
+    want to *inspect* the canonical content (e.g. cache/diff renderers)
+    don't have to duplicate the strip rules.
+    """
+    from lib import board_config as _bc
+
+    payload: dict[str, Any] = {
+        "boardUrl": cfg.get("boardUrl"),
+        "boardId": cfg.get("boardId"),
+        "projectKey": cfg.get("projectKey"),
+        "transitions": cfg.get("transitions"),
+    }
+    ap = cfg.get("ap") or {}
+    if ap.get("fieldId"):
+        payload["ap"] = {
+            "fieldId": ap["fieldId"],
+            "fieldName": ap.get("fieldName", ""),
+        }
+    payload["conventions"] = _cv.normalize(cfg.get("conventions"))
+    return {k: v for k, v in payload.items() if v is not None}
 
 
 def cmd_read_board_config(args: argparse.Namespace) -> int:
@@ -1197,24 +1276,35 @@ def cmd_read_board_config(args: argparse.Namespace) -> int:
     touching local state. Used by /kanban:show-board-config for
     discovery — humans inspect what's currently published on Jira
     without disturbing the local cache.
+
+    When `--kanban-path` is given alongside, the emitted output also
+    carries a `diff` block (#57) the slash command renders into one of
+    four states (in-sync / remote-ahead / local-edits / diverged).
     """
     from lib import board_config as _bc
 
     project_key = args.project_key
+    local_cfg: dict[str, Any] | None = None
     if not project_key:
         # Fall through to reading from kanban.json for convenience.
         if args.kanban_path:
             p = Path(args.kanban_path)
             if p.exists():
                 data = kanban_io.load(p)
-                project_key = (
-                    (data.get("backend") or {}).get("jira") or {}
-                ).get("projectKey")
+                local_cfg = (data.get("backend") or {}).get("jira") or {}
+                project_key = local_cfg.get("projectKey")
         if not project_key:
             return _fail(
                 "--project-key required (or pass --kanban-path to read it "
                 "from backend.jira.projectKey)"
             )
+    elif args.kanban_path:
+        # `--project-key` and `--kanban-path` both given — still load the
+        # local block so we can compute the diff against remote.
+        p = Path(args.kanban_path)
+        if p.exists():
+            data = kanban_io.load(p)
+            local_cfg = (data.get("backend") or {}).get("jira") or {}
 
     client = _client_from_env()
     try:
@@ -1222,13 +1312,64 @@ def cmd_read_board_config(args: argparse.Namespace) -> int:
     except _bc.BoardConfigError as e:
         return _fail(str(e), notFound=getattr(e, "not_found", False))
 
-    _emit({
+    payload: dict[str, Any] = {
         "ok": True,
         "projectKey": project_key,
         "propertyKey": _bc.PROPERTY_KEY,
         "config": config,
-    })
+    }
+    if local_cfg is not None:
+        payload["diff"] = _diff_meta(local_cfg, config)
+    _emit(payload)
     return 0
+
+
+def _diff_meta(local_cfg: dict[str, Any], remote_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Compare the local `backend.jira` block against a freshly-pulled
+    remote config. Returns the structured snapshot the show-board-config
+    slash command renders.
+
+    The four states from the #57 design table:
+      in-sync             — local content unchanged since pull, remote unchanged.
+      remote-ahead        — local content unchanged, remote has a newer version.
+      local-edits         — local content changed, remote unchanged since pull.
+      diverged            — both moved; manual reconciliation needed.
+      unknown             — local has no cached _meta yet (never pulled/pushed).
+    """
+    from lib import board_config as _bc
+
+    local_meta = local_cfg.get(_bc.META_KEY) if isinstance(local_cfg.get(_bc.META_KEY), dict) else None
+    remote_meta = remote_cfg.get(_bc.META_KEY) if isinstance(remote_cfg.get(_bc.META_KEY), dict) else None
+    local_hash = _bc.canonical_hash(_canonical_share(local_cfg))
+    remote_hash = _bc.canonical_hash(remote_cfg)
+    cached_hash = (local_meta or {}).get("hash")
+    cached_version = (local_meta or {}).get("version")
+    remote_version = (remote_meta or {}).get("version")
+
+    if not local_meta or not isinstance(cached_hash, str):
+        state = "unknown"
+    else:
+        local_clean = (local_hash == cached_hash)
+        remote_moved = (remote_hash != cached_hash)
+        if local_clean and not remote_moved:
+            state = "in-sync"
+        elif local_clean and remote_moved:
+            state = "remote-ahead"
+        elif (not local_clean) and not remote_moved:
+            state = "local-edits"
+        else:
+            state = "diverged"
+
+    return {
+        "state": state,
+        "localMeta": local_meta,
+        "remoteMeta": remote_meta,
+        "localHash": local_hash,
+        "remoteHash": remote_hash,
+        "cachedHash": cached_hash,
+        "cachedVersion": cached_version,
+        "remoteVersion": remote_version,
+    }
 
 
 def cmd_set_conventions(args: argparse.Namespace) -> int:
@@ -3613,6 +3754,19 @@ def build_parser() -> argparse.ArgumentParser:
              "(kanban-config); requires project-admin on Jira",
     )
     s.add_argument("--kanban-path", required=True)
+    s.add_argument(
+        "--if-match",
+        help="Refuse the push when the remote `_meta.hash` doesn't "
+             "equal this value. Omitted ⇒ auto-fill from the local "
+             "cached _meta.hash (the last hash this machine pulled or "
+             "pushed); no cache ⇒ first push, no fence.",
+    )
+    s.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass the --if-match fence. Use when you intentionally "
+             "want to clobber whatever's currently on Jira.",
+    )
     s.set_defaults(func=cmd_push_board_config)
 
     s = sub.add_parser(
