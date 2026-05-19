@@ -33,6 +33,8 @@ REQUIRED_BY_TYPE = {
     "adr":    {"id", "title", "status", "date"},
 }
 
+FEAT_MAP_REL = "doc/feat_map.md"
+
 
 def _read_event() -> dict:
     try:
@@ -58,14 +60,18 @@ def _edited_path(event: dict) -> str | None:
 
 
 def _classify(path_rel: str, cfg) -> str | None:
-    """Return document type (epic|sprint|issue|adr) or None if not a mentor-
-    governed path."""
+    """Return document type (epic|sprint|issue|adr|feat_map) or None if not a
+    mentor-governed path."""
     pr = path_rel.replace("\\", "/")
     epic_dir = cfg.paths.epic.rstrip("/")
     sprint_dir = cfg.paths.sprint.rstrip("/")
     issue_dir = cfg.paths.issue.rstrip("/")
     wiki_dir = cfg.paths.wiki.rstrip("/") + "/architecture-decisions"
 
+    # feat_map.md lives at a fixed path per spec (kirinchen/claude-workbench#60
+    # §2) — only meaningful in development mode.
+    if pr == FEAT_MAP_REL and cfg.mode == "development":
+        return "feat_map"
     if pr.startswith(epic_dir + "/") and pr.endswith(".md") and "README" not in pr:
         return "epic"
     if pr.startswith(sprint_dir + "/") and pr.endswith(".md") and "README" not in pr:
@@ -109,8 +115,36 @@ def main() -> int:
     if doc_type is None:
         return 0
 
-    required = REQUIRED_BY_TYPE.get(doc_type, set())
     proposed = _read_proposed_body(event)
+
+    # feat_map.md has its own grammar (issue #60) — delegate to feat_map.py.
+    if doc_type == "feat_map":
+        if not proposed:
+            # MultiEdit / unknown shape — skip; Stop-hook review() will catch it.
+            return 0
+        from feat_map import validate as fm_validate  # local import
+        fm_issues = fm_validate(proposed)
+        if not fm_issues:
+            return 0
+        bullets = [f"  - {i.code} (line {i.line}): {i.detail}" for i in fm_issues[:10]]
+        more = f"\n  …{len(fm_issues) - 10} more" if len(fm_issues) > 10 else ""
+        hint = (
+            f"mentor: `{edited}` would violate the feat_map.md spec "
+            f"(kirinchen/claude-workbench#60):\n"
+            + "\n".join(bullets)
+            + more
+            + "\nSee `${CLAUDE_PLUGIN_ROOT}/frameworks/development/templates/feat_map.md` "
+            "for the canonical shape, or run `/mentor:renewtree` to regenerate."
+        )
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "additionalContext": hint,
+            }
+        }))
+        return 0
+
+    required = REQUIRED_BY_TYPE.get(doc_type, set())
     fm = parse_frontmatter(proposed) if proposed else None
 
     problems: list[str] = []

@@ -496,6 +496,32 @@ def review(proj: Path, cfg: MentorConfig) -> list[Violation]:
                 out.append(Violation("orphan_issue",
                                      str(p.relative_to(proj)),
                                      f"references non-existent epic {ep}"))
+
+    # feat_map.md — required in development mode (kirinchen/claude-workbench#60).
+    fm_path = proj / "doc/feat_map.md"
+    if not fm_path.is_file():
+        out.append(Violation(
+            "missing_doc", "doc/feat_map.md",
+            "feat_map.md is required in development mode "
+            "(spec: kirinchen/claude-workbench#60). Run `/mentor:upgrade --apply` "
+            "to scaffold it, or `/mentor:renewtree` to generate it from the codebase."
+        ))
+    else:
+        try:
+            text = fm_path.read_text(encoding="utf-8")
+        except Exception as e:
+            out.append(Violation("feat_map", "doc/feat_map.md", f"unreadable: {e}"))
+        else:
+            try:
+                from feat_map import validate as fm_validate  # local import; avoids hard dep at import time
+                for issue in fm_validate(text):
+                    out.append(Violation(
+                        "feat_map", "doc/feat_map.md",
+                        f"{issue.code} (line {issue.line}): {issue.detail}"
+                    ))
+            except Exception as e:
+                out.append(Violation("feat_map", "doc/feat_map.md",
+                                     f"validator crashed: {e}"))
     return out
 
 

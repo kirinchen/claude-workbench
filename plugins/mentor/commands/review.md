@@ -20,14 +20,16 @@ workbench-mentor review --format text
   - `no_frontmatter` — doc has no YAML frontmatter block
   - `drift` — frontmatter present but missing required fields
   - `orphan_issue` — issue.epic points to non-existent epic
+  - `feat_map` — `doc/feat_map.md` violates the FM-02..FM-12 grammar (spec [#60](https://github.com/kirinchen/claude-workbench/issues/60))
 - Other non-zero → mentor not configured; tell the user to run `/mentor:init`.
 
 ## 3. Do NOT auto-fix
 
 Review is diagnostic only. To fix:
-- `missing_doc` for a framework file → first suggest `/mentor:upgrade` to the user. It auto-fills scaffold files (SPEC, Epic/Sprint/Issue READMEs, templates) from the bundled framework — never overwrites. For an *individual* doc instance (a new Epic, Sprint, Issue, ADR), use `/mentor:new <type>` instead.
+- `missing_doc` for a framework file → first suggest `/mentor:upgrade` to the user. It auto-fills scaffold files (SPEC, Epic/Sprint/Issue READMEs, templates, `feat_map.md`) from the bundled framework — never overwrites. For an *individual* doc instance (a new Epic, Sprint, Issue, ADR), use `/mentor:new <type>` instead.
 - `no_frontmatter` / `drift` → the user edits the file, Claude can help but only with their go-ahead
 - `orphan_issue` → fix the `epic:` frontmatter field, or create the missing Epic first
+- `feat_map` → suggest `/mentor:renewtree` to regenerate `doc/feat_map.md` as a diff (it preserves existing leaf statuses), or hand-edit per the violation messages. Never silently overwrite this file.
 
 When the CLI prints a `Tip:` line about `workbench-mentor upgrade`, surface it verbatim — the user sees the same hint in either entry point.
 

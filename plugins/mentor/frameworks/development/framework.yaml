@@ -29,6 +29,9 @@ scaffold:
   - path: doc/Issue/issue-template.md
     from_template: Issue/issue-template.md
     required: true
+  - path: doc/feat_map.md
+    from_template: feat_map.md
+    required: true                    # feature ledger; see kirinchen/claude-workbench#60
   - path: doc/task.md
     from_template: ../../basic/templates/task.md
     required: false
