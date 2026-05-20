@@ -1,6 +1,9 @@
 # Claude Code local (session-specific permissions, not for sharing)
 .claude/settings.local.json
 
+# chat plugin — per-session runtime state (threads themselves live in doc/chat/)
+.claude/chat/
+
 # Runtime logs
 *.log
 logs/

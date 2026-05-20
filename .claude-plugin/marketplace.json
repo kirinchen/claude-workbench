@@ -37,6 +37,14 @@
       "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]
     },
     {
+      "name": "chat",
+      "source": "./plugins/chat",
+      "version": "0.1.0",
+      "description": "Lightweight logged chat threads — record a conversation to doc/chat/, summarise to doc/note/, resume any time",
+      "category": "productivity",
+      "keywords": ["chat", "notes", "logging", "conversation"]
+    },
+    {
       "name": "workbench",
       "source": "./plugins/workbench",
       "version": "0.0.3",

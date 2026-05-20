@@ -18,6 +18,7 @@
 | [`notify`](./plugins/notify) | core | 當 Claude 需要你回應時推播通知（Pushover） | **v0.1.1 可用** |
 | [`memory`](./plugins/memory) | core | 跨 session 的 RAG 記憶（SQLite + embeddings，純本機） | v0.0.1 stub |
 | [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.2 可用** |
+| [`chat`](./plugins/chat) | 獨立 | 記錄式對話串 — 把對話寫進 `doc/chat/`、總結到 `doc/note/`、隨時續聊 | **v0.1.0 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -158,12 +159,13 @@ Claude 對 `kanban.json` **會做的**：
 claude-workbench/
 ├── SPEC.md                             # 設計文件（workbench 全家族）
 ├── current_state.md                    # 實作快照
-├── .claude-plugin/marketplace.json     # 6 個 plugin 條目
+├── .claude-plugin/marketplace.json     # 7 個 plugin 條目
 ├── plugins/
 │   ├── kanban/                         # v0.1.0（可用）
 │   ├── notify/                         # v0.1.0（可用 — Pushover）
 │   ├── memory/                         # v0.0.1（stub）
 │   ├── mentor/                         # v0.1.0（可用 — dev 分類，取代 docsync）
+│   ├── chat/                           # v0.1.0（可用 — 記錄式對話串）
 │   ├── workbench/                      # v0.0.1（meta stub）
 │   └── workbench-dev/                  # v0.0.1（meta stub）
 └── schema/
