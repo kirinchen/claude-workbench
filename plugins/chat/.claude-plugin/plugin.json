@@ -1,0 +1,8 @@
+{
+  "name": "chat",
+  "version": "0.1.0",
+  "description": "Lightweight logged chat threads for Claude Code — record a conversation to doc/chat/, summarise to doc/note/, resume any time.",
+  "author": { "name": "kirin" },
+  "homepage": "https://github.com/kirin/claude-workbench",
+  "license": "MIT"
+}

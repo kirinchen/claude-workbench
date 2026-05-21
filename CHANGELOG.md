@@ -15,6 +15,15 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+### Added
+- **chat 0.1.0** — new lightweight plugin for logged conversation threads.
+  `/chat:new` starts recording the session to `doc/chat/{name}.md` via a
+  `Stop` hook; `/chat:exit` stops; `/chat:note` summarises a thread into
+  `doc/note/`; `/chat:resume` re-opens a saved thread (by name, index, or
+  keyword). Chat mode is session-scoped — the `SessionEnd` hook clears it, so
+  it never leaks into the next session. Logging only; agent behaviour is
+  unchanged.
+
 ## 2026-05-16 (kanban markdown → ADF — bug after #57)
 
 ### Fixed
