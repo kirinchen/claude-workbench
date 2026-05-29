@@ -15,6 +15,17 @@ For earlier history, see the git log.
 
 ## Unreleased
 
+### Fixed
+- **kanban 0.3.31** — `JiraDriver.list_tasks(column=…)` now honours
+  `transitions[col].addLabels` when building JQL, so BLOCKED and DOING
+  no longer return the same result set when both map to the same Jira
+  status (the canonical "BLOCKED = In Progress + label `kanban:blocked`"
+  setup). `/kanban:sync` no longer duplicates In-Progress cards under
+  BLOCKED. The new `_column_jql_clauses` helper mirrors `disambiguate`'s
+  semantics: it AND-includes each `addLabels` label, AND-excludes each
+  `removeLabels` label, and AND-excludes any same-status sibling whose
+  `addLabels` is a strict superset of the queried column's. Closes #63.
+
 ### Added
 - **chat 0.1.0** — new lightweight plugin for logged conversation threads.
   `/chat:new` starts recording the session to `doc/chat/{name}.md` via a
