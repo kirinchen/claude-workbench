@@ -119,6 +119,61 @@ class JiraDriver:
         spec = self._canonical_spec(column)
         return spec.get("status") if spec else None
 
+    def _column_jql_clauses(self, column: str) -> list[str]:
+        """Return JQL conjunct clauses that match exactly the issues
+        `disambiguate()` would classify as `column`.
+
+        Pure `status =` is not enough when several columns share a Jira
+        status and differ only by `addLabels` — the canonical
+        BLOCKED/DOING pattern, where both map to "In Progress" and
+        BLOCKED is tagged with `kanban:blocked`. Without label-aware
+        clauses, `list_tasks(column=BLOCKED)` returns every "In Progress"
+        card and `/kanban:sync` shows DOING cards duplicated under
+        BLOCKED (#63).
+
+        This helper:
+          * AND-includes `labels = "X"` for each of `column`'s `addLabels`,
+          * AND-excludes `labels = "X"` for each of `column`'s `removeLabels`,
+          * AND-excludes any same-status sibling whose `addLabels` is a
+            strict superset of `column`'s — those cards belong to the
+            more-specific sibling per `disambiguate`.
+
+        Returns an empty list when `column` has no transitions-map spec,
+        letting the caller fall through to legacy `label_fallback`.
+        """
+        spec = self._canonical_spec(column)
+        if not spec:
+            return []
+        status = spec.get("status")
+        add_labels = list(spec.get("addLabels") or [])
+        remove_labels = list(spec.get("removeLabels") or [])
+        clauses: list[str] = []
+        if status:
+            clauses.append(f'status = "{status}"')
+        for lbl in add_labels:
+            clauses.append(f'labels = "{lbl}"')
+        for lbl in remove_labels:
+            clauses.append(f'NOT labels = "{lbl}"')
+
+        if status:
+            my_add = set(add_labels)
+            for other, other_spec in self.transitions_map.items():
+                if other == column or not isinstance(other_spec, dict):
+                    continue
+                if other_spec.get("status") != status:
+                    continue
+                other_add = list(other_spec.get("addLabels") or [])
+                if not other_add or not (my_add < set(other_add)):
+                    continue
+                # Cards carrying ALL of the sibling's distinguishing labels
+                # belong to the sibling. Exclude them from our result.
+                terms = [f'labels = "{lbl}"' for lbl in other_add]
+                if len(terms) == 1:
+                    clauses.append(f"NOT {terms[0]}")
+                else:
+                    clauses.append("NOT (" + " AND ".join(terms) + ")")
+        return clauses
+
     def _get_status_category(self, status_name: str) -> str | None:
         """Return the Jira statusCategory key (`new`, `indeterminate`,
         `done`) for the given status display name, or None if the
@@ -290,9 +345,9 @@ class JiraDriver:
         clauses = [f'project = "{self.project_key}"']
         if filter:
             if filter.column:
-                status = self._canonical_to_status(filter.column)
-                if status:
-                    clauses.append(f'status = "{status}"')
+                col_clauses = self._column_jql_clauses(filter.column)
+                if col_clauses:
+                    clauses.extend(col_clauses)
                 elif getattr(self, "partial", False) and filter.column in getattr(self, "label_fallback", {}):
                     clauses.append(f'labels = "{self.label_fallback[filter.column]}"')
             if filter.assignee:
