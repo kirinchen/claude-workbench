@@ -77,6 +77,9 @@ class TaskInput:
     depends: list[str] = field(default_factory=list)
     assignee: MemberRef | None = None
     custom: dict[str, Any] = field(default_factory=dict)
+    # Jira issue type for the new card (e.g. "Task", "Story", "Bug").
+    # Drivers that lack an issue-type concept ignore it.
+    issue_type: str = "Task"
     # Jira-only: when set, the new issue is linked back to the parent via
     # an issue link of `link_type` (default "Relates"). Used by
     # /kanban:create-sub to spawn breakdown cards from a parent.

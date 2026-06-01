@@ -27,6 +27,16 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **kanban 0.3.32** — top-level `create` subcommand (`/kanban:create`): make
+  a single parentless card on the board, auto-tagged with this repo's AP, for
+  the common case where there is no natural parent epic to hang it under. The
+  sibling of `create-sub` minus `--parent`; reuses the same driver, credential
+  (`--from-env`), and AP-routing path. Accepts `--title`/`--summary`,
+  `--description`, `--priority`, and `--issue-type` (default `Task`, threaded
+  through a new `TaskInput.issue_type` field). The new card lands in the
+  project's default status — creation and transition stay separate. Emits
+  `{ok, key, url, title, ap, apSet}`. Previously an AP with no parent epic was
+  forced to either invent an EPIC or bypass the plugin via raw REST.
 - **chat 0.1.0** — new lightweight plugin for logged conversation threads.
   `/chat:new` starts recording the session to `doc/chat/{name}.md` via a
   `Stop` hook; `/chat:exit` stops; `/chat:note` summarises a thread into

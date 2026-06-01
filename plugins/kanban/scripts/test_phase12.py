@@ -481,6 +481,84 @@ def test_create_sub_creates_n_cards_with_links():
         assert len(stub.assigned) == 3
 
 
+def test_create_top_level_card_with_ap():
+    """cmd_create makes a single parentless card, tags it with the repo AP,
+    honours --issue-type, and emits a browse URL derived from boardUrl."""
+    with tempfile.TemporaryDirectory() as td:
+        kp = _seed_jira(td)
+
+        class StubDriver:
+            name = "jira"
+            def __init__(self): self.created = []; self.assigned = []
+            def create_task(self, task):
+                self.created.append(task)
+                from drivers.base import Task
+                return Task(id="AGENT-300", title=task.title, column="TODO",
+                            priority=task.priority or "P2",
+                            created="x", updated="y")
+            def assign(self, key, member):
+                self.assigned.append((key, member))
+                from drivers.base import Task
+                return Task(id=key, title="x", column="TODO",
+                            priority="P1", created="x", updated="y")
+
+        stub = StubDriver()
+        (kp.parent / ".claude").mkdir()
+        (kp.parent / ".claude" / "kanban-agent.json").write_text(
+            json.dumps({"ap": "agent-fin"})
+        )
+        import drivers as _drv_mod
+        orig = _drv_mod.get_driver
+        _drv_mod.get_driver = lambda data, root: stub
+        try:
+            class A:
+                kanban_path = str(kp); title = "standalone card"; summary = None
+                description = "body"; priority = "P1"; issue_type = "Story"
+            rc, out = _capture_cmd(_jira_setup.cmd_create, A())
+        finally:
+            _drv_mod.get_driver = orig
+        assert rc == 0
+        j = json.loads(out)
+        assert j["ok"] is True
+        assert j["key"] == "AGENT-300"
+        assert j["apSet"] is True and j["ap"] == "agent-fin"
+        assert j["url"] == "https://acme.atlassian.net/browse/AGENT-300"
+        # No parent ever set; issue_type flows through.
+        assert len(stub.created) == 1
+        t = stub.created[0]
+        assert t.parent_key is None
+        assert t.issue_type == "Story"
+        assert t.title == "standalone card"
+        # AP tagged exactly once.
+        assert len(stub.assigned) == 1
+
+
+def test_create_requires_title():
+    """cmd_create fails cleanly when neither --title nor --summary is given.
+
+    `_fail` raises SystemExit(non-zero) after emitting the error JSON, so we
+    capture stdout and the exit code rather than a return value.
+    """
+    from io import StringIO
+    with tempfile.TemporaryDirectory() as td:
+        kp = _seed_jira(td)
+        class A:
+            kanban_path = str(kp); title = None; summary = None
+            description = ""; priority = None; issue_type = "Task"
+        old = sys.stdout
+        sys.stdout = StringIO()
+        code = None
+        try:
+            _jira_setup.cmd_create(A())
+        except SystemExit as e:
+            code = e.code
+            out = sys.stdout.getvalue()
+        finally:
+            sys.stdout = old
+        assert code not in (0, None)
+        assert json.loads(out)["ok"] is False
+
+
 def main() -> int:
     cases = [
         ("adf_extract_mentions_unfiltered", test_adf_extract_mentions_unfiltered),
@@ -494,6 +572,8 @@ def main() -> int:
         ("mark_mentions_read_refuses_backwards", test_mark_mentions_read_refuses_backwards),
         ("post_reply_routes_with_mention", test_post_reply_routes_with_mention),
         ("create_sub_creates_n_cards_with_links", test_create_sub_creates_n_cards_with_links),
+        ("create_top_level_card_with_ap", test_create_top_level_card_with_ap),
+        ("create_requires_title", test_create_requires_title),
     ]
     for name, fn in cases:
         try:

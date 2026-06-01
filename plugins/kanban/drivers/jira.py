@@ -389,7 +389,7 @@ class JiraDriver:
             "fields": {
                 "project": {"key": self.project_key},
                 "summary": task.title,
-                "issuetype": {"name": "Task"},
+                "issuetype": {"name": task.issue_type or "Task"},
             }
         }
         if task.description:
