@@ -1778,6 +1778,61 @@ def cmd_create_sub(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_create(args: argparse.Namespace) -> int:
+    """Create a single top-level card (no parent) in the project's default
+    state, auto-tagged with this repo's AP.
+
+    The sibling of `create-sub` for the common case where an AP just needs a
+    card on the board and there is no natural parent epic to hang it under.
+    Reuses the same driver, AP-routing, and JSON-shape conventions as the
+    other subcommands. Creation and transition stay separate — the new card
+    lands in the project's default status; use /kanban:transition to move it.
+    """
+    p = Path(args.kanban_path)
+    if not p.exists():
+        return _fail(f"kanban.json not found at {p}")
+    title = args.title or args.summary
+    if not title:
+        return _fail("--title (or --summary) is required")
+    data = kanban_io.load(p)
+    from drivers import get_driver
+    from drivers.base import AgentRef, TaskInput
+
+    driver = get_driver(data, p.parent)
+    repo_ap = _read_repo_ap(p)
+
+    try:
+        t = driver.create_task(TaskInput(
+            title=title,
+            description=args.description or "",
+            priority=args.priority,
+            issue_type=args.issue_type,
+        ))
+    except Exception as e:  # noqa: BLE001
+        return _fail(f"{type(e).__name__}: {e}")
+
+    # Best-effort: tag the new card with this repo's AP so /kanban:doing
+    # picks it up. Non-fatal — the card exists regardless.
+    ap_set = False
+    if repo_ap:
+        try:
+            driver.assign(t.id, AgentRef(ap=repo_ap))
+            ap_set = True
+        except Exception:
+            pass  # surfaced via apSet=false; non-fatal
+
+    url = _issue_browse_url(data, t.id)
+    _emit({
+        "ok": True,
+        "key": t.id,
+        "url": url,
+        "title": t.title,
+        "ap": repo_ap if ap_set else None,
+        "apSet": ap_set,
+    })
+    return 0
+
+
 def cmd_register_ap(args: argparse.Namespace) -> int:
     """Add `--name` to the AP field's options + cache in kanban.json#registered."""
     p = Path(args.kanban_path)
@@ -2114,6 +2169,23 @@ def cmd_transition(args: argparse.Namespace) -> int:
         "depends": list(t.depends or []),
     })
     return 0
+
+
+def _issue_browse_url(data: dict[str, Any], key: str) -> str | None:
+    """Build the `https://<host>/browse/<KEY>` link from backend.jira.boardUrl.
+
+    The board URL (e.g. `https://acme.atlassian.net/jira/software/projects/...`)
+    carries the only host we have on hand. Returns None if it's missing or
+    unparseable — the key alone is still actionable.
+    """
+    board_url = (((data.get("backend") or {}).get("jira") or {}).get("boardUrl")) or ""
+    if not board_url:
+        return None
+    from urllib.parse import urlparse
+    parsed = urlparse(board_url)
+    if not (parsed.scheme and parsed.netloc):
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/browse/{key}"
 
 
 def _read_repo_ap(p: Path) -> str | None:
@@ -3829,6 +3901,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--display-name", default="user",
                    help="display name for the @-mention text (default: 'user')")
     s.set_defaults(func=cmd_post_reply)
+
+    s = sub.add_parser("create")
+    s.add_argument("--kanban-path", required=True)
+    s.add_argument("--title", help="card summary / title")
+    s.add_argument("--summary", help="alias for --title")
+    s.add_argument("--description", default="")
+    s.add_argument("--priority")
+    s.add_argument("--issue-type", default="Task",
+                   help="Jira issue type for the new card (default: Task)")
+    s.set_defaults(func=cmd_create)
 
     s = sub.add_parser("create-sub")
     s.add_argument("--kanban-path", required=True)
