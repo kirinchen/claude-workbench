@@ -83,21 +83,55 @@ def _classify(path_rel: str, cfg) -> str | None:
     return None
 
 
-def _read_proposed_body(event: dict) -> str | None:
-    """Best-effort extraction of the new content about to be written.
+def _resulting_content(event: dict) -> str | None:
+    """Best-effort reconstruction of the file content *after* this tool call.
 
-    Claude Code's PreToolUse event carries either:
-      - tool_input.content (for Write)
-      - tool_input.new_string (for Edit)
-    We cannot fully reconstruct MultiEdit here — for those we skip the
-    frontmatter pre-check and trust the post-write Stop-hook compliance run.
+    The frontmatter check must see the whole resulting file, not just an edit
+    fragment. Claude Code's PreToolUse event carries:
+      - tool_input.content                    (Write — the full new file)
+      - tool_input.old_string / .new_string   (Edit — a replacement fragment)
+      - tool_input.edits[]                     (MultiEdit — many fragments)
+
+    The previous implementation returned Edit's ``new_string`` verbatim. When an
+    edit touched the *body* of an Epic/Sprint/Issue/ADR (the common case), that
+    fragment contained no ``---`` block, so ``parse_frontmatter`` returned None
+    and the guard falsely warned "no YAML frontmatter block found at top of
+    file" — even though the file on disk has valid frontmatter. Untracked git
+    state and non-ASCII (e.g. Chinese) titles are irrelevant; the bug was purely
+    that we inspected the fragment instead of the file.
+
+    We now start from the current on-disk content and apply the replacement(s),
+    which fixes the false positive *and* lets us correctly flag an edit that
+    removes a required frontmatter field. Returns None when the resulting content
+    cannot be determined (unreadable file, MultiEdit on an absent file); the
+    caller then skips the pre-check and trusts the Stop-hook compliance run.
     """
     ti = event.get("tool_input") or {}
     tool = event.get("tool_name")
+
     if tool == "Write":
         return ti.get("content")
-    if tool == "Edit":
-        return ti.get("new_string")
+
+    if tool in ("Edit", "MultiEdit"):
+        abs_path = ti.get("file_path") or ti.get("path")
+        try:
+            base = Path(abs_path).read_text(encoding="utf-8") if abs_path else None
+        except Exception:
+            base = None
+        if base is None:
+            return None
+        edits = ti.get("edits") if tool == "MultiEdit" else [ti]
+        for e in edits or []:
+            old = e.get("old_string")
+            new = e.get("new_string") or ""
+            if not old:
+                continue
+            if e.get("replace_all"):
+                base = base.replace(old, new)
+            else:
+                base = base.replace(old, new, 1)
+        return base
+
     return None
 
 
@@ -115,7 +149,7 @@ def main() -> int:
     if doc_type is None:
         return 0
 
-    proposed = _read_proposed_body(event)
+    proposed = _resulting_content(event)
 
     # feat_map.md has its own grammar (issue #60) — delegate to feat_map.py.
     if doc_type == "feat_map":

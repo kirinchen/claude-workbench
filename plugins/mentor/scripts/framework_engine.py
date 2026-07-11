@@ -328,6 +328,10 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 def parse_frontmatter(text: str) -> dict | None:
     """Return the frontmatter dict or None if no frontmatter is present."""
+    # A UTF-8 BOM (U+FEFF) at byte 0 would sit before the opening `---`, so the
+    # anchored regex below would miss valid frontmatter. Strip it first.
+    if text.startswith("﻿"):
+        text = text.lstrip("﻿")
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return None
