@@ -1,0 +1,8 @@
+{
+  "name": "tmux",
+  "version": "0.1.0",
+  "description": "Drive other tmux sessions from Claude Code — list them, read what they are doing, draft a message into their input box, or send it.",
+  "author": { "name": "kirin" },
+  "homepage": "https://github.com/kirin/claude-workbench",
+  "license": "MIT"
+}

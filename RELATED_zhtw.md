@@ -89,6 +89,7 @@ claude-workbench 是我目前知道的、唯一同時做這幾件事的專案：
 - agent 需要你回應時推到你的手機（目前 Pushover，未來 ntfy / Slack）— 你可以放心讓 headless session 跑。
 - 把 framework 階層（Epic → Sprint → Issue → ADR）寫進 plugin 而不是你的 CLAUDE.md，並用 hook 強制結構合規。
 - 互相組合 — kanban × notify × mentor × memory 互相偵測對方存在、缺一可優雅降級。
+- 橫向伸進你其他正在跑的 session — `tmux` 用純 `tmux` CLI 列出、讀取、寫入旁邊的 tmux pane，讓一個 Claude Code session 能查看並對其他 session 說話。terminal multiplexer 的包裝工具（tmuxinator、smug、zellij layout）做的是把 session **開起來**；沒有一個能讓 agent 讀取 session 狀態、再把一則經過審閱的訊息放進它的輸入框。
 
 如果你發現有別的專案**作為同一介面**做這些事，開 issue，我會加進這份名單。
 
