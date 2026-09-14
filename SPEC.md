@@ -78,6 +78,7 @@ All four are independently useful. Composition is opt-in via capability detectio
 
 - **Core** (`kanban`, `notify`, `memory`) — bundled into the default `workbench` meta-plugin. Every workbench user gets these.
 - **Dev** (`docsync`, and future candidates like `review`, `lint`) — bundled into `workbench-dev`. For users whose primary use of Claude Code is software engineering.
+- **Standalone** (`chat`, `tmux`) — not bundled into any meta-plugin; installed on their own. Each solves one self-contained problem (conversation logging; driving other tmux sessions) and depends on nothing else in the family.
 
 Profiles are an organisational device, not an architectural boundary — any plugin can depend on any other via capability detection regardless of profile.
 

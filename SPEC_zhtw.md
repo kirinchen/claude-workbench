@@ -78,6 +78,7 @@ Claude Code 預設以 session 為範圍：開 session → 下指令 → 等 → 
 
 - **Core**（`kanban`、`notify`、`memory`）— 打包進預設 `workbench` meta。每個 workbench 使用者都會拿到。
 - **Dev**（`docsync` 以及未來的 `review`、`lint` 等）— 打包進 `workbench-dev`。主要把 Claude Code 用在軟體工程的人專用。
+- **獨立**（`chat`、`tmux`）— 不打包進任何 meta plugin，單獨安裝。各自解一個自給自足的問題（對話記錄；操作其他 tmux session），不依賴家族裡的其他 plugin。
 
 分類只是組織性的裝飾，不是架構邊界——任一 plugin 都可以透過 capability detection 依賴任一 plugin，跟分類無關。
 

@@ -19,6 +19,7 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
 | [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.2.2 ready** |
 | [`chat`](./plugins/chat) | standalone | Logged conversation threads — record a chat to `doc/chat/`, summarise to `doc/note/`, resume any time | **v0.1.0 ready** |
+| [`tmux`](./plugins/tmux) | standalone | Drive other tmux sessions — list them, read what they are doing, draft or send a message into their input box | **v0.1.0 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
@@ -159,13 +160,14 @@ Per [`SPEC.md §13`](./SPEC.md):
 claude-workbench/
 ├── SPEC.md                             # design doc (workbench family)
 ├── current_state.md                    # implementation snapshot
-├── .claude-plugin/marketplace.json     # 7 plugin entries
+├── .claude-plugin/marketplace.json     # 8 plugin entries
 ├── plugins/
 │   ├── kanban/                         # v0.1.0 (ready)
 │   ├── notify/                         # v0.1.0 (ready — Pushover)
 │   ├── memory/                         # v0.0.1 (stub)
 │   ├── mentor/                         # v0.1.0 (ready — dev profile, replaces docsync)
 │   ├── chat/                           # v0.1.0 (ready — logged chat threads)
+│   ├── tmux/                           # v0.1.0 (ready — drive other tmux sessions)
 │   ├── workbench/                      # v0.0.1 (meta stub)
 │   └── workbench-dev/                  # v0.0.1 (meta stub)
 └── schema/

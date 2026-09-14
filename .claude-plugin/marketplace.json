@@ -10,7 +10,11 @@
       "version": "0.3.32",
       "description": "Kanban workflow for Claude Code — local kanban.json or Jira Cloud as the storage backend",
       "category": "productivity",
-      "keywords": ["kanban", "tasks", "workflow"]
+      "keywords": [
+        "kanban",
+        "tasks",
+        "workflow"
+      ]
     },
     {
       "name": "notify",
@@ -18,7 +22,11 @@
       "version": "0.1.1",
       "description": "Push notifications via Pushover when Claude needs your attention",
       "category": "productivity",
-      "keywords": ["notifications", "pushover", "alerts"]
+      "keywords": [
+        "notifications",
+        "pushover",
+        "alerts"
+      ]
     },
     {
       "name": "memory",
@@ -26,7 +34,12 @@
       "version": "0.0.1",
       "description": "Persistent RAG memory across sessions (stub — v0.1.0 coming)",
       "category": "productivity",
-      "keywords": ["memory", "rag", "sqlite", "embeddings"]
+      "keywords": [
+        "memory",
+        "rag",
+        "sqlite",
+        "embeddings"
+      ]
     },
     {
       "name": "mentor",
@@ -34,7 +47,15 @@
       "version": "0.3.1",
       "description": "Onboarding mentor for Claude Code — prescribes bootstrap reading, doc hierarchy (Epic/Sprint/Issue/ADR), and agent workflow. Replaces docsync.",
       "category": "developer-tools",
-      "keywords": ["onboarding", "framework", "epic", "sprint", "issue", "adr", "workflow"]
+      "keywords": [
+        "onboarding",
+        "framework",
+        "epic",
+        "sprint",
+        "issue",
+        "adr",
+        "workflow"
+      ]
     },
     {
       "name": "chat",
@@ -42,7 +63,25 @@
       "version": "0.1.0",
       "description": "Lightweight logged chat threads — record a conversation to doc/chat/, summarise to doc/note/, resume any time",
       "category": "productivity",
-      "keywords": ["chat", "notes", "logging", "conversation"]
+      "keywords": [
+        "chat",
+        "notes",
+        "logging",
+        "conversation"
+      ]
+    },
+    {
+      "name": "tmux",
+      "source": "./plugins/tmux",
+      "version": "0.1.0",
+      "description": "Drive other tmux sessions from Claude Code — list them, read what they are doing, draft a message into their input box, or send it",
+      "category": "productivity",
+      "keywords": [
+        "tmux",
+        "sessions",
+        "terminal",
+        "orchestration"
+      ]
     },
     {
       "name": "workbench",
@@ -50,7 +89,10 @@
       "version": "0.0.3",
       "description": "★ Core bundle — kanban + notify + memory (meta, stub)",
       "category": "productivity",
-      "keywords": ["bundle", "meta"]
+      "keywords": [
+        "bundle",
+        "meta"
+      ]
     },
     {
       "name": "workbench-dev",
@@ -58,7 +100,11 @@
       "version": "0.0.1",
       "description": "★ Developer bundle — workbench + mentor (meta, stub)",
       "category": "developer-tools",
-      "keywords": ["bundle", "meta", "dev"]
+      "keywords": [
+        "bundle",
+        "meta",
+        "dev"
+      ]
     }
   ]
 }

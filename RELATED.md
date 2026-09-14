@@ -89,6 +89,7 @@ claude-workbench is the only project I'm aware of that:
 - Pushes to your phone (Pushover today, ntfy/Slack soon) when the agent needs you, so you can leave headless sessions running.
 - Codifies the framework hierarchy (Epic → Sprint → Issue → ADR) inside the plugin, not in your CLAUDE.md, with hooks that enforce structural compliance.
 - Composes — kanban × notify × mentor × memory all check for each other and degrade gracefully when partial.
+- Reaches sideways into your other running sessions — `tmux` lists, reads, and writes into sibling tmux panes over the plain `tmux` CLI, so one Claude Code session can check on and message the others. Terminal multiplexer wrappers (tmuxinator, smug, zellij layouts) set sessions *up*; none of them let an agent read a session's state and put a reviewed message in its input box.
 
 If you find another project doing this *as a unified surface*, open an issue and I'll add it here.
 

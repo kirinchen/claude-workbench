@@ -37,6 +37,42 @@ For earlier history, see the git log.
   project's default status — creation and transition stay separate. Emits
   `{ok, key, url, title, ap, apSet}`. Previously an AP with no parent epic was
   forced to either invent an EPIC or bypass the plugin via raw REST.
+- **tmux 0.1.0** — new plugin for driving *other* tmux sessions from inside
+  Claude Code. `/tmux:ls` lists every session with a derived status (idle /
+  busy / queued / dialog) and its last line of output; `/tmux:review <name>`
+  captures the pane and reports what it is doing; `/tmux:draft <name>` composes
+  a message into the target's input box and stops there (no Enter, so a human
+  approves before it sends); `/tmux:send <name>` sends and then re-captures to
+  confirm delivery versus queueing. Session names are deliberately not
+  auto-completed — `/tmux:ls` first, then type the name.
+
+  Only the `tmux` CLI and the Python stdlib are used. All deterministic work
+  is in `scripts/` (`tmux-state.py` parses a pane into
+  `{ui, status, busy, queued, draft, summary}`; `tmux-capture.sh`,
+  `tmux-input.sh`, `tmux-sessions.sh` wrap it), leaving the command markdown
+  responsible only for composing and analysing.
+
+  Notable findings baked into the implementation, all verified against live
+  Claude Code sessions:
+
+  - An empty input box redisplays previously abandoned input as **faint text**
+    (`ESC[2m`), which a plain `capture-pane` cannot tell from a real unsent
+    draft. `tmux-state.py` captures with `-e` and tracks the SGR faint flag,
+    reporting such text as `ghost` and keeping `has_draft` false — otherwise
+    every command either "rewrites" a draft that does not exist or spins
+    trying to clear a box that is already empty.
+  - The input box is located by its enclosing `────` border pair, not by the
+    last `❯` — transcript echoes and dialog menu rows (`❯ 1. Default`) start
+    with `❯` too.
+  - `C-u` does clear the box, but kills only from the start of the *visual*
+    line to the cursor, so clearing is `End` + `C-u` looped until the box
+    reads empty (capped, then fails loud).
+  - `send-keys -l` handles CJK without dropping characters only when `Enter`
+    is a separate call after a short pause.
+  - A busy target queues messages behind `Press up to edit queued messages`,
+    reported as its own state rather than as a draft or as delivery.
+  - Refuses to type into a pane showing a dialog, and into its own session.
+
 - **chat 0.1.0** — new lightweight plugin for logged conversation threads.
   `/chat:new` starts recording the session to `doc/chat/{name}.md` via a
   `Stop` hook; `/chat:exit` stops; `/chat:note` summarises a thread into
