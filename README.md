@@ -50,6 +50,8 @@ claude
 > /plugin install kanban@claude-workbench       # ready
 > /plugin install notify@claude-workbench       # ready (Pushover)
 > /plugin install mentor@claude-workbench       # ready (dev profile, replaces docsync)
+> /plugin install chat@claude-workbench         # ready (logged chat threads)
+> /plugin install tmux@claude-workbench         # ready (drive other tmux sessions)
 > /plugin install memory@claude-workbench       # coming soon
 > /plugin install workbench@claude-workbench    # bundle (when memory ships)
 ```
@@ -77,7 +79,7 @@ Updating has two layers — the **plugin code** on each machine, and any **proje
 
 ```bash
 > /plugin marketplace update claude-workbench
-> /plugin update mentor@claude-workbench         # or kanban / notify
+> /plugin update mentor@claude-workbench         # or kanban / notify / chat / tmux
 > /reload-plugins
 ```
 

@@ -50,6 +50,8 @@ claude
 > /plugin install kanban@claude-workbench       # 可用
 > /plugin install notify@claude-workbench       # 可用（Pushover）
 > /plugin install mentor@claude-workbench       # 可用（dev 分類，取代 docsync）
+> /plugin install chat@claude-workbench         # 可用(記錄式對話串)
+> /plugin install tmux@claude-workbench         # 可用(操作其他 tmux session)
 > /plugin install memory@claude-workbench       # 尚未釋出
 > /plugin install workbench@claude-workbench    # bundle（等 memory 完工）
 ```
@@ -77,7 +79,7 @@ claude
 
 ```bash
 > /plugin marketplace update claude-workbench
-> /plugin update mentor@claude-workbench         # 或 kanban / notify
+> /plugin update mentor@claude-workbench         # 或 kanban / notify / chat / tmux
 > /reload-plugins
 ```
 
