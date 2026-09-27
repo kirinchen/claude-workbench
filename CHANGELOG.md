@@ -27,6 +27,20 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **tmux 0.2.0** — `/tmux:create <session> [dir]`: start a new detached
+  session in a working directory and launch Claude Code in it, so spinning up
+  a per-task session no longer means dropping out to a raw `tmux new-session`
+  and typing the launch by hand. Deterministic work lives in
+  `scripts/tmux-create.sh` (`--cwd`, `--run`, `--no-run`, `--json`), which
+  reuses the existing keystroke discipline (`send-keys -l`, pause, Enter as a
+  separate key) and reports the new session through `tmux-state.py` once it
+  has booted. It creates and nothing else: an existing name exits 3 rather
+  than restarting or reusing that session, a name holding `.`/`:`/whitespace
+  exits 4 because tmux cannot address it, and a missing directory exits 5
+  instead of silently falling back to the caller's cwd. The command markdown
+  reads `/tmux:ls` first so proposed names follow whatever convention the
+  machine already uses, and it deliberately does not send a first message —
+  creating a session and briefing it are two decisions.
 - **kanban 0.3.32** — top-level `create` subcommand (`/kanban:create`): make
   a single parentless card on the board, auto-tagged with this repo's AP, for
   the common case where there is no natural parent epic to hang it under. The

@@ -11,6 +11,7 @@
 | 指令 | 作用 |
 |---|---|
 | `/tmux:ls` | 列出所有 session，附上狀態（閒 / 忙 / 有佇列 / 卡在對話框）與最後一行輸出。 |
+| `/tmux:create <session> [目錄]` | 在指定目錄開一個新的 detached session 並起 Claude Code。名字已存在就拒絕，不動既有 session。 |
 | `/tmux:review <session> [你想知道什麼]` | capture 畫面（預設往回 200 行）並依敘述分析，開頭一定先講它現在忙、閒、還是有排隊訊息。 |
 | `/tmux:draft <session> <要說什麼>` | 把組好的話放進目標的輸入框然後**停手** —— 不按 Enter。框裡已有草稿就改寫它。 |
 | `/tmux:send <session> <要說什麼>` | 同上，但會按 Enter，送完重新 capture 確認是送出了還是排進佇列。 |
@@ -21,7 +22,8 @@ session 名稱**沒有自動補全**。先 `/tmux:ls`，從清單裡抄一個名
 
 ```
 /tmux:ls      ──> tmux-sessions.sh ──┐
-/tmux:review  ──> tmux-capture.sh  ──┼──> tmux-state.py ──> {status, draft, summary}
+/tmux:review  ──> tmux-capture.sh  ──┤
+/tmux:create  ──> tmux-create.sh   ──┼──> tmux-state.py ──> {status, draft, summary}
 /tmux:draft   ──┐                    │
 /tmux:send    ──┴> tmux-input.sh   ──┘
 ```
@@ -35,6 +37,7 @@ session 名稱**沒有自動補全**。先 `/tmux:ls`，從清單裡抄一個名
 | `scripts/tmux-capture.sh` | `<session> [-S N]` —— 輸出 scrollback + 畫面，空行已過濾。 |
 | `scripts/tmux-input.sh` | `<session> --get\|--set\|--send\|--append\|--clear` —— 唯一會打字的東西。 |
 | `scripts/tmux-sessions.sh` | `[--json]` —— `/tmux:ls` 那張表。 |
+| `scripts/tmux-create.sh` | `<name> [--cwd 目錄] [--run 指令\|--no-run] [--json]` —— 唯一會建 session 的東西。名字已存在 exit 3、名字 tmux 定址不了 exit 4、目錄不存在 exit 5。 |
 
 目標通常是 Claude Code TUI，但沒有任何地方假設它一定是。純 shell session 會回報
 `ui: "plain"`，`ls`、`review`、`send` 照樣能用。
