@@ -13,6 +13,7 @@ keystrokes, exactly as you would by hand.
 | Command | What it does |
 |---|---|
 | `/tmux:ls` | Every session with its status (idle / busy / queued / dialog) and last line of output. |
+| `/tmux:create <session> [dir]` | Start a new detached session in a directory and launch Claude Code in it. Refuses a name that already exists. |
 | `/tmux:review <session> [what you want to know]` | Capture the pane (default 200 lines of scrollback) and answer the question, always leading with whether it is busy, idle, or holding queued messages. |
 | `/tmux:draft <session> <what to say>` | Compose into the target's input box and **stop** — no Enter. Rewrites an existing draft if there is one. |
 | `/tmux:send <session> <what to say>` | Same, then Enter, then re-capture to confirm the message was delivered or queued. |
@@ -23,7 +24,8 @@ Session names are **not tab-completable**. Run `/tmux:ls`, copy a name, type it.
 
 ```
 /tmux:ls      ──> tmux-sessions.sh ──┐
-/tmux:review  ──> tmux-capture.sh  ──┼──> tmux-state.py ──> {status, draft, summary}
+/tmux:review  ──> tmux-capture.sh  ──┤
+/tmux:create  ──> tmux-create.sh   ──┼──> tmux-state.py ──> {status, draft, summary}
 /tmux:draft   ──┐                    │
 /tmux:send    ──┴> tmux-input.sh   ──┘
 ```
@@ -38,6 +40,7 @@ parsing and keystroke timing are not things to re-derive per invocation.
 | `scripts/tmux-capture.sh` | `<session> [-S N]` — dump scrollback + screen, blank lines filtered. |
 | `scripts/tmux-input.sh` | `<session> --get\|--set\|--send\|--append\|--clear` — the only thing that types. |
 | `scripts/tmux-sessions.sh` | `[--json]` — the `/tmux:ls` table. |
+| `scripts/tmux-create.sh` | `<name> [--cwd DIR] [--run CMD\|--no-run] [--json]` — the only thing that creates. Exits 3 on an existing name, 4 on a name tmux cannot address, 5 on a missing directory. |
 
 The target is usually a Claude Code TUI, but nothing assumes it. A plain shell
 session reports `ui: "plain"` and still works for `ls`, `review`, and `send`.
