@@ -23,11 +23,36 @@ Needs Node 18+ on `PATH`.
 
 | Command | What it does |
 |---|---|
-| `/draw` | Open the chart picker → choose how to keep the diagram → draw. |
+| `/draw` | Home: the diagrams already in this repo (click to open) + the chart picker for a new one. |
 | `/draw <file>` | Open the diagram(s) already in `<file>` (`.md` with diagram blocks, or `.mmd` / `.excalidraw` / `.d2`). |
 
 Then just ask the agent: *"look at my diagram"*, *"connect Login to API"*.
 The bundled `draw` skill tells it how to read and edit each format.
+
+## Overview
+
+The home page starts with **the diagrams already in this repo** (git root of
+the current directory; `git ls-files`, so ignored files are skipped): every
+`.md` that contains a diagram block and every `.mmd` / `.excalidraw` / `.d2`,
+newest first, with how many diagrams each holds and which chart type each one
+is. Click a file or a single diagram to open it.
+
+## Opening it from another machine
+
+By default the server listens on `127.0.0.1` only. To open the page from
+another machine (e.g. a laptop over Tailscale), bind it to this machine's
+address as well:
+
+```bash
+/draw --host 100.x.y.z          # once
+# or permanently, in ~/.claude/settings.json:  "env": { "DRAW_HOST": "100.x.y.z" }
+```
+
+`/draw` then also prints a *from another machine* URL. It carries `&t=<token>`:
+browsers that are not on this machine need it to load the page, and the API
+still checks the token on every call. The `Host` header must be one of
+`127.0.0.1`, `localhost`, or the bound address; add names such as a MagicDNS
+host with `DRAW_ALLOWED_HOSTS=name1,name2`.
 
 ## Charts
 
@@ -71,10 +96,10 @@ lives in the doc as a ```` ```mermaid ```` / ```` ```excalidraw ```` / ```` ```d
 agent ──> scripts/draw.mjs summary|get|list|put
 ```
 
-- One server per machine, bound to `127.0.0.1` only. A per-start token
-  (injected into the page) is required on every API call, and the `Host`
-  header must be `127.0.0.1` / `localhost`, so other websites cannot write your
-  files.
+- One server per machine, bound to `127.0.0.1` (plus `DRAW_HOST` if set). A
+  per-start token is required on every API call, and the `Host` header is
+  checked, so other websites cannot write your files. The token is handed to
+  the page only on a local connection or with `?t=<token>` in the URL.
 - State: `~/.claude-workbench/draw/server.json`; log: `server.log` beside it.
 - Excalidraw's hand-drawn fonts load from its default CDN; offline it falls back
   to system fonts.

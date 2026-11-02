@@ -92,3 +92,62 @@ body,
   white-space: nowrap;
   max-width: 50vw;
 }
+.mono {
+  font-family: var(--font-mono);
+}
+.overview {
+  margin-bottom: 28px;
+}
+.overview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.overview-head .mono {
+  font-size: 12px;
+}
+.overview-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.overview-file {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) auto 2fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.overview-file:last-child {
+  border-bottom: 0;
+}
+.overview-file:hover {
+  background: var(--accent-faint);
+}
+.overview-name {
+  font-size: 13px;
+  color: var(--text) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.overview-block {
+  cursor: pointer;
+  margin: 0 !important;
+}
+@media (max-width: 720px) {
+  .overview-file {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

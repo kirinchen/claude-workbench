@@ -67,7 +67,27 @@ export interface FileDoc {
   appended?: boolean;
 }
 
+export interface ScanBlock {
+  index: number;
+  kind: Kind;
+  type: string;
+  line: number;
+}
+export interface ScanFile {
+  path: string;
+  rel: string;
+  format: 'md' | 'native';
+  mtime: string;
+  blocks: ScanBlock[];
+}
+export interface Scan {
+  root: string;
+  files: ScanFile[];
+  truncated: boolean;
+}
+
 export const api = {
+  scan: (cwd: string) => call<Scan>('GET', `/api/scan?${new URLSearchParams({ cwd })}`),
   info: () => call<Info>('GET', '/api/info'),
   memList: () => call<{ drawings: Omit<MemDrawing, 'code'>[] }>('GET', '/api/memory'),
   memCreate: (kind: Kind, code: string, name?: string) => call<MemDrawing>('POST', '/api/memory', { kind, code, name }),

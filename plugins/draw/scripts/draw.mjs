@@ -2,7 +2,9 @@
 /**
  * draw — /draw 的指令列入口(零依賴)。
  *
- *   draw.mjs open [path] [--cwd DIR] [--no-browser]   起 server(沒在跑才起)+ 開瀏覽器,印網址
+ *   draw.mjs open [path] [--cwd DIR] [--host IP] [--no-browser]
+ *                                                     起 server(沒在跑才起)+ 開瀏覽器,印網址;
+ *                                                     --host / env DRAW_HOST:另綁該位址(如 tailnet IP)給別台開
  *   draw.mjs status                                   server 在不在、port、版本
  *   draw.mjs stop                                     關 server(一次性的圖會一起消失)
  *   draw.mjs list                                     列一次性(memory)的圖
@@ -78,11 +80,13 @@ async function alive() {
   }
 }
 
-async function ensureServer() {
+async function ensureServer(host) {
   let s = await alive();
-  if (s && s.version !== VERSION) {
-    // plugin 更新過 → 換新版 server(一次性的圖會消失,先講)
-    console.error(`draw server 是舊版 ${s.version},換成 ${VERSION}(一次性的圖會清掉)`);
+  const needHost = host && host !== '127.0.0.1' && host !== 'localhost' && !(s?.hosts || []).includes(host);
+  if (s && (s.version !== VERSION || needHost)) {
+    // plugin 更新過 / 要多綁一個位址 → 重開 server(一次性的圖會消失,先講)
+    const why = s.version !== VERSION ? `是舊版 ${s.version},換成 ${VERSION}` : `沒綁 ${host},重開來加上`;
+    console.error(`draw server ${why}(一次性的圖會清掉)`);
     await call(s, 'POST', '/api/shutdown').catch(() => {});
     await new Promise((r) => setTimeout(r, 300));
     s = null;
@@ -90,7 +94,8 @@ async function ensureServer() {
   if (s) return s;
   fs.mkdirSync(STATE_DIR, { recursive: true });
   const log = fs.openSync(LOG_FILE, 'a');
-  const child = spawn(process.execPath, [SERVER], { detached: true, stdio: ['ignore', log, log] });
+  const args = host ? [SERVER, '--host', host] : [SERVER];
+  const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', log, log] });
   child.unref();
   for (let i = 0; i < 50; i++) {
     await new Promise((r) => setTimeout(r, 100));
@@ -202,19 +207,23 @@ async function main() {
   switch (cmd) {
     case 'open': {
       const cwd = path.resolve(flag('--cwd') || process.cwd());
+      const host = (flag('--host') || process.env.DRAW_HOST || '').trim();
       const noBrowser = bool('--no-browser');
       const target = argv[0];
-      const s = await ensureServer();
+      const s = await ensureServer(host);
       const q = new URLSearchParams({ cwd });
       if (target) q.set('path', path.resolve(cwd, target));
       const url = `http://127.0.0.1:${s.port}/?${q}`;
+      // 別台機器用的網址:帶 token(非本機連線拿首頁要 token)
+      const remote = (s.hosts || []).filter((h) => h !== '127.0.0.1');
+      const remoteUrls = remote.map((h) => `http://${h.includes(':') ? `[${h}]` : h}:${s.port}/?${q}&t=${s.token}`);
       const opened = !noBrowser && openBrowser(url);
-      console.log(JSON.stringify({ url, opened, port: s.port, version: s.version, d2: s.d2 }));
+      console.log(JSON.stringify({ url, remoteUrls, opened, port: s.port, version: s.version, d2: s.d2 }));
       return;
     }
     case 'status': {
       const s = await alive();
-      console.log(JSON.stringify(s ? { running: true, port: s.port, pid: s.pid, version: s.version, d2: s.d2 } : { running: false }));
+      console.log(JSON.stringify(s ? { running: true, port: s.port, pid: s.pid, version: s.version, hosts: s.hosts, d2: s.d2 } : { running: false }));
       return;
     }
     case 'stop': {

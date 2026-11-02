@@ -27,6 +27,15 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **draw 0.2.0** — home page opens with *the diagrams already in this repo*:
+  every `.md` with a diagram block and every `.mmd` / `.excalidraw` / `.d2`
+  (git root, `git ls-files`, newest first), with count and chart type per
+  diagram; click to open. `--host <IP>` / env `DRAW_HOST` also binds the
+  server to that address (e.g. a tailnet IP) so another machine can open the
+  page; `/draw` prints that URL with `&t=<token>`, the index page only hands
+  out the token to local connections or a matching `?t=`, the Host check
+  accepts the bound address (plus `DRAW_ALLOWED_HOSTS`), and the default stays
+  `127.0.0.1`.
 - **draw 0.1.0** (new plugin) — `/draw [file]` opens a local browser editor
   for diagrams, extracted from porthole's markdown editor: Mermaid flowchart /
   state / ERD / class / sequence / architecture / mind map, D2 (when the `d2`

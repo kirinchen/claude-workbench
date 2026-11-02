@@ -21,11 +21,30 @@
 
 | 指令 | 做什麼 |
 |---|---|
-| `/draw` | 開圖型選單 → 選保存方式 → 開始畫 |
+| `/draw` | 首頁:這個 repo 已有的圖(點了直接開)+ 新增圖型清單 |
 | `/draw <檔案>` | 直接開檔案裡的圖(含圖區塊的 `.md`,或 `.mmd` / `.excalidraw` / `.d2`) |
 
 畫完直接問 agent:「看一下我的圖」、「把 Login 接到 API」。plugin 附的 `draw` skill
 會教它怎麼讀、怎麼改各種格式。
+
+## 總覽
+
+首頁最上面是**這個 repo 已有的圖**(目前目錄的 git 根;用 `git ls-files`,被 ignore 的不列):
+每個含圖區塊的 `.md`、每個 `.mmd` / `.excalidraw` / `.d2`,新的在前,標出幾張、各是什麼圖型。
+點檔名或單張圖直接開。
+
+## 從別台機器開
+
+預設只綁 `127.0.0.1`。要從別台(例如筆電走 Tailscale)開,讓 server 也綁這台的位址:
+
+```bash
+/draw --host 100.x.y.z          # 這次
+# 或固定寫進 ~/.claude/settings.json:  "env": { "DRAW_HOST": "100.x.y.z" }
+```
+
+`/draw` 會多印一個「別台機器用」的網址,帶 `&t=<token>`:不是本機的瀏覽器要有它才載得到頁面,
+API 每次一樣檢查 token。`Host` 頭只收 `127.0.0.1`、`localhost`、綁的那個位址;
+MagicDNS 名稱之類用 `DRAW_ALLOWED_HOSTS=名1,名2` 加。
 
 ## 圖型
 
@@ -67,8 +86,9 @@ Mermaid 在 GitHub 上也會顯示)或 **原生單檔**。
 agent ──> scripts/draw.mjs summary|get|list|put
 ```
 
-- 一台機器一個 server,只綁 `127.0.0.1`。每次啟動產生 token(注入頁面),每個 API 都要帶;
-  `Host` 頭也只接受 `127.0.0.1` / `localhost` —— 其他網站寫不了你的檔。
+- 一台機器一個 server,綁 `127.0.0.1`(有設 `DRAW_HOST` 再加那個位址)。每次啟動產生 token,
+  每個 API 都要帶,`Host` 頭也會檢查 —— 其他網站寫不了你的檔。token 只發給本機連線,
+  或網址帶了 `?t=<token>` 的頁面。
 - 狀態檔 `~/.claude-workbench/draw/server.json`,log 在同目錄 `server.log`。
 - Excalidraw 手寫字型走它預設的 CDN;離線時退回系統字型。
 

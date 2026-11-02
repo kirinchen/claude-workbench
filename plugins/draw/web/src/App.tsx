@@ -1,12 +1,12 @@
 /**
  * draw — 主畫面。網址就是狀態(重新整理 = 重讀最新版,agent 改完圖使用者按 F5 就看得到):
- *   ?cwd=<目錄>                       首頁:選圖型 / 一次性的圖 / 開既有檔
+ *   ?cwd=<目錄>                       首頁:這個 repo 已有的圖 / 選圖型新建 / 一次性的圖 / 開既有檔
  *   ?cwd=…&path=<檔>[&index=N]        編輯檔案裡的圖(md 的第 N 個圖區塊,或原生單檔)
  *   ?cwd=…&mem=<id>                   編輯一次性的圖(只在 server 記憶體)
  */
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { Alert, Button, Card, Input, Modal, Radio, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
-import { api, ApiError, BOOT, type FileDoc, type Info, type MemDrawing } from './api';
+import { api, ApiError, BOOT, type FileDoc, type Info, type MemDrawing, type Scan } from './api';
 import { CHARTS, KIND_LABEL, EMPTY_EXCALIDRAW, type ChartDef, type Kind } from './charts';
 
 const MermaidBlock = lazy(() => import('./components/MermaidBlock'));
@@ -24,6 +24,9 @@ function useQuery() {
   }, []);
   const go = useCallback((next: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
+    // 從別台機器開的網址帶 ?t=<token>:換頁也要留著,重新整理才拿得到 token
+    const t = new URLSearchParams(location.search).get('t');
+    if (t) p.set('t', t);
     for (const [k, v] of Object.entries(next)) if (v !== undefined && v !== '') p.set(k, v);
     history.pushState(null, '', `?${p}`);
     setQ(p);
@@ -89,9 +92,9 @@ function Home({ cwd, info, go }: { cwd: string; info: Info; go: ReturnType<typeo
 
   return (
     <div className="draw-home">
-      <Title level={4} style={{ marginTop: 0 }}>
-        要畫哪一種圖?
-      </Title>
+      <RepoOverview cwd={cwd} go={go} />
+
+      <Title level={4}>新增一張圖</Title>
       <div className="chart-grid">
         {CHARTS.map((c) => {
           const disabled = c.kind === 'd2' && !info.d2;
@@ -159,6 +162,87 @@ function Home({ cwd, info, go }: { cwd: string; info: Info; go: ReturnType<typeo
         />
       )}
     </div>
+  );
+}
+
+// ---------------- 總覽:這個 repo 已有的圖 ----------------
+
+function ago(iso: string) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return '剛剛';
+  if (s < 3600) return `${Math.round(s / 60)} 分鐘前`;
+  if (s < 86400) return `${Math.round(s / 3600)} 小時前`;
+  return `${Math.round(s / 86400)} 天前`;
+}
+
+function RepoOverview({ cwd, go }: { cwd: string; go: ReturnType<typeof useQuery>[1] }) {
+  const [scan, setScan] = useState<Scan | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+  useEffect(() => {
+    api.scan(cwd).then(setScan, (e: Error) => setErr(e.message));
+  }, [cwd]);
+
+  const total = scan ? scan.files.reduce((n, f) => n + f.blocks.length, 0) : 0;
+  const files = useMemo(() => {
+    if (!scan) return [];
+    const f = filter.trim().toLowerCase();
+    if (!f) return scan.files;
+    return scan.files.filter((x) => x.rel.toLowerCase().includes(f) || x.blocks.some((b) => b.type.toLowerCase().includes(f)));
+  }, [scan, filter]);
+
+  return (
+    <section className="overview" data-loc="draw:overview">
+      <div className="overview-head">
+        <Title level={4} style={{ margin: 0 }}>
+          這個 repo 已有的圖
+        </Title>
+        {scan && (
+          <Text type="secondary">
+            {scan.files.length} 個檔、{total} 張圖 · <span className="mono">{scan.root}</span>
+          </Text>
+        )}
+        <span style={{ flex: 1 }} />
+        {scan && scan.files.length > 6 && (
+          <Input size="small" allowClear placeholder="篩選檔名 / 圖型" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: 200 }} />
+        )}
+      </div>
+      {err ? (
+        <Alert type="warning" showIcon message={`掃描失敗:${err}`} />
+      ) : !scan ? (
+        <Spin />
+      ) : scan.files.length === 0 ? (
+        <Text type="secondary">還沒有圖 —— 下面選一種開始畫。存成 md 內嵌或 .mmd / .excalidraw / .d2 的圖會出現在這裡。</Text>
+      ) : (
+        <div className="overview-list">
+          {files.map((f) => (
+            <div key={f.path} className="overview-file">
+              <a className="overview-name mono" onClick={() => go({ cwd, path: f.path })} title={f.path}>
+                {f.rel}
+              </a>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {f.blocks.length} 張 · {ago(f.mtime)}
+              </Text>
+              <div className="overview-blocks">
+                {f.blocks.map((b) => (
+                  <Tag
+                    key={b.index}
+                    className="overview-block"
+                    color={b.kind === 'excalidraw' ? 'purple' : b.kind === 'd2' ? 'gold' : 'cyan'}
+                    onClick={() => go({ cwd, path: f.path, index: String(b.index) })}
+                    title={f.format === 'md' ? `第 ${b.line} 行` : undefined}
+                  >
+                    {f.blocks.length > 1 ? `${b.index + 1}. ` : ''}
+                    {b.type}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          ))}
+          {scan.truncated && <Text type="secondary">(檔案太多,只掃了前 20000 個)</Text>}
+        </div>
+      )}
+    </section>
   );
 }
 
