@@ -1,0 +1,8 @@
+{
+  "name": "draw",
+  "version": "0.1.0",
+  "description": "Draw diagrams with your agent — /draw opens a local browser editor (Mermaid flow/state/ERD/class/sequence/architecture/mindmap, D2, Excalidraw), saves into markdown fenced blocks or native files, and the agent can read and edit the same diagram.",
+  "author": { "name": "kirin" },
+  "homepage": "https://github.com/kirinchen/claude-workbench",
+  "license": "MIT"
+}

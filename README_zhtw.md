@@ -20,6 +20,7 @@
 | [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.2 可用** |
 | [`chat`](./plugins/chat) | 獨立 | 記錄式對話串 — 把對話寫進 `doc/chat/`、總結到 `doc/note/`、隨時續聊 | **v0.1.0 可用** |
 | [`tmux`](./plugins/tmux) | 獨立 | 操作其他 tmux session — 列出來、看它在幹嘛、把訊息放進或送進它的輸入框 | **v0.1.0 可用** |
+| [`draw`](./plugins/draw) | 獨立 | 跟 agent 一起畫圖 — `/draw` 開瀏覽器編輯器(Mermaid / D2 / Excalidraw),圖存進 md 區塊,agent 讀得懂也能改 | **v0.1.0 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -52,6 +53,7 @@ claude
 > /plugin install mentor@claude-workbench       # 可用（dev 分類，取代 docsync）
 > /plugin install chat@claude-workbench         # 可用(記錄式對話串)
 > /plugin install tmux@claude-workbench         # 可用(操作其他 tmux session)
+> /plugin install draw@claude-workbench         # 可用(跟 agent 一起畫圖;需要 Node 18+)
 > /plugin install memory@claude-workbench       # 尚未釋出
 > /plugin install workbench@claude-workbench    # bundle（等 memory 完工）
 ```
@@ -170,6 +172,7 @@ claude-workbench/
 │   ├── mentor/                         # v0.1.0（可用 — dev 分類，取代 docsync）
 │   ├── chat/                           # v0.1.0（可用 — 記錄式對話串）
 │   ├── tmux/                           # v0.1.0（可用 — 操作其他 tmux session）
+│   ├── draw/                           # v0.1.0（可用 — 跟 agent 一起畫圖）
 │   ├── workbench/                      # v0.0.1（meta stub）
 │   └── workbench-dev/                  # v0.0.1（meta stub）
 └── schema/

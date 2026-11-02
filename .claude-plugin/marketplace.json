@@ -84,6 +84,20 @@
       ]
     },
     {
+      "name": "draw",
+      "source": "./plugins/draw",
+      "version": "0.1.0",
+      "description": "Draw diagrams with your agent — /draw opens a local browser editor (Mermaid, D2, Excalidraw); diagrams are saved into markdown fenced blocks or native files the agent can read and edit",
+      "category": "productivity",
+      "keywords": [
+        "diagram",
+        "mermaid",
+        "excalidraw",
+        "d2",
+        "whiteboard"
+      ]
+    },
+    {
       "name": "workbench",
       "source": "./plugins/workbench",
       "version": "0.0.3",
