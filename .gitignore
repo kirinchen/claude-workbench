@@ -18,6 +18,8 @@ env/
 *.egg-info/
 dist/
 build/
+# draw plugin 的前端 build 產物隨 plugin 發佈(使用者不必 build)
+!plugins/draw/dist/
 
 # Node (future viewer work)
 node_modules/

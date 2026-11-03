@@ -27,6 +27,29 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **draw 0.2.0** — home page opens with *the diagrams already in this repo*:
+  every `.md` with a diagram block and every `.mmd` / `.excalidraw` / `.d2`
+  (git root, `git ls-files`, newest first), with count and chart type per
+  diagram; click to open. `--host <IP>` / env `DRAW_HOST` also binds the
+  server to that address (e.g. a tailnet IP) so another machine can open the
+  page; `/draw` prints that URL with `&t=<token>`, the index page only hands
+  out the token to local connections or a matching `?t=`, the Host check
+  accepts the bound address (plus `DRAW_ALLOWED_HOSTS`), and the default stays
+  `127.0.0.1`.
+- **draw 0.1.0** (new plugin) — `/draw [file]` opens a local browser editor
+  for diagrams, extracted from porthole's markdown editor: Mermaid flowchart /
+  state / ERD / class / sequence / architecture / mind map, D2 (when the `d2`
+  CLI is present) and Excalidraw, each with its GUI editor. After picking a
+  chart the page asks how to keep it — one-off (server memory only), saved in
+  the current directory under a name, or saved at a path — and whether to write
+  a markdown fenced block (default; appended to an existing `.md`) or a native
+  `.mmd` / `.excalidraw` / `.d2` file. Write-back replaces only that block and
+  refuses (409) when the file changed since it was loaded; the page polls and
+  shows a "changed elsewhere" banner when the agent edits it. Zero-dependency
+  Node server bound to `127.0.0.1` with a per-start token and Host check; the
+  front-end ships pre-built in `dist/`. `scripts/draw.mjs summary|get|list|put`
+  plus the `draw` skill let the agent read diagrams (Excalidraw summarised into
+  shapes / arrows / text) and edit them in place.
 - **tmux 0.2.0** — `/tmux:create <session> [dir]`: start a new detached
   session in a working directory and launch Claude Code in it, so spinning up
   a per-task session no longer means dropping out to a raw `tmux new-session`
