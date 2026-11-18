@@ -27,6 +27,16 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **hc 0.1.0** — new plugin: the herdr-core (`hc`) counterpart of `tmux`.
+  `/hc:ls`, `/hc:create <name> [dir] [first task]`, `/hc:review <terminal>`,
+  `/hc:send <terminal> <text>`. Status comes from the program's own OSC 7501
+  report (`hc get` / `hc ls`), so there is no screen-scraping state parser.
+  `/hc:create` also writes the new terminal into the Herdr App layout (core
+  document `herdr-app`) via `scripts/hc-app-place.py` — a terminal started with
+  `hc run` alone exists in the core but never appears in the App sidebar.
+  There is deliberately no `/hc:draft`: `hc send` always submits, and instead
+  waits for a person's unfinished draft. None of the commands stop the core or
+  kill a terminal.
 - **draw 0.2.0** — home page opens with *the diagrams already in this repo*:
   every `.md` with a diagram block and every `.mmd` / `.excalidraw` / `.d2`
   (git root, `git ls-files`, newest first), with count and chart type per
