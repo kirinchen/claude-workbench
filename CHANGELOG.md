@@ -27,6 +27,9 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **hc 0.1.1** — Tab naming in the Herdr App layout: a `<card id>-<repo>`
+  terminal gets the tab `#<card id>`, anything else stays unnamed. The Agents
+  list renders "<space> · <tab>" and the space is already the repo.
 - **hc 0.1.0** — new plugin: the herdr-core (`hc`) counterpart of `tmux`.
   `/hc:ls`, `/hc:create <name> [dir] [first task]`, `/hc:review <terminal>`,
   `/hc:send <terminal> <text>`. Status comes from the program's own OSC 7501

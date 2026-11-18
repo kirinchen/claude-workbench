@@ -15,6 +15,7 @@ retries. Exit 0 placed / already there, 2 no such terminal, 1 could not write.
 """
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -62,6 +63,15 @@ def place(spaces, address, name, cwd):
     return out
 
 
+def tab_name(terminal_name: str) -> str:
+    """Tab name in the App. The Agents list renders each row as "<space> · <tab>" and the
+    space is already the repo, so a card terminal `<id>-<repo>` becomes `#<id>` and anything
+    else stays unnamed (the App then shows the agent's own title). Not bare digits: the App
+    treats an all-digit tab name as an automatic number and hides it."""
+    m = re.match(r"^(\d+)-", terminal_name)
+    return f"#{m.group(1)}" if m else ""
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv[1:]
@@ -73,7 +83,9 @@ def main() -> int:
         sys.stderr.write(f"hc-app-place: no such terminal: {args[0]}\n")
         return 2
     t = json.loads(r.stdout)
-    address, name, cwd = t["address"], t.get("name") or t["address"], t.get("cwd") or ""
+    address, cwd = t["address"], t.get("cwd") or ""
+    label = t.get("name") or address          # for messages
+    name = tab_name(t.get("name") or "")       # what the App shows
     err = None
     for _ in range(3):
         try:
@@ -81,13 +93,13 @@ def main() -> int:
             value = cur.get("value") or {}
             nxt = place(list(value.get("spaces", [])), address, name, cwd)
             if nxt is None:
-                print(f"hc-app-place: {name} ({address}) already in the App layout")
+                print(f"hc-app-place: {label} ({address}) already in the App layout")
                 return 0
             if dry:
-                print(f"hc-app-place: would add {name} ({address}) to space {os.path.basename(cwd) or cwd}")
+                print(f"hc-app-place: would add {label} ({address}) to space {os.path.basename(cwd) or cwd} as tab {name!r}")
                 return 0
             rpc("doc.set", {"name": DOC, "value": {**value, "spaces": nxt}, "version": cur["version"]})
-            print(f"hc-app-place: added {name} ({address}) to space {os.path.basename(cwd) or cwd}")
+            print(f"hc-app-place: added {label} ({address}) to space {os.path.basename(cwd) or cwd} as tab {name!r}")
             return 0
         except Exception as e:  # version conflict or a busy core: re-read and retry
             err = e

@@ -86,7 +86,7 @@
     {
       "name": "hc",
       "source": "./plugins/hc",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Drive other herdr-core (hc) terminals from Claude Code — create one (and add it to the Herdr App sidebar), list them, read what they are doing, or send them a message",
       "category": "productivity",
       "keywords": [

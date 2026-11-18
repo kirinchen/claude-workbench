@@ -29,6 +29,9 @@ the `hc` CLI on PATH and Python 3 (stdlib only).
   sidebar draws a Space / Tab layout stored in the core document `herdr-app`.
   `scripts/hc-app-place.py` adds the new terminal to the Space whose folder is
   its working directory (creating the Space if needed). It only ever adds.
+  The Tab is named `#<card id>` for a `<card id>-<repo>` terminal and left
+  unnamed otherwise: the Agents list shows "<space> · <tab>", and the space
+  is already the repo.
 - **Other machines need no ssh.** After `hc machine add <host>`, the same
   commands take `machine/<name>` addresses.
 
