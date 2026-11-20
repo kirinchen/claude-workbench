@@ -27,6 +27,13 @@ For earlier history, see the git log.
   `addLabels` is a strict superset of the queried column's. Closes #63.
 
 ### Added
+- **hc 0.2.0** — `/hc:send` and `/hc:review` pick the terminal from Claude Code's
+  option menu when it is left out or is only part of a name: machine → space →
+  terminal, a level skipped when everything fits, 3 + "More…" past 4 choices,
+  "Other" to type part of a name. The deterministic half is the new
+  `scripts/hc-pick.py` (from `hc ls --json`, leaves out this session's own
+  terminal, unread `done` first). Typing an exact name or address still works
+  as before. Tide #286 requirement 6.
 - **hc 0.1.1** — Tab naming in the Herdr App layout: a `<card id>-<repo>`
   terminal gets the tab `#<card id>`, anything else stays unnamed. The Agents
   list renders "<space> · <tab>" and the space is already the repo.

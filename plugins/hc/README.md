@@ -13,14 +13,18 @@ the `hc` CLI on PATH and Python 3 (stdlib only).
 |---|---|
 | `/hc:ls` | Every terminal with its status (idle / working / blocked / done) and folder, across added machines. |
 | `/hc:create <name> [dir] [first task]` | Start a terminal in a directory, launch Claude Code in it, and add it to the Herdr App sidebar. Refuses a name that is already live. |
-| `/hc:review <terminal> [what you want to know]` | Read the screen (default 200 lines of history) and answer, always leading with the status. |
-| `/hc:send <terminal> <what to say>` | Paste a message and press Enter, then confirm it was delivered or queued. Refuses a `blocked` terminal. |
+| `/hc:review [terminal] [what you want to know]` | Read the screen (default 200 lines of history) and answer, always leading with the status. |
+| `/hc:send [terminal] <what to say>` | Paste a message and press Enter, then confirm it was delivered or queued. Refuses a `blocked` terminal. |
 
 ## What is different from the tmux plugin
 
 - **Status is reported, not scraped.** herdr-core takes each program's status
   from OSC 7501. There is no `tmux-state.py` equivalent here and there should
   not be one — do not infer busy/idle from screen text.
+- **Leave the terminal out** (or give part of a name) and `/hc:send` / `/hc:review` ask
+  you to pick it from a menu: machine → space → terminal (`scripts/hc-pick.py`).
+  The Herdr App's right-click "Copy address" (herdr-essentials `k-agents`) is the other
+  way: copy, then paste the address.
 - **No `/hc:draft`.** `hc send` always presses Enter; there is no CLI way to
   type into a box without submitting. `hc send` instead waits for a person's
   unfinished draft before typing, and `--if idle` sends only when the agent is
