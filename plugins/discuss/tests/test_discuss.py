@@ -79,6 +79,38 @@ class Render(unittest.TestCase):
         self.assertEqual(D.render([rec], [])[0], "")
 
 
+def command(args, name="/discuss:discuss"):
+    return user(
+        f"<command-message>{name[1:]}</command-message>\n<command-name>{name}</command-name>\n"
+        f"<command-args>{args}</command-args>"
+    )
+
+
+class Asked(unittest.TestCase):
+    def test_verbatim_words(self):
+        text = "討論 a/b.md 的流程\n$(rm x) `y` 'z' <b>"
+        for name in ("/discuss:discuss", "/discuss"):
+            got = D.asked([user("old"), bot("x"), command(text, name), user("body", isMeta=True), bot("ok")])
+            self.assertEqual(got, (text, "2026-11-24T01:00:00.000Z"))
+
+    def test_tool_results_in_between_are_fine(self):
+        res = {"type": "user", "message": {"content": [{"type": "tool_result", "content": "r"}]}}
+        self.assertEqual(D.asked([command("hi"), bot("x"), res])[0], "hi")
+
+    def test_old_or_other_command_is_not_used(self):
+        self.assertIsNone(D.asked([command("old"), bot("x"), user("open it again")]))
+        self.assertIsNone(D.asked([command("old"), bot("x"), command("295", "/tide:work")]))
+        self.assertIsNone(D.asked([command("")]))
+        self.assertIsNone(D.asked([]))
+
+
+class Report(unittest.TestCase):
+    def test_wording(self):
+        self.assertEqual(D.report("U", "a.md", False, False, True).splitlines()[:2], ["discuss → U", "a.md"])
+        self.assertIn("a.md (new file)\nWhatever", D.report("U", "a.md", True, False, True))
+        self.assertIn("a.md (continuing an earlier conversation)\nOne-way", D.report("U", "a.md", False, True, False))
+
+
 class Hook(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """discuss — bind this Claude Code session to a porthole conversation.
 
-  discuss.py open [file]   create / find the file and its thread, bind, print JSON
+  discuss.py open [--ask] [file]
+                           create / find the file and its thread, bind, print JSON;
+                           --ask logs what came after /discuss as the first message
   discuss.py status        what this session is bound to (JSON)
   discuss.py unbind        stop recording this session into the thread
   discuss.py hook          hook entry (UserPromptSubmit / Stop / SessionStart / SessionEnd)
@@ -35,6 +37,8 @@ RELAY_MARK = "[porthole]"
 DEFAULT_URL = "http://127.0.0.1:4321"
 SESSION_RE = re.compile(r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.I)
 TERMINAL_RE = re.compile(r"^t[0-9a-z]{1,8}$")
+_COMMAND = re.compile(r"<command-name>/(?:discuss:)?discuss</command-name>")
+_COMMAND_ARGS = re.compile(r"<command-args>(.*)</command-args>", re.DOTALL)
 _SYS_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 # What may wrap text typed in by `hc send`: Claude Code's paste tag, hc's sender tag.
 _WRAP_OPEN = re.compile(r"^(?:\s*<(?:pasted_content|hc)\b[^>]*>\s*)+")
@@ -231,6 +235,32 @@ def read_transcript(path: str) -> list:
                 rec = {}
             out.append(rec if isinstance(rec, dict) else {})
     return out
+
+
+def asked(records: list):
+    """(text, timestamp) typed after the /discuss being run now, else None.
+
+    Read from the transcript so the words reach the thread exactly as typed and
+    never pass through a shell. A later ordinary message means that /discuss is
+    an old one, so it stops there.
+    """
+    for rec in reversed(records):
+        turn = turn_of(rec)
+        if turn and turn[0] == "human":
+            return None
+        if rec.get("type") != "user" or rec.get("isSidechain") or rec.get("isMeta"):
+            continue
+        content = (rec.get("message") or {}).get("content")
+        if isinstance(content, list):
+            content = "\n".join(
+                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+            )
+        if not isinstance(content, str) or "<command-name>" not in content:
+            continue
+        m = _COMMAND_ARGS.search(content) if _COMMAND.search(content) else None
+        text = m.group(1).strip() if m else ""
+        return (text, rec.get("timestamp") or "") if text else None
+    return None
 
 
 def is_relay(text: str) -> bool:
@@ -457,7 +487,19 @@ def taken_by_other(sid: str, repo: str, thread: str) -> bool:
     return False
 
 
-def cmd_open(arg: str) -> dict:
+def report(url: str, rel: str, created: bool, continued: bool, two_way: bool) -> str:
+    """What the user is told, word for word — so the agent does not have to phrase it."""
+    note = " (new file)" if created else " (continuing an earlier conversation)" if continued else ""
+    mode = (
+        "Whatever you say here or in porthole is the same conversation."
+        if two_way
+        else "One-way: what you say here shows up in porthole, but porthole cannot send to this terminal "
+        "(no hc / herdr-core here). After you close this session you can continue it from porthole."
+    )
+    return f"discuss → {url}\n{rel}{note}\n{mode}"
+
+
+def cmd_open(arg: str, ask: bool = False) -> dict:
     sid = my_session()
     cwd = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     here = os.getcwd()
@@ -479,6 +521,8 @@ def cmd_open(arg: str) -> dict:
             fh.write(thread_head(os.path.basename(rel), rel))
 
     transcript = transcript_of(sid)
+    records = read_transcript(transcript) if transcript else []
+    first = asked(records) if ask else None
     terminal = hc_terminal()
     save_json(
         binding_path(sid),
@@ -494,19 +538,24 @@ def cmd_open(arg: str) -> dict:
             "pid": claude_pid(),
             "created_at": now_iso(),
             "ended_at": None,
-            "cursor": len(read_transcript(transcript)) if transcript else None,
+            "cursor": len(records) if transcript else None,
             "pending": [],
         },
     )
+    if first:
+        append_thread(sid, format_turn("human", *first))
     path = "/".join(urllib.parse.quote(p) for p in [repo, *rel.split("/")])
+    link = f"{url}/{path}?thread={urllib.parse.quote(thread)}#file"
     return {
-        "url": f"{url}/{path}?thread={urllib.parse.quote(thread)}#file",
+        "report": report(link, rel, created, existed, bool(terminal)),
+        "url": link,
         "file": rel,
         "created": created,
         "thread": f"doc/chat/{thread}.md",
         "continued": existed,
         "terminal": terminal,
         "mode": "two-way" if terminal else "one-way",
+        "asked": bool(first),
     }
 
 
@@ -536,7 +585,9 @@ def main(argv: list) -> int:
         return 0
     try:
         if cmd == "open":
-            res = cmd_open(" ".join(argv[1:]).strip())
+            rest = argv[1:]
+            ask = rest[:1] == ["--ask"]
+            res = cmd_open(" ".join(rest[ask:]).strip(), ask)
         elif cmd == "status":
             res = cmd_status()
         elif cmd == "unbind":

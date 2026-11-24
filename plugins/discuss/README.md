@@ -33,6 +33,10 @@ npm install && npm run install:all && npm run prod
 |---|---|
 | `/discuss` | New `doc/discuss/discuss-<time>.md`, opened in porthole. |
 | `/discuss <file>` | Open that file (a missing `.md` is created) and its conversation. |
+| `/discuss <what to discuss>` | Start `doc/discuss/<short-name>.md` (or open the existing file you are clearly talking about), record your words as the first message, and answer. |
+| `/discuss <file> <what to discuss>` | Open that file, record the whole line as the first message, and answer. |
+
+The agent reads what you typed and decides which of these it is.
 
 ## Who hears what
 
