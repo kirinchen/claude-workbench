@@ -31,6 +31,10 @@ For earlier history, see the git log.
   the format porthole reads and writes (was `You` / `Claude` + `HH:MM`). Existing
   threads are left as they are; porthole reads both. Tide #295.
 
+### Removed
+- **draw** — replaced by `discuss` (the diagram editors are in porthole). Files drawn
+  with it are plain markdown fences / native files and keep working. Tide #295.
+
 ### Added
 - **discuss 0.1.0** — new plugin, the successor of `draw`. `/discuss [file]` opens
   the file in a running porthole (its editor has the diagram GUIs `draw` carried a
@@ -39,7 +43,7 @@ For earlier history, see the git log.
   terminal with `hc send`, or continued with `claude -p --resume` once it is closed.
   Without `hc` it is one-way (terminal → porthole). Bindings live in
   `~/.local/state/porthole/bindings/`. Needs a porthole with the matching API.
-  `draw` stays in the marketplace until this is accepted. Tide #295.
+  Tide #295.
 - **hc 0.2.0** — `/hc:send` and `/hc:review` pick the terminal from Claude Code's
   option menu when it is left out or is only part of a name: machine → space →
   terminal, a level skipped when everything fits, 3 + "More…" past 4 choices,
