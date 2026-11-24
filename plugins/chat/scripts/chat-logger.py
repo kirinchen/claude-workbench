@@ -57,11 +57,11 @@ def save_json(path: str, data: dict) -> None:
     os.replace(tmp, path)
 
 
-def hhmm(ts: str) -> str:
-    if not ts:
-        return ""
+def iso(ts: str) -> str:
+    """Transcript timestamp → ISO 8601, or '' when it is not a timestamp."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+        datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return ts
     except Exception:
         return ""
 
@@ -118,8 +118,9 @@ def render(records: list) -> str:
 
     out = []
     for speaker, text, ts in merged:
-        label = "\U0001f9d1 You" if speaker == "you" else "\U0001f916 Claude"
-        stamp = hhmm(ts)
+        # Same headers porthole writes and parses (it still reads the old You / Claude).
+        label = "\U0001f9d1 Human" if speaker == "you" else "\U0001f916 Assistant"
+        stamp = iso(ts)
         head = f"## {label} · {stamp}" if stamp else f"## {label}"
         out.append(f"\n{head}\n\n{text}\n")
     return "".join(out)

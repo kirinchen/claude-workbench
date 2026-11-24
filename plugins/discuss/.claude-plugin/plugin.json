@@ -1,0 +1,8 @@
+{
+  "name": "discuss",
+  "version": "0.1.0",
+  "description": "Discuss a file with your agent in porthole — /discuss opens it in porthole's editor (diagrams included) next to a conversation that is this very terminal session: both sides see the same thread and the same agent answers.",
+  "author": { "name": "kirin" },
+  "homepage": "https://github.com/kirinchen/claude-workbench",
+  "license": "MIT"
+}
