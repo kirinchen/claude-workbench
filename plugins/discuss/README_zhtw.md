@@ -31,6 +31,10 @@ npm install && npm run install:all && npm run prod
 |---|---|
 | `/discuss` | 建一個 `doc/discuss/discuss-<時間>.md` 並在 porthole 打開。 |
 | `/discuss <檔案>` | 打開那個檔(不存在的 `.md` 會建立)和它的對話。 |
+| `/discuss <想討論的事>` | 建 `doc/discuss/<短檔名>.md`(明顯在講某個既有的檔就開那個檔),把你的話原文記成第一句,接著回答。 |
+| `/discuss <檔案> <想討論的事>` | 打開那個檔,整行記成第一句,接著回答。 |
+
+是哪一種由 agent 看內容判斷。
 
 ## 誰聽得到誰
 

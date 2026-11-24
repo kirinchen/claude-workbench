@@ -36,6 +36,9 @@ For earlier history, see the git log.
   with it are plain markdown fences / native files and keep working. Tide #295.
 
 ### Added
+- **discuss 0.1.1** — `/discuss` takes plain words too: the agent decides whether you
+  gave a file, a topic, or both; the words are recorded verbatim as the first message
+  and answered right away. The text no longer passes through a shell.
 - **discuss 0.1.0** — new plugin, the successor of `draw`. `/discuss [file]` opens
   the file in a running porthole (its editor has the diagram GUIs `draw` carried a
   copy of) next to a conversation bound to this terminal session: what is said in

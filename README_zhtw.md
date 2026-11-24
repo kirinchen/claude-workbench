@@ -20,7 +20,7 @@
 | [`mentor`](./plugins/mentor) | dev | Onboarding 顧問 — 規範 bootstrap 文件、Epic/Sprint/Issue/ADR 階層、agent 工作流程（取代 `docsync`） | **v0.2.2 可用** |
 | [`chat`](./plugins/chat) | 獨立 | 記錄式對話串 — 把對話寫進 `doc/chat/`、總結到 `doc/note/`、隨時續聊 | **v0.2.0 可用** |
 | [`tmux`](./plugins/tmux) | 獨立 | 操作其他 tmux session — 列出來、看它在幹嘛、把訊息放進或送進它的輸入框 | **v0.1.0 可用** |
-| [`discuss`](./plugins/discuss) | 需要 [porthole](https://github.com/kirinchen/porthole) | 跟 agent 討論一個檔 — `/discuss` 在 porthole 的編輯器(含畫圖)打開它,旁邊的對話就是這個終端機 session。取代 `draw` | **v0.1.0 可用** |
+| [`discuss`](./plugins/discuss) | 需要 [porthole](https://github.com/kirinchen/porthole) | 跟 agent 討論一個檔 — `/discuss` 在 porthole 的編輯器(含畫圖)打開它,旁邊的對話就是這個終端機 session。取代 `draw` | **v0.1.1 可用** |
 | [`workbench`](./plugins/workbench) | — | ★ 核心組合包（kanban + notify + memory） | meta，stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ 開發者組合包（workbench + docsync） | meta，stub |
 
@@ -172,7 +172,7 @@ claude-workbench/
 │   ├── mentor/                         # v0.1.0（可用 — dev 分類，取代 docsync）
 │   ├── chat/                           # v0.2.0（可用 — 記錄式對話串）
 │   ├── tmux/                           # v0.1.0（可用 — 操作其他 tmux session）
-│   ├── discuss/                        # v0.1.0（可用 — 在 porthole 討論一個檔,取代 draw）
+│   ├── discuss/                        # v0.1.1（可用 — 在 porthole 討論一個檔,取代 draw）
 │   ├── workbench/                      # v0.0.1（meta stub）
 │   └── workbench-dev/                  # v0.0.1（meta stub）
 └── schema/
