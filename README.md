@@ -18,11 +18,10 @@ A family of Claude Code plugins that turn the CLI into a persistent, event-drive
 | [`notify`](./plugins/notify) | core | Push notifications (Pushover) when Claude needs your attention | **v0.1.1 ready** |
 | [`memory`](./plugins/memory) | core | Cross-session RAG memory (SQLite + embeddings, local only) | v0.0.1 stub |
 | [`mentor`](./plugins/mentor) | dev | Onboarding mentor — prescribes bootstrap docs, Epic/Sprint/Issue/ADR hierarchy, agent workflow (replaces `docsync`) | **v0.2.2 ready** |
-| [`chat`](./plugins/chat) | standalone | Logged conversation threads — record a chat to `doc/chat/`, summarise to `doc/note/`, resume any time | **v0.1.0 ready** |
+| [`chat`](./plugins/chat) | standalone | Logged conversation threads — record a chat to `doc/chat/`, summarise to `doc/note/`, resume any time | **v0.2.0 ready** |
 | [`tmux`](./plugins/tmux) | standalone | Drive other tmux sessions — list them, read what they are doing, draft or send a message into their input box | **v0.1.0 ready** |
 | [`hc`](./plugins/hc) | standalone | Drive other herdr-core (`hc`) terminals — list them, read what they are doing, start one (and add it to the Herdr App sidebar), send it a message | **v0.1.0 ready** |
 | [`discuss`](./plugins/discuss) | needs [porthole](https://github.com/kirinchen/porthole) | Discuss a file with your agent — `/discuss` opens it in porthole's editor (diagrams included) next to a conversation that is this same terminal session. Replaces `draw` | **v0.1.0 ready** |
-| [`draw`](./plugins/draw) | standalone | Draw diagrams with your agent — `/draw` opens a browser editor (Mermaid / D2 / Excalidraw), saves into markdown blocks the agent can read and edit | **v0.2.0 ready** |
 | [`workbench`](./plugins/workbench) | — | ★ Core bundle (kanban + notify + memory) | meta, stub |
 | [`workbench-dev`](./plugins/workbench-dev) | — | ★ Dev bundle (workbench + docsync) | meta, stub |
 
@@ -57,7 +56,6 @@ claude
 > /plugin install tmux@claude-workbench         # ready (drive other tmux sessions)
 > /plugin install hc@claude-workbench           # ready (drive other herdr-core terminals)
 > /plugin install discuss@claude-workbench      # ready (needs a running porthole)
-> /plugin install draw@claude-workbench         # ready (draw diagrams with your agent; needs Node 18+)
 > /plugin install memory@claude-workbench       # coming soon
 > /plugin install workbench@claude-workbench    # bundle (when memory ships)
 ```
@@ -174,10 +172,9 @@ claude-workbench/
 │   ├── notify/                         # v0.1.0 (ready — Pushover)
 │   ├── memory/                         # v0.0.1 (stub)
 │   ├── mentor/                         # v0.1.0 (ready — dev profile, replaces docsync)
-│   ├── chat/                           # v0.1.0 (ready — logged chat threads)
+│   ├── chat/                           # v0.2.0 (ready — logged chat threads)
 │   ├── tmux/                           # v0.1.0 (ready — drive other tmux sessions)
 │   ├── discuss/                        # v0.1.0 (ready — discuss a file in porthole; replaces draw)
-│   ├── draw/                           # v0.2.0 (ready — draw diagrams with your agent)
 │   ├── workbench/                      # v0.0.1 (meta stub)
 │   └── workbench-dev/                  # v0.0.1 (meta stub)
 └── schema/
