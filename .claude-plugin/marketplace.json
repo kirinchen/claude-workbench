@@ -60,7 +60,7 @@
     {
       "name": "chat",
       "source": "./plugins/chat",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Lightweight logged chat threads — record a conversation to doc/chat/, summarise to doc/note/, resume any time",
       "category": "productivity",
       "keywords": [
@@ -94,6 +94,21 @@
         "hc",
         "terminal",
         "orchestration"
+      ]
+    },
+    {
+      "name": "discuss",
+      "source": "./plugins/discuss",
+      "version": "0.1.0",
+      "description": "Discuss a file with your agent in porthole — /discuss opens it in porthole's editor (Mermaid, D2, Excalidraw included) next to a conversation that is this very terminal session",
+      "category": "productivity",
+      "keywords": [
+        "porthole",
+        "discuss",
+        "diagram",
+        "mermaid",
+        "excalidraw",
+        "conversation"
       ]
     },
     {
