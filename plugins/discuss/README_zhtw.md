@@ -33,6 +33,7 @@ npm install && npm run install:all && npm run prod
 | `/discuss <檔案>` | 打開那個檔(不存在的 `.md` 會建立)和它的對話。 |
 | `/discuss <想討論的事>` | 建 `doc/discuss/<短檔名>.md`(明顯在講某個既有的檔就開那個檔),把你的話原文記成第一句,接著回答。 |
 | `/discuss <檔案> <想討論的事>` | 打開那個檔,整行記成第一句,接著回答。 |
+| `/discuss --thread <名字>` | 接上既有的對話 `doc/chat/<名字>.md`:先讀完再接著講。檔不存在、或已被另一個開著的終端機綁走就報錯。porthole 把對話「轉 Herdr」時就是這樣開終端機。 |
 
 是哪一種由 agent 看內容判斷。
 

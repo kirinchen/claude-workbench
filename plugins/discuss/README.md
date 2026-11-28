@@ -35,6 +35,7 @@ npm install && npm run install:all && npm run prod
 | `/discuss <file>` | Open that file (a missing `.md` is created) and its conversation. |
 | `/discuss <what to discuss>` | Start `doc/discuss/<short-name>.md` (or open the existing file you are clearly talking about), record your words as the first message, and answer. |
 | `/discuss <file> <what to discuss>` | Open that file, record the whole line as the first message, and answer. |
+| `/discuss --thread <name>` | Join the existing conversation `doc/chat/<name>.md` as it is: read it and carry on. Errors if it does not exist or another open terminal holds it. porthole starts terminals this way when it hands a conversation to Herdr. |
 
 The agent reads what you typed and decides which of these it is.
 
