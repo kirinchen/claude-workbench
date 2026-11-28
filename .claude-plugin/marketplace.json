@@ -99,7 +99,7 @@
     {
       "name": "discuss",
       "source": "./plugins/discuss",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "description": "Discuss a file with your agent in porthole — /discuss opens it in porthole's editor (Mermaid, D2, Excalidraw included) next to a conversation that is this very terminal session",
       "category": "productivity",
       "keywords": [

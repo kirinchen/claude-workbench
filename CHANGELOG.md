@@ -36,6 +36,13 @@ For earlier history, see the git log.
   with it are plain markdown fences / native files and keep working. Tide #295.
 
 ### Added
+- **discuss 0.2.0** — `/discuss --thread <name>` joins an existing conversation
+  (`doc/chat/<name>.md`) instead of finding one for a file: no new thread, no other
+  name; it errors if the file is missing or another open terminal is bound to it.
+  The binding takes `link` from the thread's `<!-- porthole:link -->` head (null
+  without one), and the agent reads the conversation so far before carrying on.
+  This is how porthole's "hand to Herdr" starts a terminal. Plain `/discuss` is
+  unchanged. Tide #305.
 - **discuss 0.1.1** — `/discuss` takes plain words too: the agent decides whether you
   gave a file, a topic, or both; the words are recorded verbatim as the first message
   and answered right away. The text no longer passes through a shell.

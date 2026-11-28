@@ -241,5 +241,112 @@ class Locate(unittest.TestCase):
                     D.resolve_file(root, root, bad)
 
 
+class Open(unittest.TestCase):
+    """cmd_open / cmd_thread against a fake porthole."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = os.path.realpath(self.tmp.name)
+        self.root = os.path.join(base, "repo")
+        self.chat = os.path.join(self.root, "doc", "chat")
+        os.makedirs(self.chat)
+        self.state = os.path.join(base, "state")
+        cfg = os.path.join(base, "cfg")
+        os.makedirs(os.path.join(cfg, "projects", "p"))
+        with open(os.path.join(cfg, "projects", "p", f"{SID}.jsonl"), "w") as fh:
+            for r in (user("a"), bot("b"), user("/discuss --thread x")):
+                fh.write(json.dumps(r) + "\n")
+        self.env = {"CLAUDE_CODE_SESSION_ID": SID, "CLAUDE_PROJECT_DIR": self.root,
+                    "PORTHOLE_STATE_DIR": self.state, "CLAUDE_CONFIG_DIR": cfg}
+        self.saved = {k: os.environ.get(k) for k in [*self.env, "HC_TERMINAL_ID"]}
+        os.environ.update(self.env)
+        os.environ.pop("HC_TERMINAL_ID", None)
+        self.calls = []
+        self.orig = D.find_porthole, D.http_json
+        D.find_porthole = lambda: ("http://ph", base)
+        D.http_json = lambda u, timeout=6: self.calls.append(u) or {"name": "about-a"}
+
+    def tearDown(self):
+        D.find_porthole, D.http_json = self.orig
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.tmp.cleanup()
+
+    def thread(self, name, text):
+        with open(os.path.join(self.chat, f"{name}.md"), "w") as fh:
+            fh.write(text)
+
+    def binding(self, sid=SID):
+        return D.load_json(os.path.join(self.state, "bindings", f"{sid}.json"))
+
+    def test_binds_existing_thread_with_its_link(self):
+        self.thread("drafts-ev-1", "# T\n<!-- porthole:link doc/a b.md -->\n<!-- porthole:pin -->\n\n## 🧑 Human · x\n\nhi\n")
+        res = D.cmd_thread("drafts-ev-1")
+        b = self.binding()
+        self.assertEqual((b["thread"], b["link"], b["repo"], b["root"]), ("drafts-ev-1", "doc/a b.md", "repo", self.root))
+        self.assertEqual(b["cursor"], 3)  # what came before /discuss is porthole's, already in the file
+        self.assertEqual(self.calls, [])  # no for-file
+        self.assertEqual(res["read_first"], "doc/chat/drafts-ev-1.md")
+        self.assertEqual(res["url"], "http://ph/repo/doc/a%20b.md?thread=drafts-ev-1#file")
+        self.assertTrue(res["report"].startswith("discuss → http://ph/"))
+        self.assertIn("doc/chat/drafts-ev-1.md (about doc/a b.md) (continuing", res["report"])
+
+    def test_thread_without_link(self):
+        self.thread("plain", "# plain\n\nhello\n")
+        res = D.cmd_thread("plain")
+        self.assertIsNone(self.binding()["link"])
+        self.assertIsNone(res["file"])
+        self.assertEqual(res["url"], "http://ph/repo?thread=plain#chat")
+
+    def test_missing_thread_is_an_error_and_starts_nothing(self):
+        with self.assertRaises(D.Fail):
+            D.cmd_thread("nope")
+        self.assertEqual(os.listdir(self.chat), [])
+        self.assertIsNone(self.binding())
+
+    def test_bad_name_is_refused(self):
+        for bad in ("../x", "a/b", "", "a.md"):
+            with self.assertRaises(D.Fail):
+                D.cmd_thread(bad)
+
+    def test_taken_by_another_open_session_is_an_error(self):
+        self.thread("t", "# t\n")
+        other = "11111111-2222-3333-4444-555555555555"
+        D.save_json(os.path.join(self.state, "bindings", f"{other}.json"),
+                    {"session_id": other, "repo": "repo", "thread": "t", "pid": os.getpid(), "ended_at": None})
+        with self.assertRaises(D.Fail):
+            D.cmd_thread("t")
+        self.assertIsNone(self.binding())
+        self.assertEqual(os.listdir(self.chat), ["t.md"])  # no other name picked
+
+    def test_cli(self):
+        self.thread("t", "# t\n")
+        run = lambda *a: subprocess.run([sys.executable, SCRIPT, "open", *a], text=True, capture_output=True,
+                                        env={**os.environ, "PORTHOLE_URL": "http://127.0.0.1:9"})
+        r = run("--thread")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("usage", r.stderr)
+        self.assertEqual(run("--thread", "t", "extra").returncode, 1)
+
+    def test_plain_open_unchanged(self):
+        here = os.getcwd()
+        os.chdir(self.root)
+        try:
+            res = D.cmd_open("doc/a.md")
+        finally:
+            os.chdir(here)
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn("/api/repo/chat/for-file?path=doc%2Fa.md", self.calls[0])
+        b = self.binding()
+        self.assertEqual((b["thread"], b["link"], b["cursor"]), ("about-a", "doc/a.md", 3))
+        self.assertEqual(res["url"], "http://ph/repo/doc/a.md?thread=about-a#file")
+        with open(os.path.join(self.chat, "about-a.md")) as fh:
+            self.assertEqual(fh.read(), "# a.md\n<!-- porthole:link doc/a.md -->\n")
+        self.assertNotIn("read_first", res)
+
+
 if __name__ == "__main__":
     unittest.main()

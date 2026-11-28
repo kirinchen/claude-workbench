@@ -1,6 +1,6 @@
 ---
 description: Open a file in porthole's editor next to a conversation that is this same terminal session. Takes a file, or just what you want to discuss.
-argument-hint: "[file and/or what to discuss; empty = a fresh markdown file]"
+argument-hint: "[file and/or what to discuss; empty = a fresh markdown file] | --thread <name>"
 allowed-tools: Bash(python3:*), Glob, Grep
 ---
 
@@ -11,6 +11,27 @@ What the user typed after the command:
 <arguments>
 $ARGUMENTS
 </arguments>
+
+## 0. `--thread <name>` — join an existing conversation
+
+If the arguments are exactly `--thread <name>` (porthole starts a terminal this way
+to hand you a conversation that is already going), skip steps 1–3 and run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/discuss.py" open --thread '<name>'
+```
+
+It binds this session to the existing `doc/chat/<name>.md` and nothing else: it
+never starts or renames a conversation.
+
+- **Non-zero exit** → relay the error text as it is and stop. Do not retry with
+  another name, and do not fall back to plain `/discuss`.
+- Otherwise print the `report` value as it is, then **read the file named in
+  `read_first`** (the whole conversation so far — earlier turns were answered by
+  `claude -p` from porthole) and, if `file` is set, that file too. Pick up where
+  it left off: if the last turn is a human message with no answer yet, answer it;
+  otherwise say in one line that you have caught up and wait.
+- From here on follow the `discuss-session` skill.
 
 ## 1. Read it as a file, a message, or both
 

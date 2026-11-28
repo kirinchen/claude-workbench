@@ -4,6 +4,10 @@
   discuss.py open [--ask] [file]
                            create / find the file and its thread, bind, print JSON;
                            --ask logs what came after /discuss as the first message
+  discuss.py open --thread <name>
+                           bind to the existing doc/chat/<name>.md as it is (no new
+                           thread, no renaming) — how porthole hands a conversation
+                           to a terminal it started
   discuss.py status        what this session is bound to (JSON)
   discuss.py unbind        stop recording this session into the thread
   discuss.py hook          hook entry (UserPromptSubmit / Stop / SessionStart / SessionEnd)
@@ -40,6 +44,8 @@ TERMINAL_RE = re.compile(r"^t[0-9a-z]{1,8}$")
 _COMMAND = re.compile(r"<command-name>/(?:discuss:)?discuss</command-name>")
 _COMMAND_ARGS = re.compile(r"<command-args>(.*)</command-args>", re.DOTALL)
 _SYS_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+THREAD_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+LINK_RE = re.compile(r"<!--\s*porthole:link\s+(\S[^>]*?)\s*-->")  # porthole's chat-link.ts
 # What may wrap text typed in by `hc send`: Claude Code's paste tag, hc's sender tag.
 _WRAP_OPEN = re.compile(r"^(?:\s*<(?:pasted_content|hc)\b[^>]*>\s*)+")
 
@@ -351,9 +357,16 @@ def thread_head(title: str, link) -> str:
     return f"# {title}\n" + (f"<!-- porthole:link {link} -->\n" if link else "")
 
 
+def read_link(path: str):
+    """The file a thread is about, from its `<!-- porthole:link … -->` head, else None."""
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        m = LINK_RE.search(fh.read(4096))
+    return m.group(1).strip() if m else None
+
+
 def thread_file(b: dict):
     root, thread = b.get("root"), b.get("thread")
-    if not isinstance(root, str) or not isinstance(thread, str) or not re.match(r"^[A-Za-z0-9_-]+$", thread):
+    if not isinstance(root, str) or not isinstance(thread, str) or not THREAD_RE.match(thread):
         return None
     return os.path.join(root, "doc", "chat", f"{thread}.md")
 
@@ -499,6 +512,71 @@ def report(url: str, rel: str, created: bool, continued: bool, two_way: bool) ->
     return f"discuss → {url}\n{rel}{note}\n{mode}"
 
 
+def bind(sid: str, repo: str, root: str, thread: str, link, cwd: str) -> list:
+    """Write this session's binding; → the transcript so far (logging starts after it)."""
+    transcript = transcript_of(sid)
+    records = read_transcript(transcript) if transcript else []
+    save_json(
+        binding_path(sid),
+        {
+            "v": 1,
+            "session_id": sid,
+            "repo": repo,
+            "root": root,
+            "thread": thread,
+            "link": link,
+            "cwd": cwd,
+            "terminal": hc_terminal(),
+            "pid": claude_pid(),
+            "created_at": now_iso(),
+            "ended_at": None,
+            "cursor": len(records) if transcript else None,
+            "pending": [],
+        },
+    )
+    return records
+
+
+def web_link(url: str, repo: str, rel, thread: str) -> str:
+    t = urllib.parse.quote(thread)
+    if not rel:
+        return f"{url}/{urllib.parse.quote(repo)}?thread={t}#chat"
+    path = "/".join(urllib.parse.quote(p) for p in [repo, *rel.split("/")])
+    return f"{url}/{path}?thread={t}#file"
+
+
+def cmd_thread(name: str) -> dict:
+    """Bind to an existing thread exactly as named. Never creates or renames one."""
+    sid = my_session()
+    if not THREAD_RE.match(name):
+        raise Fail(f"--thread wants a thread name (letters, digits, - and _), got {name!r}.")
+    cwd = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    url, base = find_porthole()
+    repo, root = locate_repo(base, cwd)
+    rel_thread = f"doc/chat/{name}.md"
+    tpath = os.path.join(root, "doc", "chat", f"{name}.md")
+    if not os.path.isfile(tpath):
+        raise Fail(f"there is no conversation {rel_thread} in {repo} — nothing to bind to (no new one was started).")
+    if taken_by_other(sid, repo, name):
+        raise Fail(f"{rel_thread} is already bound to another open terminal session — not binding it twice.")
+    link = read_link(tpath)
+    bind(sid, repo, root, name, link, cwd)
+    terminal = hc_terminal()
+    web = web_link(url, repo, link, name)
+    return {
+        "report": report(web, rel_thread + (f" (about {link})" if link else ""), False, True, bool(terminal)),
+        "url": web,
+        "file": link,
+        "created": False,
+        "thread": rel_thread,
+        "continued": True,
+        "terminal": terminal,
+        "mode": "two-way" if terminal else "one-way",
+        "asked": False,
+        "read_first": rel_thread,
+    }
+
+
 def cmd_open(arg: str, ask: bool = False) -> dict:
     sid = my_session()
     cwd = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
@@ -520,32 +598,12 @@ def cmd_open(arg: str, ask: bool = False) -> dict:
         with open(tpath, "x", encoding="utf-8") as fh:
             fh.write(thread_head(os.path.basename(rel), rel))
 
-    transcript = transcript_of(sid)
-    records = read_transcript(transcript) if transcript else []
-    first = asked(records) if ask else None
+    records = bind(sid, repo, root, thread, rel, cwd)
     terminal = hc_terminal()
-    save_json(
-        binding_path(sid),
-        {
-            "v": 1,
-            "session_id": sid,
-            "repo": repo,
-            "root": root,
-            "thread": thread,
-            "link": rel,
-            "cwd": cwd,
-            "terminal": terminal,
-            "pid": claude_pid(),
-            "created_at": now_iso(),
-            "ended_at": None,
-            "cursor": len(records) if transcript else None,
-            "pending": [],
-        },
-    )
+    first = asked(records) if ask else None
     if first:
         append_thread(sid, format_turn("human", *first))
-    path = "/".join(urllib.parse.quote(p) for p in [repo, *rel.split("/")])
-    link = f"{url}/{path}?thread={urllib.parse.quote(thread)}#file"
+    link = web_link(url, repo, rel, thread)
     return {
         "report": report(link, rel, created, existed, bool(terminal)),
         "url": link,
@@ -586,8 +644,13 @@ def main(argv: list) -> int:
     try:
         if cmd == "open":
             rest = argv[1:]
-            ask = rest[:1] == ["--ask"]
-            res = cmd_open(" ".join(rest[ask:]).strip(), ask)
+            if rest[:1] == ["--thread"]:
+                if len(rest) != 2:
+                    raise Fail("usage: discuss.py open --thread <name>")
+                res = cmd_thread(rest[1])
+            else:
+                ask = rest[:1] == ["--ask"]
+                res = cmd_open(" ".join(rest[ask:]).strip(), ask)
         elif cmd == "status":
             res = cmd_status()
         elif cmd == "unbind":
